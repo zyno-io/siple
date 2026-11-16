@@ -167,7 +167,33 @@ impl RtcpStats {
         payload_len: usize,
         clock_rate: u32,
     ) {
-        self.record_received_inner(ssrc, seq, Some((timestamp, clock_rate)), payload_len);
+        self.record_received_at(
+            ssrc,
+            seq,
+            timestamp,
+            payload_len,
+            clock_rate,
+            std::time::Instant::now(),
+        );
+    }
+
+    /// [`Self::record_received`] with an explicit arrival time (deterministic tests).
+    pub(crate) fn record_received_at(
+        &mut self,
+        ssrc: u32,
+        seq: u16,
+        timestamp: u32,
+        payload_len: usize,
+        clock_rate: u32,
+        arrival: std::time::Instant,
+    ) {
+        self.record_received_inner(
+            ssrc,
+            seq,
+            Some((timestamp, clock_rate)),
+            payload_len,
+            arrival,
+        );
     }
 
     /// Like [`Self::record_received`] for packets that must **not** feed the
@@ -176,7 +202,7 @@ impl RtcpStats {
     /// differs from the audio's). They still count for sequence/loss and
     /// octet statistics, and neither update nor reset the jitter state.
     pub fn record_received_non_audio(&mut self, ssrc: u32, seq: u16, payload_len: usize) {
-        self.record_received_inner(ssrc, seq, None, payload_len);
+        self.record_received_inner(ssrc, seq, None, payload_len, std::time::Instant::now());
     }
 
     /// `jitter_sample` is `Some((rtp_timestamp, clock_rate))` for audio
@@ -187,6 +213,7 @@ impl RtcpStats {
         seq: u16,
         jitter_sample: Option<(u32, u32)>,
         payload_len: usize,
+        arrival: std::time::Instant,
     ) {
         if self.current_ssrc != Some(ssrc) {
             if self.current_ssrc.is_some() {
@@ -238,7 +265,7 @@ impl RtcpStats {
         if let Some((timestamp, clock_rate)) = jitter_sample
             && clock_rate > 0
         {
-            let now = std::time::Instant::now();
+            let now = arrival;
             if let Some((previous_arrival, previous_timestamp, previous_rate)) =
                 self.last_jitter_sample
                 && previous_rate == clock_rate

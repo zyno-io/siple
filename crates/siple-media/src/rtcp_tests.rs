@@ -682,15 +682,20 @@ fn test_jitter_does_not_diverge_when_d_drops_below_j() {
     let mut stats = RtcpStats::new();
     let clock_rate = 8000u32; // G.722's RTP timestamp clock
 
+    // Synthetic arrival clock: deterministic on a loaded machine.
+    let t0 = std::time::Instant::now();
+    let mut at_ms = 0u64;
+    let at = |ms: u64| t0 + std::time::Duration::from_millis(ms);
+
     // Seed with one packet at ts=0.
-    stats.record_received(0x1111_1111u32, 0, 0, 160, clock_rate);
+    stats.record_received_at(0x1111_1111u32, 0, 0, 160, clock_rate, at(0));
 
     // Burst of jittery arrivals: 50 packets where arrival time and RTP timestamp
     // are out of step, producing large |D| values.
     for i in 1..=50u32 {
         let ts = i.wrapping_mul(160);
-        std::thread::sleep(std::time::Duration::from_millis(40));
-        stats.record_received(0x1111_1111u32, i as u16, ts, 160, clock_rate);
+        at_ms += 40; // 20 ms of media arriving every 40 ms
+        stats.record_received_at(0x1111_1111u32, i as u16, ts, 160, clock_rate, at(at_ms));
     }
     let jittered = stats.jitter;
     assert!(jittered > 0, "burst should drive jitter above 0");
@@ -699,8 +704,8 @@ fn test_jitter_does_not_diverge_when_d_drops_below_j() {
     // never exceed any sane bound, and definitely never approach UINT32_MAX.
     for i in 51..=500u32 {
         let ts = i.wrapping_mul(160);
-        std::thread::sleep(std::time::Duration::from_millis(20));
-        stats.record_received(0x1111_1111u32, i as u16, ts, 160, clock_rate);
+        at_ms += 20; // exactly periodic: |D| = 0
+        stats.record_received_at(0x1111_1111u32, i as u16, ts, 160, clock_rate, at(at_ms));
         assert!(
             stats.jitter < 10_000_000,
             "jitter must not diverge — got {} µs at iteration {}",
