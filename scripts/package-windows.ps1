@@ -78,6 +78,13 @@ if (-not $ZipOnly) {
         if ($env:RUSTFLAGS) {
             Write-Warning 'RUSTFLAGS is set and overrides .cargo\config.toml: make sure it contains -C target-feature=+crt-static'
         }
+        # libopus (built by CMake) must use the static runtime too; see the comment in this file.
+        $toolchainVar = "CMAKE_TOOLCHAIN_FILE_$Target"
+        if (-not [Environment]::GetEnvironmentVariable($toolchainVar)) {
+            $tc = Join-Path $Root 'packaging\windows\static-crt.cmake'
+            [Environment]::SetEnvironmentVariable($toolchainVar, $tc)
+            Write-Host "==> $toolchainVar = $tc"
+        }
         Write-Host '==> cargo build --release'
         # Explicit --target so the target-specific rustflags (crt-static) from .cargo\config.toml apply
         # and the output lands in target\<triple>\release.
