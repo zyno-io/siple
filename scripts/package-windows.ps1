@@ -135,7 +135,8 @@ if (-not $ZipOnly) {
     $null = & cargo about --version 2>&1
     if ($LASTEXITCODE -eq 0) {
         $notices = Join-Path $Stage 'THIRD-PARTY-NOTICES.html'
-        & cargo about generate --locked -c (Join-Path $Root 'about.toml') (Join-Path $Root 'about.hbs') | Set-Content -Encoding utf8 $notices
+        # -o, not a pipe: cargo-about refuses PowerShell redirection (encoding issues).
+        & cargo about generate --locked -c (Join-Path $Root 'about.toml') -o $notices (Join-Path $Root 'about.hbs')
         if ($LASTEXITCODE -ne 0) { throw "cargo about failed ($LASTEXITCODE)" }
     } elseif ($env:SIPLE_RELEASE -eq '1') {
         throw 'cargo-about is not installed (cargo install cargo-about --locked); required when SIPLE_RELEASE=1'
