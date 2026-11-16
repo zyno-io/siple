@@ -10,6 +10,9 @@ use super::super::NetReason;
 
 pub struct Guard {
     stop: Arc<AtomicBool>,
+    /// The netlink descriptor (owned by the watcher thread); only tests look at it.
+    #[cfg(test)]
+    fd: libc::c_int,
 }
 
 impl Drop for Guard {
@@ -61,11 +64,18 @@ fn open() -> io::Result<Fd> {
 
 pub fn start(sink: UnboundedSender<NetReason>) -> io::Result<Guard> {
     let fd = open()?;
+    #[cfg(test)]
+    let raw = fd.0;
     let stop = Arc::new(AtomicBool::new(false));
     let stop2 = stop.clone();
     std::thread::Builder::new()
         .name("net-watch".into())
         .spawn(move || {
+            // Capture the whole `Fd`, not just `fd.0` (edition 2021 closures capture disjoint
+            // fields): otherwise the owner is dropped when `start` returns, the descriptor is
+            // closed under the thread, and its number is soon reused by an unrelated socket that
+            // this loop then polls and drains.
+            let fd = fd;
             let mut buf = vec![0u8; 16 * 1024];
             while !stop2.load(Ordering::Relaxed) {
                 let mut pfd = libc::pollfd {
@@ -106,7 +116,11 @@ pub fn start(sink: UnboundedSender<NetReason>) -> io::Result<Guard> {
                 }
             }
         })?;
-    Ok(Guard { stop })
+    Ok(Guard {
+        stop,
+        #[cfg(test)]
+        fd: raw,
+    })
 }
 
 /// Default gateway(s) from `/proc/net/route` (IPv4; hex little-endian addresses).
@@ -128,4 +142,45 @@ pub fn gateway() -> Option<String> {
         .collect();
     gws.sort();
     (!gws.is_empty()).then(|| gws.join(","))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The watcher thread owns the netlink socket: it must still be open after `start` returned
+    /// (a descriptor closed under the thread gets reused by unrelated sockets, whose data the
+    /// thread would then steal) and stay a netlink socket.
+    #[test]
+    fn the_netlink_socket_stays_open_while_watching() {
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let guard = start(tx).expect("netlink socket");
+        let fd = guard.fd;
+        let open = |fd| unsafe { libc::fcntl(fd, libc::F_GETFD) } != -1;
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        assert!(
+            open(fd),
+            "netlink fd {fd} was closed while the watcher runs"
+        );
+        // Still a netlink socket, not a reused number (SO_PROTOCOL 0 would also match a Unix
+        // socket, so check the domain too).
+        let opt = |name| {
+            let mut v: libc::c_int = -1;
+            let mut len = std::mem::size_of::<libc::c_int>() as libc::socklen_t;
+            let rc = unsafe {
+                libc::getsockopt(
+                    fd,
+                    libc::SOL_SOCKET,
+                    name,
+                    std::ptr::addr_of_mut!(v).cast(),
+                    &mut len,
+                )
+            };
+            assert_eq!(rc, 0);
+            v
+        };
+        assert_eq!(opt(libc::SO_DOMAIN), libc::AF_NETLINK);
+        assert_eq!(opt(libc::SO_PROTOCOL), libc::NETLINK_ROUTE);
+        drop(guard);
+    }
 }

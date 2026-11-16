@@ -366,12 +366,16 @@ async fn stream_echo_roundtrip() {
     drop(st.rd);
     r.hangup(&call).await;
     let samples: Vec<i16> = rx
-        .chunks_exact(2)
+        .as_chunks::<2>()
+        .0
+        .iter()
         .map(|c| i16::from_le_bytes([c[0], c[1]]))
         .collect();
     // Best 200 ms window: the tone is only a part of the 3 s capture.
     let ratio = samples
-        .chunks_exact(3200)
+        .as_chunks::<3200>()
+        .0
+        .iter()
         .map(|w| goertzel::detect(w, 16_000, 1000.0).0)
         .fold(0.0f32, f32::max);
     eprintln!(

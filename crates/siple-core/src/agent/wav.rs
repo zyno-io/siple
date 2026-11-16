@@ -88,11 +88,15 @@ pub fn decode_pcm_48k(data: &[u8], format: PcmFormat, max_secs: u32) -> Result<V
     }
     let mono: Vec<f32> = match format.encoding {
         PcmEncoding::S16le => data
-            .chunks_exact(2)
+            .as_chunks::<2>()
+            .0
+            .iter()
             .map(|b| i16::from_le_bytes([b[0], b[1]]) as f32 / 32768.0)
             .collect(),
         PcmEncoding::F32le => data
-            .chunks_exact(4)
+            .as_chunks::<4>()
+            .0
+            .iter()
             .map(|b| {
                 let v = f32::from_le_bytes([b[0], b[1], b[2], b[3]]);
                 if v.is_finite() {

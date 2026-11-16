@@ -100,8 +100,7 @@ async fn uas_uac_refresher_peer_refreshes_with_update_and_reinvite() {
     )
     .await;
     // Alternate UPDATE / re-INVITE every ~1 s for 5 s (well past the 3 s interval).
-    let mut cseq = 2;
-    for i in 0..5 {
+    for (i, cseq) in (0..5).zip(2..) {
         tokio::time::sleep(Duration::from_millis(1000)).await;
         if i % 2 == 0 {
             raw.send(&raw.msg(
@@ -129,7 +128,6 @@ async fn uas_uac_refresher_peer_refreshes_with_update_and_reinvite() {
             assert_eq!(header_value(&resp, "session-expires"), "3;refresher=uac");
             raw.send(&raw.msg("ACK", Some(&tag), cseq, "", "")).await;
         }
-        cseq += 1;
         assert_eq!(
             r.stack.call(&id).unwrap().state,
             CallState::Active,

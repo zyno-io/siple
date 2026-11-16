@@ -38,7 +38,9 @@ fn cleanest_window(pcm: &[u8]) -> &[u8] {
 
 fn goertzel(pcm: &[u8], hz: f32) -> f32 {
     let s: Vec<f32> = pcm
-        .chunks_exact(2)
+        .as_chunks::<2>()
+        .0
+        .iter()
         .map(|c| f32::from(i16::from_le_bytes([c[0], c[1]])) / 32768.0)
         .collect();
     let w = 2.0 * std::f32::consts::PI * hz / RATE as f32;
@@ -455,11 +457,15 @@ fn encode_tone(enc: &str, rate: u32, hz: f32, ms: usize) -> Vec<u8> {
 fn decode_pcm(enc: &str, bytes: &[u8]) -> Vec<i16> {
     match enc {
         "s16le" => bytes
-            .chunks_exact(2)
+            .as_chunks::<2>()
+            .0
+            .iter()
             .map(|c| i16::from_le_bytes([c[0], c[1]]))
             .collect(),
         "f32le" => bytes
-            .chunks_exact(4)
+            .as_chunks::<4>()
+            .0
+            .iter()
             .map(|c| (f32::from_le_bytes([c[0], c[1], c[2], c[3]]) * 32767.0) as i16)
             .collect(),
         "mulaw" => bytes.iter().map(|&b| ulaw_to_linear(b)).collect(),

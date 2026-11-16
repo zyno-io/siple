@@ -19,6 +19,10 @@ accepted = [
     "Ubuntu-font-1.0",
 ]
 
+# Our own crates (FSL-1.1-ALv2, `publish = false`) are not third-party; same as
+# `[licenses.private] ignore = true` in deny.toml.
+private = { ignore = true }
+
 # Same shipped targets as deny.toml.
 targets = [
     "aarch64-apple-darwin",
@@ -31,3 +35,8 @@ targets = [
 ignore-dev-dependencies = true
 ignore-build-dependencies = false
 ignore-transitive-dependencies = false
+
+# Per-crate exception, same as the `ksni` entry in deny.toml's [licenses].exceptions
+# (the Linux tray crate; Unlicense stays out of the general list).
+[ksni]
+accepted = ["Unlicense"]

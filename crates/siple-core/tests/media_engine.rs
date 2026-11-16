@@ -382,7 +382,9 @@ async fn record_sink_mono() {
     // (a loaded CI machine may glitch a block or two).
     let tail = &samples[samples.len() / 2..];
     let ratios: Vec<f32> = tail
-        .chunks_exact(4800)
+        .as_chunks::<4800>()
+        .0
+        .iter()
         .map(|c| detect(c, 48000, 1000.0).0)
         .collect();
     let good = ratios.iter().filter(|&&r| r > 0.8).count();

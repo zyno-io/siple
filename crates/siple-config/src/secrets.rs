@@ -63,8 +63,8 @@ impl KeyringVault {
     /// Vault over the platform's native store, `None` when there is none on this system.
     pub fn system() -> Option<Self> {
         // `keyring::Entry::store_status` installs the native store as the process default once;
-        // building it neither prompts nor talks to the service yet.
-        if keyring::Entry::store_status().is_err() {
+        // it connects to the Secret Service on Linux, so it runs off the async runtime too.
+        if off_runtime(keyring::Entry::store_status).is_err() {
             return None;
         }
         keyring_core::get_default_store().map(Self::with_store)
@@ -91,26 +91,40 @@ fn map_err(e: keyring_core::Error) -> VaultError {
     }
 }
 
+/// Runs `f` on a fresh thread and waits for it. The Linux Secret Service store drives its D-Bus
+/// client with `Runtime::block_on`, which panics ("Cannot start a runtime from within a
+/// runtime") on a thread that is inside a tokio runtime, and the credential store is reached
+/// from async code (config load, `account.set_password`). A new thread is never inside one.
+fn off_runtime<T: Send>(f: impl FnOnce() -> T + Send) -> T {
+    std::thread::scope(|s| {
+        s.spawn(f)
+            .join()
+            .unwrap_or_else(|panic| std::panic::resume_unwind(panic))
+    })
+}
+
 impl Vault for KeyringVault {
     fn get(&self, account_id: &str) -> Result<Option<String>, VaultError> {
-        match self.entry(account_id)?.get_password() {
+        off_runtime(|| match self.entry(account_id)?.get_password() {
             Ok(p) => Ok(Some(p)),
             Err(keyring_core::Error::NoEntry) => Ok(None),
             Err(e) => Err(map_err(e)),
-        }
+        })
     }
 
     fn set(&self, account_id: &str, password: &str) -> Result<(), VaultError> {
-        self.entry(account_id)?
-            .set_password(password)
-            .map_err(map_err)
+        off_runtime(|| {
+            self.entry(account_id)?
+                .set_password(password)
+                .map_err(map_err)
+        })
     }
 
     fn delete(&self, account_id: &str) -> Result<(), VaultError> {
-        match self.entry(account_id)?.delete_credential() {
+        off_runtime(|| match self.entry(account_id)?.delete_credential() {
             Ok(()) | Err(keyring_core::Error::NoEntry) => Ok(()),
             Err(e) => Err(map_err(e)),
-        }
+        })
     }
 }
 
@@ -246,6 +260,78 @@ mod tests {
         v.delete("a").unwrap();
         v.delete("a").unwrap();
         assert_eq!(v.get("a").unwrap(), None);
+    }
+
+    /// A store that, like the Linux Secret Service one, must never run inside a tokio runtime
+    /// (it calls `Runtime::block_on`, a panic there): every operation asserts that.
+    struct NoRuntimeStore(Arc<keyring_core::CredentialStore>);
+    struct NoRuntimeCred(keyring_core::Entry);
+
+    fn outside_runtime() {
+        assert!(
+            tokio::runtime::Handle::try_current().is_err(),
+            "credential store called from inside a tokio runtime"
+        );
+    }
+
+    impl keyring_core::api::CredentialStoreApi for NoRuntimeStore {
+        fn vendor(&self) -> String {
+            "no-runtime test store".into()
+        }
+        fn id(&self) -> String {
+            "no-runtime".into()
+        }
+        fn build(
+            &self,
+            service: &str,
+            user: &str,
+            mods: Option<&std::collections::HashMap<&str, &str>>,
+        ) -> keyring_core::Result<keyring_core::Entry> {
+            outside_runtime();
+            let inner = self.0.build(service, user, mods)?;
+            Ok(keyring_core::Entry::new_with_credential(Arc::new(
+                NoRuntimeCred(inner),
+            )))
+        }
+        fn as_any(&self) -> &dyn std::any::Any {
+            self
+        }
+    }
+
+    impl keyring_core::api::CredentialApi for NoRuntimeCred {
+        fn set_secret(&self, secret: &[u8]) -> keyring_core::Result<()> {
+            outside_runtime();
+            self.0.set_secret(secret)
+        }
+        fn get_secret(&self) -> keyring_core::Result<Vec<u8>> {
+            outside_runtime();
+            self.0.get_secret()
+        }
+        fn delete_credential(&self) -> keyring_core::Result<()> {
+            outside_runtime();
+            self.0.delete_credential()
+        }
+        fn get_credential(&self) -> keyring_core::Result<Option<Arc<keyring_core::Credential>>> {
+            Ok(None)
+        }
+        fn get_specifiers(&self) -> Option<(String, String)> {
+            self.0.get_specifiers()
+        }
+        fn as_any(&self) -> &dyn std::any::Any {
+            self
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn vault_calls_from_async_code_run_outside_the_runtime() {
+        assert!(tokio::runtime::Handle::try_current().is_ok());
+        let v = KeyringVault::with_store(Arc::new(NoRuntimeStore(
+            keyring_core::mock::Store::new().unwrap(),
+        )));
+        v.set("async", "pw").unwrap();
+        assert_eq!(v.get("async").unwrap().as_deref(), Some("pw"));
+        v.delete("async").unwrap();
+        assert_eq!(v.get("async").unwrap(), None);
     }
 
     #[test]

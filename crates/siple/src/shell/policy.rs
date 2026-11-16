@@ -87,6 +87,23 @@ pub fn incoming_effects(ui: &UiConfig, focused: bool) -> IncomingEffects {
     }
 }
 
+/// Whether a window we think is hidden has been brought back by the user (taskbar, Dock,
+/// compositor): the OS reports it focused, and not right after we hid it (the focus report that
+/// races the hide). Never for a window we unmapped: only our own show paths can bring that back,
+/// and its focus report is stale (X11 keeps the pre-unmap focus), which would make a hidden
+/// window look visible and focused, so incoming calls would neither notify nor raise it.
+pub fn user_restored(
+    visible: bool,
+    unmapped: bool,
+    os_focused: bool,
+    since_hidden: Option<std::time::Duration>,
+) -> bool {
+    !visible
+        && !unmapped
+        && os_focused
+        && since_hidden.is_none_or(|t| t > std::time::Duration::from_millis(500))
+}
+
 /// Whether answering a call should bring the window up (`show_on_answer`, only when hidden; an
 /// answer from the visible window has nothing to raise).
 pub fn raise_on_answer(ui: &UiConfig, visible: bool) -> bool {
@@ -267,6 +284,27 @@ mod tests {
         let mut u = UiConfig::default();
         f(&mut u);
         u
+    }
+
+    #[test]
+    fn a_focus_report_restores_only_a_minimized_window() {
+        use std::time::Duration as D;
+        let old = Some(D::from_secs(2));
+        // Minimized (taskbar restore): focus after the grace period means the user is back.
+        assert!(user_restored(false, false, true, old));
+        assert!(user_restored(false, false, true, None));
+        // The focus report racing our own hide is ignored.
+        assert!(!user_restored(
+            false,
+            false,
+            true,
+            Some(D::from_millis(100))
+        ));
+        assert!(!user_restored(false, false, false, old));
+        assert!(!user_restored(true, false, true, old));
+        // Unmapped by us (hidden to the tray): a stale focus report (X11) must not revive it.
+        assert!(!user_restored(false, true, true, old));
+        assert!(!user_restored(false, true, true, None));
     }
 
     #[test]

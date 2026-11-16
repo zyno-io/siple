@@ -56,18 +56,19 @@ pub const ICON_NAME: &str = siple_core::config::APP_ID;
 pub fn session_can_hide(
     linux: bool,
     wayland_display: Option<&str>,
-    winit_backend: Option<&str>,
+    wayland_socket: Option<&str>,
 ) -> bool {
-    let wayland =
-        wayland_display.is_some_and(|d| !d.is_empty()) && !matches!(winit_backend, Some("x11"));
-    !(linux && wayland)
+    // winit 0.30 picks Wayland whenever either variable is set (it has no backend override
+    // variable any more); `env -u WAYLAND_DISPLAY -u WAYLAND_SOCKET siple` forces X11.
+    let set = |v: Option<&str>| v.is_some_and(|d| !d.is_empty());
+    !(linux && (set(wayland_display) || set(wayland_socket)))
 }
 
 fn hide_supported() -> bool {
     session_can_hide(
         cfg!(target_os = "linux"),
         std::env::var("WAYLAND_DISPLAY").ok().as_deref(),
-        std::env::var("WINIT_UNIX_BACKEND").ok().as_deref(),
+        std::env::var("WAYLAND_SOCKET").ok().as_deref(),
     )
 }
 
@@ -244,6 +245,10 @@ pub struct Shell {
     /// macOS: the Dock icon is currently dropped.
     dock_dropped: bool,
     hidden_at: Option<Instant>,
+    /// We unmapped the window (`Visible(false)`), as opposed to minimizing it. Nobody can bring
+    /// an unmapped window back but us (tray, `ui.show`, a link, a call), so a focus report is
+    /// stale then: X11 can keep reporting the focus it had before the unmap.
+    unmapped: bool,
     /// Last accepted tray click (double-click suppression).
     last_toggle: Option<Instant>,
     /// The window had keyboard focus at the last frame.
@@ -314,6 +319,7 @@ impl Shell {
             visible: true,
             dock_dropped: false,
             hidden_at: None,
+            unmapped: false,
             last_toggle: None,
             focused: false,
             start_hidden_frames: if start_hidden { 4 } else { 0 },
@@ -376,12 +382,12 @@ impl Shell {
 
         let os_focused = ctx.input(|i| i.viewport().focused).unwrap_or(false);
         // The user brought a minimized window back themselves (taskbar, Dock, compositor).
-        if !self.visible
-            && os_focused
-            && self
-                .hidden_at
-                .is_none_or(|t| t.elapsed() > Duration::from_millis(500))
-        {
+        if policy::user_restored(
+            self.visible,
+            self.unmapped,
+            os_focused,
+            self.hidden_at.map(|t| t.elapsed()),
+        ) {
             self.visible = true;
         }
         let focused = self.visible && os_focused;
@@ -435,6 +441,7 @@ impl Shell {
             // Nothing to come back to: make sure the window is not left hidden.
             if !self.visible {
                 self.visible = true;
+                self.unmapped = false;
                 self.restore_dock();
                 self.tx
                     .ctx
@@ -538,6 +545,7 @@ impl Shell {
     fn show_window(&mut self, ctx: &egui::Context) {
         self.restore_dock();
         self.visible = true;
+        self.unmapped = false;
         self.start_hidden_pending = false;
         ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
         ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
@@ -554,7 +562,10 @@ impl Shell {
         }
         let plan = policy::hide_plan(ui, cfg!(target_os = "macos"));
         match plan.style {
-            HideStyle::Hide => ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false)),
+            HideStyle::Hide => {
+                ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+                self.unmapped = true;
+            }
             HideStyle::Minimize => ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true)),
         }
         #[cfg(target_os = "macos")]
@@ -582,6 +593,7 @@ impl Shell {
         // so use the plain hide until the tray is known.
         if self.tray_ready() || self.tray_starting {
             ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+            self.unmapped = true;
             #[cfg(target_os = "macos")]
             if ui.hide_from_taskbar && !self.dock_dropped {
                 macos::set_dock_icon(false);
@@ -856,9 +868,10 @@ mod tests {
     #[test]
     fn hiding_is_unavailable_only_on_wayland() {
         assert!(!session_can_hide(true, Some("wayland-0"), None));
-        assert!(session_can_hide(true, Some("wayland-0"), Some("x11")));
-        assert!(session_can_hide(true, Some(""), None));
+        assert!(!session_can_hide(true, None, Some("3")));
+        assert!(!session_can_hide(true, Some("wayland-0"), Some("3")));
+        assert!(session_can_hide(true, Some(""), Some("")));
         assert!(session_can_hide(true, None, None));
-        assert!(session_can_hide(false, Some("wayland-0"), None));
+        assert!(session_can_hide(false, Some("wayland-0"), Some("3")));
     }
 }

@@ -602,8 +602,7 @@ mod tests {
                 x ^= x << 13;
                 x ^= x >> 17;
                 x ^= x << 5;
-                let c = [b'a', b'=', b':', b' ', b'\n', b'm', b'/', b'1', b'|', b';']
-                    [(x % 10) as usize];
+                let c = b"a=: \nm/1|;"[(x % 10) as usize];
                 s.push(c as char);
             }
             let _ = SessionDescription::parse(&s);

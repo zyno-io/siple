@@ -184,11 +184,15 @@ async fn read_frame<R: AsyncRead + Unpin + ?Sized>(rd: &mut R) -> Frame {
 fn decode_f32(enc: PcmEncoding, b: &[u8]) -> Vec<f32> {
     match enc {
         PcmEncoding::S16le => b
-            .chunks_exact(2)
+            .as_chunks::<2>()
+            .0
+            .iter()
             .map(|c| f32::from(i16::from_le_bytes([c[0], c[1]])) / 32768.0)
             .collect(),
         PcmEncoding::F32le => b
-            .chunks_exact(4)
+            .as_chunks::<4>()
+            .0
+            .iter()
             .map(|c| {
                 let v = f32::from_le_bytes([c[0], c[1], c[2], c[3]]);
                 if v.is_finite() {

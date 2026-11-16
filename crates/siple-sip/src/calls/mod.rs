@@ -1745,6 +1745,7 @@ impl Call {
     /// Sends a re-INVITE and waits for its final response, at most `bound` (capped at
     /// [`REINVITE_BOUND`]). The bound turns into a synthetic 408 (as for Timer B), so every
     /// caller takes its usual timeout path.
+    #[allow(clippy::result_large_err)] // rsipstack's own Result type, as returned by `reinvite`
     pub(crate) async fn reinvite_bounded(
         &self,
         dialog: &InviteDialog,
