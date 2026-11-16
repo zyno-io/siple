@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.zyno.siple</id>
+  <name>Siple</name>
+  <summary>SIP softphone with an API for agents</summary>
+  <metadata_license>MIT</metadata_license>
+  <project_license>FSL-1.1-ALv2</project_license>
+  <description>
+    <p>Siple is a SIP softphone with multiple accounts, a scriptable control API and an MCP server for AI agents.</p>
+  </description>
+  <launchable type="desktop-id">io.zyno.siple.desktop</launchable>
+  <provides>
+    <binary>siple</binary>
+  </provides>
+  <content_rating type="oars-1.1"/>
+</component>

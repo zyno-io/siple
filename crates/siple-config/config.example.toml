@@ -1,0 +1,193 @@
+# Siple configuration. Every option is listed with its default value.
+# Edits are picked up while Siple runs; an invalid file never replaces the last good one.
+# Settings marked "empty = inherit" fall back to the global value.
+
+[general]
+# user_agent = "Siple/<version>"     # default User-Agent (versioned automatically); accounts may override
+log_level = "info"                    # level, or EnvFilter syntax; a bare level expands to "<level>,rsipstack=warn"
+log_dir = ""                          # "" = <config dir>/logs; relative paths are relative to the config dir
+log_retention_days = 14               # delete siple.log.* older than this at startup; 0 = keep forever
+reconfig_force = false                # rebuild transports on config change even with active calls
+
+[logging]
+redact_srtp_keys = false              # mask a=crypto keys in logs and SIP traces
+redact_credentials = false            # mask digest Authorization/Proxy-Authorization secrets (response, nonce, cnonce),
+                                      # the control token and configured account passwords in logs and SIP traces.
+                                      # Plaintext passwords are never logged, whatever this is set to. Hot.
+
+[control]
+unix_socket = ""                      # "" = <config dir>/control.sock (if too long: $XDG_RUNTIME_DIR or /tmp/siple-<euid>/ on Linux, $TMPDIR on macOS)
+named_pipe = ""                       # "" = \\.\pipe\siple-<user>-<hash of config dir> (Windows)
+tcp_listen = ""                       # "" = off; loopback only, e.g. "127.0.0.1:5079" (token always required on TCP)
+
+[network]
+watch = true                          # watch OS network changes and sleep/wake; re-register at once when the network changes
+probe_secs = 30                       # re-probe route and DNS of every account every N s; 0 = events only, else 5..3600
+debounce_ms = 1500                    # coalesce change triggers for this long (100..60000)
+move_calls = true                     # after a network change, move live calls onto the new path with a re-INVITE; false = end them (cause network_lost). Hot.
+
+[media]
+rtp_port_range = [16384, 32767]       # inclusive; start must be even
+codecs = ["opus", "g722", "pcmu", "pcma"]  # preference order
+jitter_min_ms = 40
+jitter_max_ms = 200                   # at most 1000
+comfort_noise = false                 # use CN (RFC 3389) if offered by the peer
+symmetric_rtp = false                 # latch RTP destination to authenticated source
+rtcp_mux = false                      # offer/use a=rtcp-mux
+rx_history_secs = 60                  # 5..600; received audio kept per call for call.listen / call.rx_audio
+codec_answer_order = "offer"          # offer | local
+dtmf_mode = "auto"                    # rfc4733 | info | inband | auto
+dtmf_duration_ms = 100
+dtmf_gap_ms = 70                      # silence between digits
+
+[audio]
+backend = "auto"                      # auto | none | always (restart required). none = never open sound devices;
+                                      # on Linux "auto" probes once at startup and disables audio when no sound
+                                      # hardware/server is found; always = skip the probe and always start audio
+input = ""                            # microphone device name; "" = system default
+output = ""                           # speaker device name; "" = system default
+ringer = ""                           # "" = same as output
+
+[calls]
+# Which calls get put on hold when you answer, dial or activate another line.
+#   "all"     every account's device-bound calls (one live call at a time); the default
+#   "account" only the answering/dialing account's calls (automation, or two local accounts
+#             calling each other).
+# Automatic holds (answering, dialing) skip accounts with auto_hold = false and are never
+# triggered by calls that use no audio device. An explicit call.activate or answer mode
+# "hold_others" ignores auto_hold.
+# Hot reloadable.
+hold_scope = "all"
+# A transfer that failed for good (the PBX refused it, or a local error) takes the original
+# call off hold again, when the transfer held it and no other line is live. A transfer that
+# timed out without a result is never resumed automatically (the transferee may already be
+# with the target). Hot reloadable.
+resume_after_failed_transfer = true
+decline_code = 486                    # SIP status sent when a call-waiting call is declined (400-699). Hot.
+
+[ui]
+# Desktop UI settings. All hot; the Settings page of the GUI writes this table. A key you leave out
+# keeps the default shown here. The GUI reads them as the matching features arrive.
+theme = "system"                      # system | light | dark
+density = "comfortable"               # comfortable | compact
+reduced_motion = "system"             # system | on | off
+blf_view = "keys"                     # keys | lamps | list
+blf_click = "dial"                    # click on an idle BLF: dial | prefill
+blf_click_in_call = "menu"            # click on a BLF during a call: menu | consult | blind
+blf_click_ringing = "pickup"          # click on a ringing BLF: pickup | call (pickup only if configured)
+blf_group_by = "account"              # account | group | none
+transfer_enter = "consult"            # Enter in the transfer composer: consult | blind
+tray = true                           # tray / menu-bar mode
+close_to_tray = true                  # closing the window hides it
+hide_from_taskbar = true              # no taskbar button / Dock icon while hidden
+start_hidden = false
+show_on_incoming = true               # raise the window on an incoming call
+show_on_answer = false
+notifications = true
+handle_links = true                   # handler for sip:/sips:/tel:/callto: links
+launch_at_login = false              # start Siple when you log in (use with start_hidden)
+developer_tools = false               # show developer tools in the GUI (the control API stays on)
+
+[ui.shortcuts]
+# action = "Mod+Shift+A"              # key chords by action name; defaults apply to actions not listed
+
+[speech]
+# External text-to-speech / speech-to-text commands for call.say, call.listen{transcribe} and
+# speech.*. Off while the argv list is empty. Never run through a shell; placeholders are replaced
+# inside argv elements only ({{ and }} are literal braces). Hot reloadable.
+tts_command = []                      # e.g. ["piper", "--model", "en_US-lessac-medium.onnx", "--output_file", "{out}"]
+                                      # placeholders: {text_file} {out} {voice}; text also arrives on stdin
+tts_timeout_ms = 30000                # 1000..120000
+tts_voice = ""                        # value for {voice}; [A-Za-z0-9][A-Za-z0-9_.+:-]{0,63}
+stt_command = []                      # e.g. ["whisper-cli", "-m", "ggml-base.en.bin", "-f", "{in}", "-l", "{lang}", "-nt", "-np"]
+                                      # placeholders: {in} (16 kHz mono WAV) {lang} {out_base} {out_txt}
+stt_timeout_ms = 60000                # 1000..120000
+stt_language = "en"                   # value for {lang}; same charset as tts_voice
+
+# Sample account. It is disabled so a fresh install never tries to register; set enabled = true
+# (the default for accounts) after filling in your details. Add more [[account]] blocks as needed.
+[[account]]
+id = "example"                        # unique; [A-Za-z0-9_.-] only (used in file names)
+enabled = false                       # default: true
+profile = "generic"                   # generic | yealink | polycom | cisco | grandstream. Vendor preset:
+                                      # fills user_agent, hold_style, dtmf_mode, dnd_reject_code,
+                                      # attended_refer_target, prack, session_timers when NOT set below
+                                      # (explicit option > profile > built-in default).
+display_name = "Example"
+username = "1001"
+auth_username = ""                    # "" = username
+password = "secret"
+password_store = "file"               # file | keyring. keyring keeps the password in the system credential
+                                      # store (macOS Keychain, Windows Credential Manager, Linux Secret
+                                      # Service) and requires password = "" above; set it with the
+                                      # account.set_password API method or the settings UI. Without a
+                                      # credential store the account fails to start (never a plaintext fallback).
+domain = "pbx.example.com"
+registrar = ""                        # next hop / R-URI host; "" = domain
+outbound_proxy = ""                   # forced next hop, host[:port]
+outbound_proxy_route = false          # also add Route: <proxy;lr>
+transport = "udp"                     # udp | tcp | tls | auto. auto picks from DNS SRV: _sips._tcp (TLS), then
+                                      # _sip._tcp (TCP), then _sip._udp (UDP), else UDP port 5060 (no NAPTR)
+local_port = 0                        # 0 = ephemeral
+bind_address = ""                     # "" = auto (interface toward the next hop)
+public_address = ""                   # advertise-only IP/host for NAT
+rewrite_contact = true                # learn Via received/rport and re-register with that Contact
+keepalive_secs = 30                   # 0 = off
+keepalive_method = "crlf"             # crlf | options
+keepalive_fail_threshold = 2          # options only: consecutive unanswered keep-alives that mark the flow dead; 0 = never, max 20
+use_sips_uri = false                  # sips: Contact on TLS
+tls_verify = true                     # set false to ignore certificate errors
+tls_ca_file = ""                      # extra trusted CAs (PEM)
+tls_server_name = ""                  # SNI/verification name override (registrar/proxy only)
+tls_fingerprint = ""                  # pin the server leaf cert: sha256 hex of its DER (colons optional);
+                                      # accepted regardless of chain/expiry/name. Use for self-signed PBX
+                                      # certs the OS verifier rejects (e.g. macOS: >825-day validity).
+                                      # openssl x509 -in pbx.pem -noout -fingerprint -sha256
+tls_cert = ""                         # listener/client cert (PEM); "" = self-signed
+tls_key = ""
+register = true                       # false = peer mode (calls only)
+expires = 300
+srtp = "optional"                     # off | optional | mandatory
+srtp_suites = ["AES_CM_128_HMAC_SHA1_80", "AES_CM_128_HMAC_SHA1_32"]  # also AES_256_CM_HMAC_SHA1_80/32 (alias AES_CM_256_...)
+codecs = []                           # [] = inherit [media].codecs
+dtmf_mode = ""                        # "" = inherit [media].dtmf_mode
+user_agent = ""                       # "" = inherit [general].user_agent
+dnd = false
+dnd_reject_code = 486                 # 400-699
+auto_answer = false
+answer_delay_ms = 0
+allow_intercom = false                # auto-answer on Call-Info/Alert-Info intercom requests
+auto_hold = true                      # answering/dialing holds the other live calls (see [calls] hold_scope)
+hold_style = "sendonly"               # sendonly | inactive
+hold_send_cn = false                  # comfort noise while holding
+follow_redirects = true               # follow 3xx (max 3 hops)
+auth_foreign = false                  # false = answer 401/407 only from your provider (outbound_proxy / registrar /
+                                      # domain); true = answer any host's challenge (leaks a digest of the password)
+max_calls = 4
+prack = "supported"                   # disabled | supported | required: reliable 18x (100rel/PRACK) as UAS.
+                                      # disabled = never (420 to Require: 100rel); supported = when the caller
+                                      # sends Require: 100rel; required = whenever the caller lists 100rel.
+session_timers = true                 # RFC 4028: Supported: timer, refresh as refresher, BYE when the peer lapses
+session_expires = 1800                # Session-Expires we request on outgoing calls (seconds)
+min_se = 90                           # Min-SE: shortest interval we accept (RFC floor 90; lower allowed for tests)
+accept_refer = true
+attended_refer_target = "aor"         # aor | contact
+attended_refer_on = "original"        # original | consult
+mwi = "subscribe"                     # subscribe | unsolicited | off
+mwi_uri = ""                          # "" = own AOR
+blf_expires = 600
+# pickup = "off"                      # directed pickup of ringing BLF extensions: off | prefix | replaces (experimental)
+# pickup_prefix = "**"                # feature code dialled before the extension with pickup = "prefix"
+# pickup_replaces_target = "caller"   # pickup = "replaces" (experimental): INVITE the caller (RFC 5359) or the "monitored" phone
+sip_trace = true
+audio_source = "device"               # device | silence | tone:<hz> | file:<path.wav>
+audio_sink = "device"                 # device | null | record:<path.wav>
+extra_headers = {}                    # e.g. { "X-Test" = "1" }
+
+[[account.blf]]
+uri = "1002"                          # extension or full SIP URI
+label = "Bob"
+# group = ""                          # GUI group; "" = by account
+# pickup = ""                         # per-entry override of the account's pickup ("" = inherit)
+# pickup_prefix = ""                  # per-entry override of pickup_prefix
+# pickup_target = ""                  # dial this instead of <pickup_prefix><extension> (queues, park slots)

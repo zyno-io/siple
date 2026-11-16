@@ -1,0 +1,43 @@
+# Rust build output and packaged releases. Keep application Cargo.lock files tracked.
+target/
+/dist/
+*.rs.bk
+
+# Local credentials and the PBX backup (contains credentials and private keys).
+.env
+.env.*
+!.env.example
+!.env.*.example
+/tests/interop/pbx.env
+/tests/interop/fs-conf.tar.gz
+
+# Local application config and runtime state.
+/config.toml
+/state.toml
+runtime.json
+siple.lock
+control.sock
+
+# Application logs and packet captures.
+logs/
+*.log
+*.log.*
+*.pcap
+*.pcapng
+
+# Editor and operating-system files.
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+._*
+Thumbs.db
+
+# Documentation site (website/): dependencies, build output, generated screenshot copies.
+website/node_modules/
+website/.vitepress/dist/
+website/.vitepress/cache/
+website/public/screenshots/
+website/.vitepress/.temp/

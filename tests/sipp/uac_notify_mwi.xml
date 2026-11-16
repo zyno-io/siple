@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="ISO-8859-1" ?>
+<!DOCTYPE scenario SYSTEM "sipp.dtd">
+<!-- Unsolicited out-of-dialog NOTIFY Event: message-summary (as FreeSWITCH sends after REGISTER): 200 and an Mwi event. -->
+<scenario name="uac_notify_mwi">
+  <send retrans="500">
+    <![CDATA[
+      NOTIFY sip:[service]@[remote_ip]:[remote_port] SIP/2.0
+      Via: SIP/2.0/[transport] [local_ip]:[local_port];branch=[branch]
+      From: <sip:vm@[local_ip]:[local_port]>;tag=[pid]SIPpTag00[call_number]
+      To: <sip:[service]@[remote_ip]:[remote_port]>
+      Call-ID: [call_id]
+      CSeq: 1 NOTIFY
+      Contact: <sip:vm@[local_ip]:[local_port]>
+      Max-Forwards: 70
+      Event: message-summary
+      Subscription-State: terminated;reason=noresource
+      Content-Type: application/simple-message-summary
+      Content-Length: [len]
+
+      Messages-Waiting: yes
+      Message-Account: sip:b@[remote_ip]
+      Voice-Message: 2/8 (1/2)
+    ]]>
+  </send>
+  <recv response="200"/>
+</scenario>

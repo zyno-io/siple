@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="ISO-8859-1" ?>
+<!DOCTYPE scenario SYSTEM "sipp.dtd">
+<!-- sipp UAC with Require: 100rel; Siple must send a reliable 180 (RSeq), hold the 200 until our PRACK, answer PRACK 200. -->
+<scenario name="uac_100rel">
+  <send retrans="500">
+    <![CDATA[
+      INVITE sip:[service]@[remote_ip]:[remote_port] SIP/2.0
+      Via: SIP/2.0/[transport] [local_ip]:[local_port];branch=[branch]
+      From: sipp <sip:sipp@[local_ip]:[local_port]>;tag=[pid]SIPpTag00[call_number]
+      To: <sip:[service]@[remote_ip]:[remote_port]>
+      Call-ID: [call_id]
+      CSeq: 1 INVITE
+      Contact: <sip:sipp@[local_ip]:[local_port]>
+      Max-Forwards: 70
+      Allow: INVITE, ACK, CANCEL, BYE, UPDATE, PRACK, OPTIONS
+      Supported: 100rel
+      Require: 100rel
+      Content-Type: application/sdp
+      Content-Length: [len]
+
+      v=0
+      o=sipp 1000 1000 IN IP[local_ip_type] [local_ip]
+      s=-
+      c=IN IP[local_ip_type] [media_ip]
+      t=0 0
+      m=audio [media_port] RTP/AVP 0 101
+      a=rtpmap:0 PCMU/8000
+      a=rtpmap:8 PCMA/8000
+      a=rtpmap:101 telephone-event/8000
+      a=fmtp:101 0-15
+      a=sendrecv
+    ]]>
+  </send>
+  <recv response="100" optional="true"/>
+  <recv response="180">
+    <action>
+      <ereg regexp="100rel" search_in="hdr" header="Require:" check_it="true" assign_to="chk"/>
+      <ereg regexp="[0-9]+" search_in="hdr" header="RSeq:" check_it="true" assign_to="rseq"/>
+    </action>
+  </recv>
+  <pause milliseconds="1800"/>
+  <send retrans="500">
+    <![CDATA[
+      PRACK sip:[service]@[remote_ip]:[remote_port] SIP/2.0
+      Via: SIP/2.0/[transport] [local_ip]:[local_port];branch=[branch]
+      From: sipp <sip:sipp@[local_ip]:[local_port]>;tag=[pid]SIPpTag00[call_number]
+      To: <sip:[service]@[remote_ip]:[remote_port]>[peer_tag_param]
+      Call-ID: [call_id]
+      CSeq: 2 PRACK
+      Contact: <sip:sipp@[local_ip]:[local_port]>
+      Max-Forwards: 70
+      Allow: INVITE, ACK, CANCEL, BYE, UPDATE, PRACK, OPTIONS
+      RAck: [$rseq] 1 INVITE
+      Content-Length: [len]
+    ]]>
+  </send>
+  <recv response="200">
+    <action>
+      <ereg regexp="PRACK" search_in="hdr" header="CSeq:" check_it="true" assign_to="chk"/>
+    </action>
+  </recv>
+  <recv response="200">
+    <action>
+      <ereg regexp="INVITE" search_in="hdr" header="CSeq:" check_it="true" assign_to="chk"/>
+    </action>
+  </recv>
+  <send>
+    <![CDATA[
+      ACK sip:[service]@[remote_ip]:[remote_port] SIP/2.0
+      Via: SIP/2.0/[transport] [local_ip]:[local_port];branch=[branch]
+      From: sipp <sip:sipp@[local_ip]:[local_port]>;tag=[pid]SIPpTag00[call_number]
+      To: <sip:[service]@[remote_ip]:[remote_port]>[peer_tag_param]
+      Call-ID: [call_id]
+      CSeq: 1 ACK
+      Contact: <sip:sipp@[local_ip]:[local_port]>
+      Max-Forwards: 70
+      Allow: INVITE, ACK, CANCEL, BYE, UPDATE, PRACK, OPTIONS
+      Content-Length: [len]
+    ]]>
+  </send>
+  <pause milliseconds="300"/>
+  <send retrans="500">
+    <![CDATA[
+      BYE sip:[service]@[remote_ip]:[remote_port] SIP/2.0
+      Via: SIP/2.0/[transport] [local_ip]:[local_port];branch=[branch]
+      From: sipp <sip:sipp@[local_ip]:[local_port]>;tag=[pid]SIPpTag00[call_number]
+      To: <sip:[service]@[remote_ip]:[remote_port]>[peer_tag_param]
+      Call-ID: [call_id]
+      CSeq: 3 BYE
+      Contact: <sip:sipp@[local_ip]:[local_port]>
+      Max-Forwards: 70
+      Allow: INVITE, ACK, CANCEL, BYE, UPDATE, PRACK, OPTIONS
+      Content-Length: [len]
+    ]]>
+  </send>
+  <recv response="200"/>
+</scenario>

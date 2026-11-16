@@ -1,0 +1,108 @@
+<?xml version="1.0" encoding="ISO-8859-1" ?>
+<!DOCTYPE scenario SYSTEM "sipp.dtd">
+<!-- Siple is the refresher (refresher=uas) of a 4 s session: it must send UPDATE refreshes about every 2 s. -->
+<scenario name="uac_session_timer_uas">
+  <send retrans="500">
+    <![CDATA[
+      INVITE sip:[service]@[remote_ip]:[remote_port] SIP/2.0
+      Via: SIP/2.0/[transport] [local_ip]:[local_port];branch=[branch]
+      From: sipp <sip:sipp@[local_ip]:[local_port]>;tag=[pid]SIPpTag00[call_number]
+      To: <sip:[service]@[remote_ip]:[remote_port]>
+      Call-ID: [call_id]
+      CSeq: 1 INVITE
+      Contact: <sip:sipp@[local_ip]:[local_port]>
+      Max-Forwards: 70
+      Allow: INVITE, ACK, CANCEL, BYE, UPDATE, PRACK, OPTIONS
+      Supported: timer
+      Session-Expires: 4;refresher=uas
+      Min-SE: 1
+      Content-Type: application/sdp
+      Content-Length: [len]
+
+      v=0
+      o=sipp 1000 1000 IN IP[local_ip_type] [local_ip]
+      s=-
+      c=IN IP[local_ip_type] [media_ip]
+      t=0 0
+      m=audio [media_port] RTP/AVP 0 101
+      a=rtpmap:0 PCMU/8000
+      a=rtpmap:8 PCMA/8000
+      a=rtpmap:101 telephone-event/8000
+      a=fmtp:101 0-15
+      a=sendrecv
+    ]]>
+  </send>
+  <recv response="100" optional="true"/>
+  <recv response="180" optional="true"/>
+  <recv response="200">
+    <action>
+      <ereg regexp="4;refresher=uas" search_in="hdr" header="Session-Expires:" check_it="true" assign_to="chk"/>
+    </action>
+  </recv>
+  <send>
+    <![CDATA[
+      ACK sip:[service]@[remote_ip]:[remote_port] SIP/2.0
+      Via: SIP/2.0/[transport] [local_ip]:[local_port];branch=[branch]
+      From: sipp <sip:sipp@[local_ip]:[local_port]>;tag=[pid]SIPpTag00[call_number]
+      To: <sip:[service]@[remote_ip]:[remote_port]>[peer_tag_param]
+      Call-ID: [call_id]
+      CSeq: 1 ACK
+      Contact: <sip:sipp@[local_ip]:[local_port]>
+      Max-Forwards: 70
+      Allow: INVITE, ACK, CANCEL, BYE, UPDATE, PRACK, OPTIONS
+      Content-Length: [len]
+    ]]>
+  </send>
+  <recv request="UPDATE" timeout="4000">
+    <action>
+      <ereg regexp="4;refresher=uas" search_in="hdr" header="Session-Expires:" check_it="true" assign_to="chk"/>
+    </action>
+  </recv>
+  <send retrans="500">
+    <![CDATA[
+      SIP/2.0 200 OK
+      [last_Via:]
+      [last_From:]
+      [last_To:]
+      [last_Call-ID:]
+      [last_CSeq:]
+      Contact: <sip:sipp@[local_ip]:[local_port]>
+      Session-Expires: 4;refresher=uas
+      Content-Length: [len]
+    ]]>
+  </send>
+  <recv request="UPDATE" timeout="4000">
+    <action>
+      <ereg regexp="4;refresher=uas" search_in="hdr" header="Session-Expires:" check_it="true" assign_to="chk"/>
+    </action>
+  </recv>
+  <send retrans="500">
+    <![CDATA[
+      SIP/2.0 200 OK
+      [last_Via:]
+      [last_From:]
+      [last_To:]
+      [last_Call-ID:]
+      [last_CSeq:]
+      Contact: <sip:sipp@[local_ip]:[local_port]>
+      Session-Expires: 4;refresher=uas
+      Content-Length: [len]
+    ]]>
+  </send>
+  <pause milliseconds="300"/>
+  <send retrans="500">
+    <![CDATA[
+      BYE sip:[service]@[remote_ip]:[remote_port] SIP/2.0
+      Via: SIP/2.0/[transport] [local_ip]:[local_port];branch=[branch]
+      From: sipp <sip:sipp@[local_ip]:[local_port]>;tag=[pid]SIPpTag00[call_number]
+      To: <sip:[service]@[remote_ip]:[remote_port]>[peer_tag_param]
+      Call-ID: [call_id]
+      CSeq: 2 BYE
+      Contact: <sip:sipp@[local_ip]:[local_port]>
+      Max-Forwards: 70
+      Allow: INVITE, ACK, CANCEL, BYE, UPDATE, PRACK, OPTIONS
+      Content-Length: [len]
+    ]]>
+  </send>
+  <recv response="200"/>
+</scenario>

@@ -1,0 +1,114 @@
+# Siple CI. Derived from .gitlab-ci.yml, the Dockerfiles and scripts/package-linux.sh.
+# Not yet run on GitHub: expect to tune runner images and caches on the first runs.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+  CARGO_PROFILE_DEV_DEBUG: line-tables-only
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  check:
+    name: check (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      # Linux: ALSA headers for cpal, cmake for the bundled libopus. GUI libraries (X11/Wayland/
+      # Vulkan) are dlopen'd at runtime, so nothing else is needed to build or test.
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq cmake pkg-config libasound2-dev
+
+      - name: Install Rust (stable)
+        run: |
+          rustup toolchain install stable --profile minimal --component rustfmt --component clippy
+          rustup default stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      # Per package, never --all: vendor/rsipstack is not ours and must not be reformatted.
+      - name: rustfmt
+        run: cargo fmt --check -p siple-media -p siple-config -p siple-core -p siple-sip -p siple -p siple-cli
+
+      - name: clippy
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+      # The visual snapshot tests are skipped everywhere here; the macOS job below runs them, because the
+      # reference images were rendered on Metal.
+      - name: test
+        run: cargo test --workspace --locked -- --skip visual_tests
+
+  visual:
+    name: visual snapshots (macOS)
+    runs-on: macos-latest
+    # TODO: hosted macOS runners may lack a usable Metal GPU or render slightly differently.
+    # Once the job is known to be stable, remove continue-on-error so it gates merges.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust (stable)
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+      - uses: Swatinem/rust-cache@v2
+      # Gated by name only (no cfg): the tests live in crates/siple/src/visual_tests.rs and compare against
+      # crates/siple/tests/snapshots/*.png. Regenerate locally with UPDATE_SNAPSHOTS=1.
+      - name: visual tests
+        run: cargo test -p siple --locked visual
+      - name: Upload diffs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: visual-diffs
+          path: crates/siple/tests/snapshots/*.diff.png
+          if-no-files-found: ignore
+
+  deny:
+    name: cargo-deny
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check
+
+  msrv:
+    name: MSRV 1.94
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq cmake pkg-config libasound2-dev
+      # Keep in sync with `rust-version` in Cargo.toml.
+      - name: Install Rust 1.94
+        run: |
+          rustup toolchain install 1.94 --profile minimal
+          rustup default 1.94
+      - uses: Swatinem/rust-cache@v2
+      - name: cargo check
+        run: cargo check --workspace --all-targets --locked

@@ -1,0 +1,362 @@
+# Builds the distributable packages. Two modes:
+#
+#   workflow_dispatch   unsigned dev packages, uploaded to the run as `unsigned-*` artifacts. No secrets.
+#   push of a `v*` tag  build -> sign (+ notarize on macOS) -> checksums + provenance attestations ->
+#                       DRAFT GitHub Release. Signing jobs and the publish job use the `release`
+#                       environment, which holds the secrets (restrict it to `v*` tags and add required
+#                       reviewers in the repository settings). See docs/RELEASING.md.
+#
+# Builds never see secrets: unsigned artifacts go to separate signing jobs.
+name: Release
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+  SIPLE_RELEASE: "1" # packaging fails without THIRD-PARTY-NOTICES.html
+  IS_TAG: ${{ startsWith(github.ref, 'refs/tags/v') }}
+
+jobs:
+  preflight:
+    name: Check tag matches version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Tag must be v<workspace version>
+        if: env.IS_TAG == 'true'
+        run: |
+          version="$(sed -n '/^\[workspace.package\]/,/^\[/{s/^version *= *"\(.*\)"/\1/p;}' Cargo.toml | head -1)"
+          [ -n "$version" ] || { echo "::error::cannot read version from Cargo.toml"; exit 1; }
+          # v<version> for a release, v<version>-rc.<n> for a release candidate (artifacts keep the
+          # numeric version: macOS bundle and Windows version resources must be numeric).
+          case "$GITHUB_REF_NAME" in
+            "v$version" | "v$version"-rc.[0-9]*) ;;
+            *)
+              echo "::error::tag $GITHUB_REF_NAME does not match Cargo.toml version v$version (or v$version-rc.N)"
+              exit 1
+              ;;
+          esac
+
+  linux:
+    name: Linux x86_64 tarball
+    needs: preflight
+    runs-on: ubuntu-latest
+    # glibc 2.36 baseline: runs on Debian 12+ / Ubuntu 23.04+ (see scripts/package-linux.sh).
+    container: rust:1.94-bookworm
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install build dependencies
+        run: apt-get update -qq && apt-get install -y -qq cmake pkg-config libasound2-dev
+      - uses: taiki-e/install-action@ab49d3c64680143e184118bed66a46419fc15519 # v2.90.5
+        with:
+          tool: cargo-about
+      - name: Package
+        run: scripts/package-linux.sh # fails on unexpected NEEDED libraries
+      # Linux has no code-signing step: integrity comes from SHA256SUMS + build-provenance
+      # attestations, created in the `release` job over the final files.
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ env.IS_TAG == 'true' && 'release-linux' || 'unsigned-linux' }}
+          path: dist/Siple-*-linux-x86_64.tar.gz
+          if-no-files-found: error
+
+  macos:
+    name: macOS universal app (build)
+    needs: preflight
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install Rust with both Apple targets
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustup target add aarch64-apple-darwin x86_64-apple-darwin
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - uses: taiki-e/install-action@ab49d3c64680143e184118bed66a46419fc15519 # v2.90.5
+        with:
+          tool: cargo-about
+      # Tag: assemble the UNSIGNED bundle only; the macos-sign job signs it.
+      - name: Package (bundle only)
+        if: env.IS_TAG == 'true'
+        run: |
+          BUNDLE_ONLY=1 scripts/package-macos.sh
+          # tar keeps modes and the bundle layout across artifact upload.
+          COPYFILE_DISABLE=1 tar -C dist -cf dist/Siple-app.tar Siple.app
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: env.IS_TAG == 'true'
+        with:
+          name: macos-unsigned-app
+          path: dist/Siple-app.tar
+          if-no-files-found: error
+          retention-days: 14 # outlives a pending environment approval
+      # Manual run: ad-hoc signed zip + dmg for testing (CODESIGN_IDENTITY unset).
+      - name: Package (dev zip + dmg)
+        if: env.IS_TAG != 'true'
+        run: scripts/package-macos.sh
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: env.IS_TAG != 'true'
+        with:
+          name: unsigned-macos
+          path: |
+            dist/Siple-*-macos.zip
+            dist/Siple-*-macos.dmg
+          if-no-files-found: error
+
+  # Signs on a macOS runner: the bundle is built there, rcodesign runs natively, and the dmg needs
+  # hdiutil. Secrets exist only in this job (environment `release`), never during the cargo build.
+  macos-sign:
+    name: macOS sign + notarize
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: macos
+    runs-on: macos-latest
+    environment: release
+    timeout-minutes: 90
+    env:
+      REQUIRE_SIGNING: "1" # a tagged release must never ship unsigned
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: macos-unsigned-app
+          path: dist
+      - name: Unpack bundle
+        run: tar -C dist -xf dist/Siple-app.tar && rm dist/Siple-app.tar
+
+      - name: Install rcodesign
+        run: |
+          RCODESIGN_VERSION="0.27.0"
+          curl -fsSL "https://github.com/indygreg/apple-platform-rs/releases/download/apple-codesign%2F${RCODESIGN_VERSION}/apple-codesign-${RCODESIGN_VERSION}-macos-universal.tar.gz" \
+            -o "$RUNNER_TEMP/rcodesign.tar.gz"
+          echo '213b9a4b2bf234925a186a25b5167238ddffa23531f6e8e6619b6af09fb3cd5c  '"$RUNNER_TEMP/rcodesign.tar.gz" | shasum -a 256 -c -
+          mkdir -p "$RUNNER_TEMP/rcodesign" "$RUNNER_TEMP/bin"
+          tar xzf "$RUNNER_TEMP/rcodesign.tar.gz" -C "$RUNNER_TEMP/rcodesign"
+          mv "$RUNNER_TEMP"/rcodesign/apple-codesign-*/rcodesign "$RUNNER_TEMP/bin/"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+
+      - name: Set up Apple signing credentials
+        env:
+          APPLE_CERTIFICATE_P12: ${{ secrets.APPLE_CERTIFICATE_P12 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APP_STORE_CONNECT_API_KEY: ${{ secrets.APP_STORE_CONNECT_API_KEY }}
+        run: |
+          set -euo pipefail
+          for v in APPLE_CERTIFICATE_P12 APPLE_CERTIFICATE_PASSWORD APP_STORE_CONNECT_API_KEY; do
+            [ -n "${!v}" ] || { echo "::error::secret $v is not set in the 'release' environment"; exit 1; }
+          done
+          umask 077
+          cred="$RUNNER_TEMP/apple-creds"
+          mkdir -p "$cred"
+          printf '%s' "$APPLE_CERTIFICATE_P12" | base64 --decode > "$cred/cert.p12"
+          printf '%s' "$APPLE_CERTIFICATE_PASSWORD" > "$cred/cert-password"
+          # APP_STORE_CONNECT_API_KEY: base64 of {"issuer_id","key_id","private_key"} (same as sp2p).
+          printf '%s' "$APP_STORE_CONNECT_API_KEY" | base64 --decode > "$cred/api-key-raw.json"
+          jq -r '.private_key' "$cred/api-key-raw.json" > "$cred/api-key.p8"
+          rcodesign encode-app-store-connect-api-key \
+            "$(jq -r '.issuer_id' "$cred/api-key-raw.json")" \
+            "$(jq -r '.key_id' "$cred/api-key-raw.json")" \
+            "$cred/api-key.p8" \
+            -o "$cred/app-store-connect-key.json"
+          rm "$cred/api-key-raw.json" "$cred/api-key.p8"
+          {
+            echo "APPLE_CERTIFICATE_P12_PATH=$cred/cert.p12"
+            echo "APPLE_CERTIFICATE_PASSWORD_PATH=$cred/cert-password"
+            echo "APP_STORE_CONNECT_API_KEY_PATH=$cred/app-store-connect-key.json"
+          } >> "$GITHUB_ENV"
+
+      - name: Sign app
+        run: scripts/sign-macos.sh dist/Siple.app
+      - name: Notarize and staple app
+        run: scripts/notarize-macos.sh dist/Siple.app
+      - name: Verify app
+        run: |
+          codesign --verify --deep --strict --verbose=2 dist/Siple.app
+          cli="$(codesign -dvv dist/Siple.app/Contents/MacOS/siple-cli 2>&1)"
+          grep -q 'Identifier=io.zyno.siple-cli' <<<"$cli"
+          grep -q 'Authority=Developer ID Application' <<<"$cli"
+          grep -qE 'flags=0x[0-9a-f]+\(runtime\)' <<<"$cli"
+          codesign -d --entitlements - dist/Siple.app 2>&1 | grep audio-input
+          xcrun stapler validate dist/Siple.app
+          spctl -a -vv --type exec dist/Siple.app
+      - name: Zip, dmg (signed, notarized, stapled)
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          scripts/dist-macos.sh dist/Siple.app "$version"
+      - name: Verify dmg
+        run: |
+          xcrun stapler validate dist/Siple-*-macos.dmg
+          spctl -a -vv --type open --context context:primary-signature dist/Siple-*-macos.dmg
+      - name: Remove credentials
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/apple-creds"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-macos
+          path: |
+            dist/Siple-*-macos.zip
+            dist/Siple-*-macos.dmg
+          if-no-files-found: error
+          retention-days: 14 # outlives a pending environment approval
+
+  windows:
+    name: Windows x64 zip (build)
+    needs: preflight
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install Rust
+        shell: bash
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - uses: taiki-e/install-action@ab49d3c64680143e184118bed66a46419fc15519 # v2.90.5
+        with:
+          tool: cargo-about
+      # Tag: build and stage only; the zip must contain the signed exes (windows-sign job).
+      - name: Package (stage only)
+        if: env.IS_TAG == 'true'
+        shell: pwsh
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-windows.ps1 -StageOnly
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: env.IS_TAG == 'true'
+        with:
+          name: windows-unsigned-stage
+          # Wildcard keeps the Siple-<version>-windows-x64/ directory name inside the artifact.
+          path: dist/Siple-*-windows-x64/**
+          if-no-files-found: error
+          retention-days: 14 # outlives a pending environment approval
+      - name: Package (dev zip)
+        if: env.IS_TAG != 'true'
+        shell: pwsh
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-windows.ps1
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: env.IS_TAG != 'true'
+        with:
+          name: unsigned-windows-x64
+          path: dist/Siple-*-windows-x64.zip
+          if-no-files-found: error
+
+  windows-sign:
+    name: Windows sign + zip
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: windows
+    runs-on: windows-latest
+    environment: release
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: windows-unsigned-stage
+          path: dist
+
+      - name: Require Azure signing secrets
+        shell: bash
+        env:
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+        run: |
+          for v in AZURE_TENANT_ID AZURE_CLIENT_ID AZURE_CLIENT_SECRET; do
+            [ -n "${!v}" ] || { echo "::error::secret $v is not set in the 'release' environment"; exit 1; }
+          done
+
+      # Same Azure Artifact Signing account / certificate profile as sp2p (see docs/RELEASING.md).
+      # The folder holds exactly one staged directory with siple.exe and siple-cli.exe.
+      - name: Sign siple.exe and siple-cli.exe with Azure Artifact Signing
+        uses: Azure/artifact-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82 # v2
+        with:
+          azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          azure-client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
+          endpoint: https://eus.codesigning.azure.net/
+          signing-account-name: Signal24
+          certificate-profile-name: zc-distribution
+          files-folder: ${{ github.workspace }}\dist
+          files-folder-filter: exe
+          files-folder-recurse: true
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+
+      # -RequireSigned fails the release unless both exes are Authenticode-Valid and timestamped.
+      - name: Verify signatures and zip
+        shell: pwsh
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-windows.ps1 -ZipOnly -RequireSigned
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-windows
+          path: dist/Siple-*-windows-x64.zip
+          if-no-files-found: error
+          retention-days: 14 # outlives a pending environment approval
+
+  licenses:
+    name: Third-party notices
+    needs: preflight
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: taiki-e/install-action@ab49d3c64680143e184118bed66a46419fc15519 # v2.90.5
+        with:
+          tool: cargo-about
+      - name: Generate THIRD-PARTY-NOTICES.html
+        run: scripts/gen-licenses.sh
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ env.IS_TAG == 'true' && 'release-notices' || 'third-party-notices' }}
+          path: dist/THIRD-PARTY-NOTICES.html
+          if-no-files-found: error
+
+  release:
+    name: Checksums, attestations, draft release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [linux, macos-sign, windows-sign, licenses]
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: write # create the draft release
+      id-token: write # keyless signing of attestations (Sigstore)
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: release-*
+          merge-multiple: true
+          path: dist
+
+      - name: SHA256SUMS over the final files
+        run: |
+          cd dist
+          ls -l
+          find . -maxdepth 1 -type f -printf '%f\n' | LC_ALL=C sort | xargs -d '\n' sha256sum > "$RUNNER_TEMP/SHA256SUMS"
+          mv "$RUNNER_TEMP/SHA256SUMS" SHA256SUMS
+          cat SHA256SUMS
+
+      # Keyless: the attestation binds each file's digest to this workflow run and tag.
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            dist/*.tar.gz
+            dist/*.zip
+            dist/*.dmg
+            dist/THIRD-PARTY-NOTICES.html
+            dist/SHA256SUMS
+
+      - name: Create draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          flags=()
+          case "$GITHUB_REF_NAME" in *-*) flags+=(--prerelease) ;; esac
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --draft --verify-tag --generate-notes \
+            --title "Siple ${GITHUB_REF_NAME#v}" \
+            "${flags[@]}"

@@ -1,0 +1,26 @@
+[package]
+name = "siple-config"
+description = "Siple configuration schema, parsing, validation and paths"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+dirs = "7"
+# OS credential store for `password_store = "keyring"`. keyring 4 selects the native store per OS:
+# macOS Keychain, Windows Credential Manager, Linux Secret Service over pure-Rust zbus (no libdbus).
+keyring = "4"
+keyring-core = "1"
+serde = { version = "1", features = ["derive"] }
+subtle = "2"
+thiserror = "2"
+toml = "1"
+toml_edit = { version = "0.25", default-features = false, features = ["parse", "display"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", default-features = false, features = ["env-filter", "std"] }
+
+[dev-dependencies]
+serde_json = "1"
+tempfile = "3"

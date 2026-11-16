@@ -1,0 +1,4 @@
+# kittest scratch output; only <name>.png is the reference image.
+*.diff.png
+*.new.png
+*.old.png

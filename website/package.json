@@ -1,0 +1,21 @@
+{
+  "name": "siple-docs",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "screenshots": "node scripts/copy-screenshots.mjs",
+    "predev": "npm run screenshots",
+    "dev": "vitepress dev",
+    "prebuild": "npm run screenshots",
+    "build": "vitepress build",
+    "prepreview": "npm run screenshots",
+    "preview": "vitepress preview"
+  },
+  "devDependencies": {
+    "vitepress": "1.6.4"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}

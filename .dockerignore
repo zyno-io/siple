@@ -1,0 +1,21 @@
+# Keep build output, local credentials, and runtime data out of every image.
+**/target
+dist
+.git
+**/.env
+**/.env.*
+!**/.env.example
+!**/.env.*.example
+tests/interop/pbx.env
+tests/interop/fs-conf.tar.gz
+config.toml
+state.toml
+**/runtime.json
+**/siple.lock
+**/control.sock
+**/logs
+**/*.log
+**/*.log.*
+**/*.pcap
+**/*.pcapng
+**/.DS_Store

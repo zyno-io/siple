@@ -1,0 +1,61 @@
+name: Bug report
+description: Something does not work as documented
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. **Remove passwords, `Authorization` / `Proxy-Authorization` headers, the control token and SRTP `a=crypto` keys from everything you paste.** Security problems: use the private advisory link on the issue chooser instead.
+  - type: input
+    id: version
+    attributes:
+      label: Siple version
+      description: Output of `siple-cli --version`, or the release you downloaded.
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options: [macOS (Apple silicon), macOS (Intel), Windows 10/11, Linux (x86_64), Linux (other), Other]
+    validations:
+      required: true
+  - type: input
+    id: pbx
+    attributes:
+      label: PBX / provider
+      description: For example Asterisk 20, FreeSWITCH 1.10, 3CX, a hosted provider.
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: "1. Register account ...\n2. Call ...\n3. ..."
+    validations:
+      required: true
+  - type: textarea
+    id: config
+    attributes:
+      label: Relevant config
+      description: The `[[account]]` and other sections involved, with passwords removed.
+      render: toml
+  - type: textarea
+    id: trace
+    attributes:
+      label: SIP trace (credentials redacted)
+      description: |
+        The wire trace of the failing call or registration: `siple-cli ctl call.sip_trace '{"call_id":"..."}'`
+        or the files under `logs/sip/<account>/`. Enable `sip_trace = true` on the account first.
+      render: text
+  - type: textarea
+    id: logs
+    attributes:
+      label: Application log excerpt
+      render: text

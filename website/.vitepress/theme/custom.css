@@ -1,0 +1,5 @@
+/* Large included reference pages: keep wide tables readable. */
+.vp-doc table {
+  display: block;
+  overflow-x: auto;
+}

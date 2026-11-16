@@ -1,0 +1,68 @@
+[package]
+name = "siple-core"
+description = "Siple engine: config, SIP, media engine, audio, control API"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+siple-config = { path = "../siple-config" }
+siple-sip = { path = "../siple-sip" }
+chrono = { version = "0.4", default-features = false, features = ["clock", "serde", "std"] }
+dirs = "7"
+getrandom = "0.4"
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["float_roundtrip"] }
+sha2 = "0.10"
+subtle = "2"
+thiserror = "2"
+toml = "1"
+toml_edit = { version = "0.25", default-features = false, features = ["parse", "display"] }
+tracing = "0.1"
+tracing-appender = "0.2"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "registry", "fmt", "std"] }
+
+arc-swap = "1"
+cpal = "0.18"
+ringbuf = "0.5"
+rubato = "5"
+
+siple-media = { path = "../siple-media" }
+anyhow = "1"
+base64 = "0.22"
+tempfile = "3"
+crossbeam-channel = "0.5"
+hound = "3.5"
+socket2 = { version = "0.6", features = ["all"] }
+tokio = { version = "1", features = ["rt", "net", "sync", "time", "macros", "io-util", "process"] }
+async-trait = "0.1"
+tokio-util = "0.7"
+notify = "8"
+notify-debouncer-full = "0.6"
+
+# Real-time promotion of the media thread; Linux uses libc SCHED_RR instead
+# (the crate's default dbus feature would hard-link libdbus-1).
+[target.'cfg(any(target_os = "macos", windows))'.dependencies]
+audio_thread_priority = "0.34"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+alsa = "0.11"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Networking_WinSock", "Win32_Foundation", "Win32_Security", "Win32_Security_Authorization", "Win32_System_Threading"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+block2 = "0.6"
+objc2 = "0.6"
+objc2-av-foundation = { version = "0.3", features = ["AVCaptureDevice", "AVMediaFormat", "block2"] }
+objc2-foundation = "0.3"
+
+[dev-dependencies]
+rsipstack = { path = "../../vendor/rsipstack", default-features = false, features = ["platform-tokio", "rustls", "srv_lookup"] }
+keyring-core = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "test-util"] }

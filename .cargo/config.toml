@@ -1,0 +1,4 @@
+# Windows: link the C runtime statically so siple.exe / siple-cli.exe need no VC++
+# redistributable (verify with `dumpbin /dependents`). Only applies to this target.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
