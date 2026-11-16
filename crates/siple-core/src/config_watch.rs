@@ -147,6 +147,25 @@ mod tests {
         false
     }
 
+    /// Waits until no event arrived for `quiet` (at most 15 s) and returns the count. Late,
+    /// coalesced FSEvents deliveries for an earlier step must not be taken for a new event.
+    fn settle(count: &AtomicUsize, quiet: Duration) -> usize {
+        let end = Instant::now() + Duration::from_secs(15);
+        let mut last = count.load(Ordering::SeqCst);
+        let mut since = Instant::now();
+        while Instant::now() < end {
+            std::thread::sleep(Duration::from_millis(50));
+            let now = count.load(Ordering::SeqCst);
+            if now != last {
+                last = now;
+                since = Instant::now();
+            } else if since.elapsed() >= quiet {
+                break;
+            }
+        }
+        last
+    }
+
     #[test]
     fn hash_differs_by_content() {
         assert_eq!(content_hash(b"a"), content_hash(b"a"));
@@ -226,8 +245,7 @@ mod tests {
         assert!(wait_for(&count, n + 1, 10), "no event for a replaced link");
 
         // Unrelated files in either directory stay quiet.
-        let n = count.load(Ordering::SeqCst);
-        std::thread::sleep(Duration::from_millis(600));
+        let n = settle(&count, Duration::from_secs(1));
         std::fs::write(real_dir.join("other.toml"), "y").unwrap();
         std::fs::write(link_dir.join("other.toml"), "y").unwrap();
         std::thread::sleep(Duration::from_millis(800));
