@@ -339,7 +339,10 @@ jobs:
           cat SHA256SUMS
 
       # Keyless: the attestation binds each file's digest to this workflow run and tag.
+      # GitHub stores attestations for public repos on every plan, for private ones only on paid
+      # plans; while the repo is private (pre-launch) the step is skipped.
       - name: Attest build provenance
+        if: ${{ !github.event.repository.private }}
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: |

@@ -1,7 +1,8 @@
 # Releasing
 
 A release is a `v*` tag. `.github/workflows/release.yml` builds Linux, macOS and Windows, signs (and on macOS
-notarizes), writes `SHA256SUMS`, attaches build-provenance attestations, and creates a **draft** GitHub Release.
+notarizes), writes `SHA256SUMS`, attaches build-provenance attestations (public repo only: GitHub stores them for
+private repos only on paid plans, so they are skipped before launch), and creates a **draft** GitHub Release.
 You review the draft and publish it by hand.
 
 ## Cut a release
