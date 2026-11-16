@@ -1,6 +1,6 @@
 # Releasing
 
-A release is a `v*` tag. `.github/workflows/release.yml` builds Linux, macOS and Windows, signs (and on macOS
+A release is a `v*` tag. `.github/workflows/release.yml` builds Linux, macOS and Windows (x64 and arm64), signs (and on macOS
 notarizes), writes `SHA256SUMS`, attaches build-provenance attestations (public repo only: GitHub stores them for
 private repos only on paid plans, so they are skipped before launch), and creates a **draft** GitHub Release.
 You review the draft and publish it by hand.
@@ -13,7 +13,8 @@ You review the draft and publish it by hand.
    For a release candidate tag `v<version>-rc.<n>` (e.g. `v0.2.0-rc.1`): the draft is marked as a pre-release
    and the packages keep the numeric version (macOS and Windows version fields must be numeric).
 3. The signing jobs and the `release` job wait for approval of the `release` environment (if reviewers are set).
-4. Check the draft release (3 packages, `THIRD-PARTY-NOTICES.html`, `SHA256SUMS`), edit the generated notes, publish.
+4. Check the draft release (4 packages: Linux, macOS, Windows x64 and arm64; `THIRD-PARTY-NOTICES.html`, `SHA256SUMS`), edit
+   the generated notes, publish.
 
 `workflow_dispatch` (Actions tab, "Release") builds **unsigned** dev packages as `unsigned-*` run artifacts. It uses
 no secrets, signs nothing and publishes nothing. A tag without all secrets below fails (it never ships unsigned).
@@ -23,9 +24,9 @@ no secrets, signs nothing and publishes nothing. A tag without all secrets below
 | Job | Runner | Secrets | What |
 | --- | --- | --- | --- |
 | `preflight` | ubuntu | no | tag == `v` + workspace version |
-| `linux`, `macos`, `windows`, `licenses` | per OS | no | cargo build + package. On tags the macOS/Windows jobs stop before signing |
+| `linux`, `macos`, `windows`, `licenses` | per OS | no | cargo build + package. On tags the macOS/Windows jobs stop before signing. `windows` is an x64/arm64 matrix; arm64 is cross-compiled on the x64 runner |
 | `macos-sign` | macos | `release` env | rcodesign: sign `.app` -> notarize -> staple -> zip + dmg -> sign, notarize, staple dmg |
-| `windows-sign` | windows | `release` env | Azure Artifact Signing of `siple.exe` + `siple-cli.exe`, verify, then zip |
+| `windows-sign` | windows | `release` env | per arch: Azure Artifact Signing of `siple.exe` + `siple-cli.exe`, verify, then zip |
 | `release` | ubuntu | `release` env | `SHA256SUMS`, attestations, `gh release create --draft` |
 
 Secrets are only in jobs that never run `cargo` (a malicious build script cannot read them). macOS is signed on a

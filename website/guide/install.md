@@ -1,6 +1,6 @@
 # Install
 
-Siple runs on macOS 12+, Windows 10+ (x64) and Linux x86_64. Packages are attached to
+Siple runs on macOS 12+, Windows 10+ (x64), Windows 11 on ARM and Linux x86_64. Packages are attached to
 [GitHub Releases](https://github.com/zyno-io/siple/releases) once release signing is set up; until a package is
 listed there, [build from source](#build-from-source).
 
@@ -9,7 +9,8 @@ The package scripts produce these artifacts:
 | OS | Artifact | Script |
 |---|---|---|
 | macOS | `Siple.app` (universal), `Siple-<ver>-macos.zip` | `scripts/package-macos.sh` |
-| Windows | `Siple-<ver>-windows-x64.zip` | `scripts/package-windows.ps1` |
+| Windows (x64) | `Siple-<ver>-windows-x64.zip` | `scripts/package-windows.ps1` |
+| Windows (ARM) | `Siple-<ver>-windows-arm64.zip` | `scripts/package-windows.ps1 -Arch arm64` |
 | Linux | `Siple-<ver>-linux-x86_64.tar.gz` | `scripts/package-linux.sh` |
 
 ## macOS
@@ -24,7 +25,8 @@ signature, so an ad-hoc signed build may ask again after each rebuild.
 
 ## Windows
 
-Unzip anywhere and run `siple.exe`. Windows Defender Firewall asks about `siple.exe` on first start: allow it for private
+On ARM devices (Surface Pro X / 11, Snapdragon laptops) use the `arm64` zip; the x64 one also runs there, under
+emulation, but slower. Unzip anywhere and run `siple.exe`. Windows Defender Firewall asks about `siple.exe` on first start: allow it for private
 and public networks, or inbound audio (RTP) is blocked and you hear nothing or the far end hears nothing. An unsigned
 build may show a SmartScreen warning; choose More info, then Run anyway, if you trust the download.
 

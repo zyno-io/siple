@@ -205,17 +205,28 @@ jobs:
           retention-days: 14 # outlives a pending environment approval
 
   windows:
-    name: Windows x64 zip (build)
+    name: Windows ${{ matrix.arch }} zip (build)
     needs: preflight
+    # arm64 is cross-compiled on the x64 runner (MSVC ARM64 tools and LLVM are in the image).
     runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            target: x86_64-pc-windows-msvc
+          - arch: arm64
+            target: aarch64-pc-windows-msvc
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Install Rust
         shell: bash
         run: |
-          rustup toolchain install stable --profile minimal
+          rustup toolchain install stable --profile minimal --target ${{ matrix.target }}
           rustup default stable
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          key: ${{ matrix.target }}
       - uses: taiki-e/install-action@ab49d3c64680143e184118bed66a46419fc15519 # v2.90.5
         with:
           tool: cargo-about
@@ -223,37 +234,41 @@ jobs:
       - name: Package (stage only)
         if: env.IS_TAG == 'true'
         shell: pwsh
-        run: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-windows.ps1 -StageOnly
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-windows.ps1 -Arch ${{ matrix.arch }} -StageOnly
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: env.IS_TAG == 'true'
         with:
-          name: windows-unsigned-stage
-          # Wildcard keeps the Siple-<version>-windows-x64/ directory name inside the artifact.
-          path: dist/Siple-*-windows-x64/**
+          name: windows-unsigned-stage-${{ matrix.arch }}
+          # Wildcard keeps the Siple-<version>-windows-<arch>/ directory name inside the artifact.
+          path: dist/Siple-*-windows-${{ matrix.arch }}/**
           if-no-files-found: error
           retention-days: 14 # outlives a pending environment approval
       - name: Package (dev zip)
         if: env.IS_TAG != 'true'
         shell: pwsh
-        run: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-windows.ps1
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-windows.ps1 -Arch ${{ matrix.arch }}
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: env.IS_TAG != 'true'
         with:
-          name: unsigned-windows-x64
-          path: dist/Siple-*-windows-x64.zip
+          name: unsigned-windows-${{ matrix.arch }}
+          path: dist/Siple-*-windows-${{ matrix.arch }}.zip
           if-no-files-found: error
 
   windows-sign:
-    name: Windows sign + zip
+    name: Windows ${{ matrix.arch }} sign + zip
     if: startsWith(github.ref, 'refs/tags/v')
     needs: windows
     runs-on: windows-latest
     environment: release
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x64, arm64]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: windows-unsigned-stage
+          name: windows-unsigned-stage-${{ matrix.arch }}
           path: dist
 
       - name: Require Azure signing secrets
@@ -288,11 +303,11 @@ jobs:
       # -RequireSigned fails the release unless both exes are Authenticode-Valid and timestamped.
       - name: Verify signatures and zip
         shell: pwsh
-        run: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-windows.ps1 -ZipOnly -RequireSigned
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-windows.ps1 -Arch ${{ matrix.arch }} -ZipOnly -RequireSigned
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: release-windows
-          path: dist/Siple-*-windows-x64.zip
+          name: release-windows-${{ matrix.arch }}
+          path: dist/Siple-*-windows-${{ matrix.arch }}.zip
           if-no-files-found: error
           retention-days: 14 # outlives a pending environment approval
 

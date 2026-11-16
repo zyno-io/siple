@@ -64,7 +64,8 @@ scripts/package-linux.sh            # dist/Siple-<ver>-linux-x86_64.tar.gz (run 
 scripts/package-macos.sh            # dist/Siple.app (universal), dist/Siple-<ver>-macos.zip
 ```
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts\package-windows.ps1   # dist\Siple-<ver>-windows-x64.zip
+powershell -ExecutionPolicy Bypass -File scripts\package-windows.ps1              # dist\Siple-<ver>-windows-x64.zip
+powershell -ExecutionPolicy Bypass -File scripts\package-windows.ps1 -Arch arm64  # dist\Siple-<ver>-windows-arm64.zip
 ```
 
 Set `CODESIGN_IDENTITY` for a stable macOS signature (microphone permission is keyed to it; see

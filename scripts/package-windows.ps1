@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-  Builds the Windows release and zips it: dist\Siple-<version>-windows-x64.zip
+  Builds the Windows release and zips it: dist\Siple-<version>-windows-<arch>.zip  (arch: x64, arm64)
 
 .DESCRIPTION
   Run on the Windows host from a normal PowerShell (Rust MSVC toolchain + Visual Studio with the
@@ -8,34 +8,42 @@
 
       powershell -ExecutionPolicy Bypass -File scripts\package-windows.ps1
 
-  Steps: pick VS's bundled cmake (needed to build libopus statically; an old Strawberry cmake on
+  Steps (both architectures): pick VS's bundled cmake (needed to build libopus statically; an old Strawberry cmake on
   PATH predates VS 2026) -> cargo build --release (CRT linked statically through
   .cargo\config.toml; the manifest + icon are embedded by crates\siple\build.rs) -> check
   `dumpbin /dependents` shows no VC runtime / opus DLLs -> zip siple.exe, siple-cli.exe,
   README and config example.
 
-  NOTE: written without access to a Windows machine at the time; first run may need tweaks.
+  -Arch arm64 cross-compiles for Windows on ARM (aarch64-pc-windows-msvc) from an x64 or ARM64
+  host. It needs the rustup target (rustup target add aarch64-pc-windows-msvc), the MSVC ARM64
+  build tools (VS component "MSVC ... ARM64/ARM64EC build tools") and clang (`ring` compiles its
+  ARM64 assembly with clang: LLVM on PATH, or VS's "C++ Clang tools" component, found below).
 
   Release signing (Azure Artifact Signing) happens between two runs of this script, because the
   zip must contain the signed exes:  -StageOnly  (build + stage, no zip)  ->  sign the exes in the
   stage directory  ->  -ZipOnly -RequireSigned  (verify Authenticode signatures, then zip).
 
+.PARAMETER Arch
+  x64 (default) or arm64.
 .PARAMETER SkipBuild
   Reuse the existing target\release binaries.
 .PARAMETER StageOnly
-  Build and stage dist\Siple-<version>-windows-x64\ but do not zip it.
+  Build and stage dist\Siple-<version>-windows-<arch>\ but do not zip it.
 .PARAMETER ZipOnly
   Skip build and staging; zip the existing stage directory.
 .PARAMETER RequireSigned
   Fail unless siple.exe and siple-cli.exe in the stage directory have a Valid, timestamped
   Authenticode signature (use with -ZipOnly for releases).
 #>
-param([switch]$SkipBuild, [switch]$StageOnly, [switch]$ZipOnly, [switch]$RequireSigned)
+param(
+    [ValidateSet('x64', 'arm64')][string]$Arch = 'x64',
+    [switch]$SkipBuild, [switch]$StageOnly, [switch]$ZipOnly, [switch]$RequireSigned
+)
 
 $ErrorActionPreference = 'Stop'
 $Root = Split-Path -Parent $PSScriptRoot
 Set-Location $Root
-$Target = 'x86_64-pc-windows-msvc'
+$Target = @{ x64 = 'x86_64-pc-windows-msvc'; arm64 = 'aarch64-pc-windows-msvc' }[$Arch]
 
 # --- version -----------------------------------------------------------------------------------
 $cargoToml = Get-Content (Join-Path $Root 'Cargo.toml') -Raw
@@ -45,7 +53,7 @@ if ($cargoToml -notmatch '(?ms)\[workspace\.package\].*?^version\s*=\s*"([^"]+)"
 $Version = $Matches[1]
 Write-Host "==> Siple $Version ($Target)"
 $Dist = Join-Path $Root 'dist'
-$Stage = Join-Path $Dist "Siple-$Version-windows-x64"
+$Stage = Join-Path $Dist "Siple-$Version-windows-$Arch"
 if ($StageOnly -and $ZipOnly) { throw '-StageOnly and -ZipOnly are mutually exclusive' }
 if ($ZipOnly) { $SkipBuild = $true }
 
@@ -70,6 +78,18 @@ if (-not $ZipOnly) {
         }
     } else {
         Write-Host "==> CMAKE (from environment) = $env:CMAKE"
+    }
+
+    # --- clang (arm64 only) -------------------------------------------------------------------------
+    # `ring` builds its aarch64-pc-windows-msvc assembly with clang. Use one on PATH, else LLVM's
+    # default install dir, else the clang that ships with VS ("C++ Clang tools for Windows").
+    if ($Arch -eq 'arm64' -and -not $SkipBuild -and -not (Get-Command clang.exe -ErrorAction SilentlyContinue)) {
+        $llvmDirs = @((Join-Path $env:ProgramFiles 'LLVM\bin'))
+        if ($VsPath) { $llvmDirs += (Join-Path $VsPath 'VC\Tools\Llvm\x64\bin'), (Join-Path $VsPath 'VC\Tools\Llvm\ARM64\bin') }
+        $llvm = $llvmDirs | Where-Object { Test-Path (Join-Path $_ 'clang.exe') } | Select-Object -First 1
+        if (-not $llvm) { throw 'clang.exe not found (needed by ring for arm64): install LLVM or the VS "C++ Clang tools" component' }
+        $env:PATH = "$llvm;$env:PATH"
+        Write-Host "==> clang from $llvm"
     }
 
     # --- build ---------------------------------------------------------------------------------------
@@ -99,7 +119,7 @@ if (-not $ZipOnly) {
     $dumpbin = (Get-Command dumpbin.exe -ErrorAction SilentlyContinue).Source
     if (-not $dumpbin -and $VsPath) {
         $dumpbin = Get-ChildItem (Join-Path $VsPath 'VC\Tools\MSVC') -Recurse -Filter dumpbin.exe -ErrorAction SilentlyContinue |
-            Where-Object { $_.FullName -match 'Hostx64\\x64' } |
+            Where-Object { $_.FullName -match 'Host(x64\\x64|arm64\\arm64)\\' } |
             Sort-Object FullName -Descending | Select-Object -First 1 -ExpandProperty FullName
     }
     if (-not $dumpbin) {
@@ -108,7 +128,13 @@ if (-not $ZipOnly) {
         # Anything here means the CRT / opus is not statically linked.
         $bad = '^(vcruntime|msvcp|vcomp|concrt|ucrtbase|api-ms-win-crt-|opus)'
         $failed = $false
+        $machine = @{ x64 = '8664 machine (x64)'; arm64 = 'AA64 machine (ARM64)' }[$Arch]
         foreach ($exe in @($Gui, $Cli)) {
+            $headers = (& $dumpbin /headers $exe) -join "`n"
+            if ($headers -notmatch [regex]::Escape($machine)) {
+                Write-Error ("{0} is not a {1} binary (expected '{2}')" -f (Split-Path -Leaf $exe), $Arch, $machine) -ErrorAction Continue
+                $failed = $true
+            }
             $deps = & $dumpbin /dependents $exe |
                 ForEach-Object { $_.Trim() } |
                 Where-Object { $_ -match '\.dll$' }
@@ -119,8 +145,8 @@ if (-not $ZipOnly) {
                 $failed = $true
             }
         }
-        if ($failed) { throw 'dependency check failed (is +crt-static active? see .cargo\config.toml)' }
-        Write-Host '==> dependency check OK (system DLLs only)'
+        if ($failed) { throw 'binary check failed (wrong architecture, or +crt-static not active: see .cargo\config.toml)' }
+        Write-Host "==> binary check OK ($Arch, system DLLs only)"
     }
 
     # --- stage + zip -------------------------------------------------------------------------------------
@@ -168,7 +194,7 @@ if ($RequireSigned) {
     }
 }
 
-$Zip = Join-Path $Dist "Siple-$Version-windows-x64.zip"
+$Zip = Join-Path $Dist "Siple-$Version-windows-$Arch.zip"
 if (Test-Path $Zip) { Remove-Item $Zip -Force }
 Compress-Archive -Path (Join-Path $Stage '*') -DestinationPath $Zip
 Write-Host "==> $Zip"
