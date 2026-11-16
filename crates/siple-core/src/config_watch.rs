@@ -147,6 +147,7 @@ mod tests {
         false
     }
 
+    #[cfg(unix)] // only the symlink test needs it
     /// Waits until no event arrived for `quiet` (at most 15 s) and returns the count. Late,
     /// coalesced FSEvents deliveries for an earlier step must not be taken for a new event.
     fn settle(count: &AtomicUsize, quiet: Duration) -> usize {
