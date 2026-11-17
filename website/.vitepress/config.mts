@@ -135,6 +135,7 @@ export default defineConfig({
           text: 'AI agents',
           items: [
             { text: 'Overview', link: '/agents/' },
+            { text: 'Agent skill (CLI)', link: '/agents/skill' },
             { text: 'Quick start with MCP', link: '/agents/mcp-quickstart' },
             { text: 'JSON-RPC basics', link: '/agents/json-rpc' },
             { text: 'API reference', link: '/agents/api-reference' }

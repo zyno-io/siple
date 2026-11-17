@@ -3,8 +3,8 @@
 #   workflow_dispatch   unsigned dev packages, uploaded to the run as `unsigned-*` artifacts. No secrets.
 #   push of a `v*` tag  build -> sign (+ notarize on macOS) -> checksums + provenance attestations ->
 #                       DRAFT GitHub Release. Signing jobs and the publish job use the `release`
-#                       environment, which holds the secrets (restrict it to `v*` tags and add required
-#                       reviewers in the repository settings). See docs/RELEASING.md.
+#                       environment, which holds the secrets and is restricted to `v*` tags (no
+#                       required reviewers: releases are automatic on tag). See docs/RELEASING.md.
 #
 # Builds never see secrets: unsigned artifacts go to separate signing jobs.
 name: Release

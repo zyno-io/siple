@@ -111,21 +111,18 @@ In practice:
 - Never put real credentials, hostnames or SIP traces with passwords in issues, tests or fixtures.
   Use `example.test` names and RFC 5737 addresses (`192.0.2.0/24`).
 
-### Developer Certificate of Origin (sign-off)
+### Contributor License Agreement
 
-Siple uses the [DCO](https://developercertificate.org/), not a CLA. Every commit must carry a
-`Signed-off-by` line with your real name and email, certifying you have the right to submit it
-under the project's licence, FSL-1.1-ALv2 (inbound = outbound: your contribution is licensed to the project and
-everyone else under the same terms as the rest of the code, and converts to Apache-2.0 on the same schedule):
+Before your first pull request can be merged, sign the [Siple Contributor License Agreement](CLA.md)
+(CLA). You keep the copyright in your work; the CLA gives Signal24 LLC dba Zyno Consulting a
+licence to use your contribution, including under other licences than FSL-1.1-ALv2 (for example a
+commercial licence, or a future change of the project licence).
 
-```sh
-git commit -s -m "fix: handle 481 on re-INVITE"
-# or add it to existing commits:
-git rebase --signoff origin/main
-```
+Signing takes one comment: the CLA bot replies on your first pull request with the exact sentence to
+post. It records your signature once for all your future contributions. If you contribute on behalf
+of an employer that owns your work, contact oss@zyno.io first.
 
-This is separate from cryptographic commit signing, which is optional. A PR with unsigned-off commits
-will be asked to fix them before merge.
+Cryptographic commit signing is welcome but optional, and `Signed-off-by` lines are not required.
 
 ## Reporting bugs
 

@@ -53,4 +53,5 @@ fonts; there is no OpenSSL and no copyleft dependency.
 
 ## Contributions
 
-Contributing follows the [Contributing guide](/project/contributing) (DCO sign-off).
+Contributions require the [Contributor License Agreement](https://github.com/zyno-io/siple/blob/main/CLA.md) (see the
+[Contributing guide](/project/contributing)).

@@ -12,7 +12,8 @@ You review the draft and publish it by hand.
    `git tag -s v0.2.0 -m "Siple 0.2.0" && git push origin v0.2.0`.
    For a release candidate tag `v<version>-rc.<n>` (e.g. `v0.2.0-rc.1`): the draft is marked as a pre-release
    and the packages keep the numeric version (macOS and Windows version fields must be numeric).
-3. The signing jobs and the `release` job wait for approval of the `release` environment (if reviewers are set).
+3. Nothing to approve: the `release` environment only limits its secrets to `v*` tags (no required reviewers, by the
+   owner's choice), so a pushed tag signs and drafts the release automatically.
 4. Check the draft release (4 packages: Linux, macOS, Windows x64 and arm64; `THIRD-PARTY-NOTICES.html`, `SHA256SUMS`), edit
    the generated notes, publish.
 
@@ -33,8 +34,13 @@ Secrets are only in jobs that never run `cargo` (a malicious build script cannot
 macOS runner because the bundle is built there, `rcodesign` runs natively, and `hdiutil` (dmg) and `xcrun stapler` /
 `spctl` (verification) need macOS.
 
-Repository settings (do once): create the environment `release` with deployment branches/tags limited to `v*` and
-required reviewers; put the secrets below in that **environment**, not in repository secrets.
+Repository settings (done): the environment `release` with deployment tags limited to `v*` and no required reviewers
+(releases are automatic on tag); the secrets below live in that **environment**, not in repository secrets.
+
+The CLA workflow (`.github/workflows/cla.yml`) stores signatures in `signatures/cla.json` on the branch
+`cla-signatures`. That branch must exist (created 2026-11-17 as an orphan branch) and must stay outside any branch
+protection or ruleset, or signatures cannot be recorded. Before merging an outside pull request, check its author
+is listed in that file.
 
 ## Secrets (environment `release`)
 

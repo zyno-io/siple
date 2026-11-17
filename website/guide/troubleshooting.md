@@ -44,7 +44,9 @@ rule for UDP 16384-32767 (`[media] rtp_port_range`). Behind NAT consider `symmet
 **TLS to a self-signed PBX.** Prefer pinning (`tls_fingerprint`) or `tls_ca_file` over `tls_verify = false`. Siple speaks
 TLS 1.2 and 1.3 with ECDHE suites; older-only servers are not supported.
 
-**FreeSWITCH and SRTP.** Stock FreeSWITCH forces SRTP (`rtp_secure_media=true`), which breaks calls to plain endpoints. Use
+**FreeSWITCH and SRTP.** FreeSWITCH accepts SRTP when offered. Its stock dialplan makes SRTP mandatory
+(`rtp_secure_media=true`) on the caller's leg only when the caller already offers SDES crypto; the bridged leg is not
+affected. To keep it optional, change those dialplan actions to
 `rtp_secure_media=optional:AES_CM_128_HMAC_SHA1_80:AES_CM_128_HMAC_SHA1_32`. With `srtp = "optional"`, a 488, 415 or 606
 rejection is retried once with plain RTP.
 

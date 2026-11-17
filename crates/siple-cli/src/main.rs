@@ -41,7 +41,13 @@ enum Command {
     Methods(MethodsArgs),
     /// Print the commented example config (the one written on first run).
     ConfigExample,
+    /// Print the agent skill (SKILL.md) for this version: how an LLM agent drives Siple with
+    /// `siple-cli`. Save it as `<skills dir>/siple/SKILL.md`.
+    Skill,
 }
+
+/// The agent skill, kept in the repository at `skills/siple/SKILL.md`.
+const SKILL_MD: &str = include_str!("../../../skills/siple/SKILL.md");
 
 #[derive(Args)]
 struct MethodsArgs {
@@ -167,6 +173,10 @@ async fn main() -> Result<ExitCode> {
         }
         Command::ConfigExample => {
             print!("{}", config::EXAMPLE_CONFIG);
+            Ok(ExitCode::SUCCESS)
+        }
+        Command::Skill => {
+            print!("{SKILL_MD}");
             Ok(ExitCode::SUCCESS)
         }
         Command::Mcp(args) => {
@@ -805,6 +815,41 @@ mod tests {
         assert!(Cli::try_parse_from(["siple-cli", "methods", "--markdown"]).is_ok());
         assert!(Cli::try_parse_from(["siple-cli", "methods", "--markdown", "--json"]).is_err());
         assert!(Cli::try_parse_from(["siple-cli", "config-example"]).is_ok());
+        assert!(Cli::try_parse_from(["siple-cli", "skill"]).is_ok());
+    }
+
+    #[test]
+    fn skill_has_frontmatter_and_names_only_real_methods() {
+        let skill = SKILL_MD.replace("\r\n", "\n");
+        assert!(skill.starts_with("---\nname: siple\ndescription: "));
+        // Every dotted `group.method` the skill mentions, for any group the catalog has, must
+        // exist. File names such as `config.toml` are not methods.
+        let catalog = siple_core::backend::method_catalog();
+        let known: std::collections::HashSet<&str> =
+            catalog.iter().map(|m| m.name.as_str()).collect();
+        let groups: std::collections::HashSet<&str> = catalog
+            .iter()
+            .filter_map(|m| m.name.split_once('.').map(|(g, _)| g))
+            .collect();
+        let mut checked = 0;
+        for raw in skill.split(|c: char| !(c.is_ascii_alphanumeric() || c == '.' || c == '_')) {
+            let word = raw.trim_end_matches('.');
+            let Some((group, rest)) = word.split_once('.') else {
+                continue;
+            };
+            if !groups.contains(group) || rest.is_empty() || rest.contains('.') || rest == "toml" {
+                continue;
+            }
+            assert!(
+                known.contains(word),
+                "SKILL.md mentions unknown method `{word}`"
+            );
+            checked += 1;
+        }
+        assert!(
+            checked > 10,
+            "only {checked} method names found in SKILL.md"
+        );
     }
 
     #[test]

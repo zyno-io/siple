@@ -19,7 +19,7 @@ siple-cli    ─┴─►  siple-core  ─►  siple-sip  ─►  vendor/rsipsta
 | `siple-sip` | SIP on top of rsipstack: a `SipStack` registry of per-account actors, registration state machine, calls (inbound/outbound, early media, hold, session timers, PRACK, transfers and transfer sessions, line policy), BLF/MWI/generic subscriptions, directed pickup, DNS (SRV), wire tap, and the network monitor (`net/`). Media is reached through the `MediaProvider` trait, so the crate has no audio dependency. |
 | `siple-core` | The engine, `App`. Owns the stack, media engine, audio devices, event log, config watcher and actor, control server, logging, SIP trace writer, agent audio. Implements the control API (`AppBackend`). |
 | `siple` | GUI binary (eframe/egui on wgpu). Also runs `--headless`. Reads engine state through a polled `Snapshot` and acts through thin wrappers (`actions.rs`). |
-| `siple-cli` | Console binary: `run --headless`, `ctl`, `events`, `stream`, `mcp`, `methods`, `config-example`. The MCP bridge is hand-rolled (stdio JSON-RPC) and proxies to a running instance. |
+| `siple-cli` | Console binary: `run --headless`, `ctl`, `events`, `stream`, `mcp`, `methods`, `config-example`, `skill` (prints the agent skill). The MCP bridge is hand-rolled (stdio JSON-RPC) and proxies to a running instance. |
 | `vendor/rsipstack` | Upstream rsipstack 0.7.3 with Siple patches (per-connection TLS verifier, wire tap, `use_sips_for_tls`, SNI override, ...). Every change is marked `// siple:` and listed in `vendor/rsipstack/SIPLE_PATCHES.md`. Excluded from the workspace: never run `cargo fmt --all`. |
 
 ## Process, threads and actors

@@ -211,10 +211,13 @@ no audio devices: use a desktop session, or `source`/`sink` tone/null.
 
 ### FreeSWITCH and SRTP
 
-FreeSWITCH's stock config sets `rtp_secure_media=true`, which **forces** SRTP on bridged legs and breaks calls to plain
-endpoints. For interop use `rtp_secure_media=optional:AES_CM_128_HMAC_SHA1_80:AES_CM_128_HMAC_SHA1_32`. With `srtp = "optional"` Siple offers RTP/AVP plus `a=crypto` (OSRTP-style); a PBX that answers `RTP/AVP` gets
-plain RTP, and if it rejects the offer outright with 488/415/606 the call is **retried automatically once with plain RTP**
-(`srtp_fallback: true` in the call details). Use `srtp = "mandatory"` to test that a PBX really negotiates SRTP;
+Without `rtp_secure_media`, FreeSWITCH accepts SRTP when it is offered. FreeSWITCH's stock `dialplan/default.xml` sets
+`rtp_secure_media=true` (meaning mandatory) on the caller's leg when the caller's offer carries SDES crypto; it does not
+pass this to the bridged leg (the `export` line is commented out). To keep SRTP optional on that leg too, change those
+actions to `rtp_secure_media=optional:AES_CM_128_HMAC_SHA1_80:AES_CM_128_HMAC_SHA1_32`. With `srtp = "optional"` Siple
+offers RTP/AVP plus `a=crypto` (OSRTP-style); a PBX that answers `RTP/AVP` gets plain RTP, and if it rejects the offer
+outright with 488/415/606 the call is **retried automatically once with plain RTP** (`srtp_fallback: true` in the call
+details). Use `srtp = "mandatory"` to test that a PBX really negotiates SRTP;
 `call.get` shows the negotiated suite.
 
 ### Registration or calls fail
@@ -254,7 +257,7 @@ crates/siple-media    pure media: RTP/RTCP, SRTP, codecs, DTMF, tones, SDP offer
 crates/siple-sip      SIP stack on rsipstack: accounts, registration, calls, transfers, subscriptions, network monitor
 crates/siple-core     engine: audio devices, media thread, logging, event log, control server, reconfig
 crates/siple          GUI binary (egui/wgpu); also `--headless`
-crates/siple-cli      console binary: run --headless, ctl, events, mcp, methods, config-example
+crates/siple-cli      console binary: run --headless, ctl, events, mcp, methods, config-example, skill
 vendor/rsipstack      vendored rsipstack 0.7.3 with Siple patches (see its SIPLE_PATCHES.md)
 docs/                 ARCHITECTURE.md, CONFIG.md, API.md (generated from API-intro.md + the code)
 packaging/, scripts/  icons, Info.plist, entitlements, manifest; package-*.sh, gen-api-docs.sh, gen-licenses.sh
@@ -263,7 +266,7 @@ deny.toml, about.toml dependency licence policy and licence bundle config
 
 ## Contributing and security
 
-Pull requests are welcome: read [CONTRIBUTING.md](CONTRIBUTING.md) (DCO sign-off, API parity rule) and the
+Pull requests are welcome: read [CONTRIBUTING.md](CONTRIBUTING.md) (CLA, API parity rule) and the
 [Code of Conduct](CODE_OF_CONDUCT.md). Report vulnerabilities privately as described in [SECURITY.md](SECURITY.md).
 
 ## License

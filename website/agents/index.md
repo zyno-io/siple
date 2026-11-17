@@ -10,12 +10,16 @@ and SSH sessions).
 
 </div>
 
-## Three layers
+## Layers
 
 **Control API.** Newline-delimited JSON-RPC 2.0 over a local Unix socket (macOS, Linux) or named pipe (Windows), with an
 optional loopback TCP listener that always requires a token. It exposes every state the GUI shows and every action: accounts,
 calls, transfers, BLF, config edits, events. From a shell: `siple-cli ctl status`, `siple-cli ctl call.dial '{...}'`,
 `siple-cli events` for a live stream.
+
+**Agent skill.** A short `SKILL.md` (print it with `siple-cli skill`) teaches an agent to drive Siple with one
+`siple-cli ctl` command per action and to look methods up with `siple-cli methods`. No extra process runs.
+[Install it](/agents/skill).
 
 **MCP server.** `siple-cli mcp` is a stdio MCP server that proxies to a running instance. There is one tool per API method,
 generated from the same catalog as the reference, so the tool list and [the API reference](/agents/api-reference) cannot
@@ -43,6 +47,7 @@ audio content block, never as base64 text.
 
 ## Where next
 
-1. [Quick start with MCP](/agents/mcp-quickstart): register `siple-cli mcp` with Claude Code or Claude Desktop.
-2. [JSON-RPC basics](/agents/json-rpc): connect, authenticate, wait without races.
-3. [API reference](/agents/api-reference): every method, event and recipe.
+1. [Agent skill](/agents/skill): give an agent Siple through `siple-cli`, with no helper process.
+2. [Quick start with MCP](/agents/mcp-quickstart): register `siple-cli mcp` with Claude Code or Claude Desktop.
+3. [JSON-RPC basics](/agents/json-rpc): connect, authenticate, wait without races.
+4. [API reference](/agents/api-reference): every method, event and recipe.

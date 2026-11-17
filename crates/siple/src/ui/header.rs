@@ -41,8 +41,9 @@ pub(super) fn show(ui: &mut egui::Ui, cx: &Cx, st: &mut UiState, out: &mut Vec<U
             ui.push_id(&a.id, |ui| account_chip(ui, cx, a, compact, out));
         }
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            settings_button(ui, cx, st);
+            // Right to left: the extensions chevron sits at the far right, above the panel it toggles.
             ext_toggle(ui, cx, st);
+            settings_button(ui, cx, st);
             voicemail(ui, cx);
         });
     });

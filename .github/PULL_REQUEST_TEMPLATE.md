@@ -4,7 +4,7 @@
 
 ## Checklist
 
-- [ ] Every commit is signed off (`git commit -s`, see CONTRIBUTING.md)
+- [ ] I have signed the [Siple CLA](../CLA.md) (the CLA bot asks on your first pull request)
 - [ ] `cargo fmt -p siple-media -p siple-config -p siple-core -p siple-sip -p siple -p siple-cli` (not `--all`)
 - [ ] `cargo clippy --workspace --all-targets -- -D warnings`
 - [ ] `cargo test --workspace` (add `-- --skip visual_tests` off macOS)
