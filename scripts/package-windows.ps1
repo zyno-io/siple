@@ -196,6 +196,29 @@ if ($RequireSigned) {
 
 $Zip = Join-Path $Dist "Siple-$Version-windows-$Arch.zip"
 if (Test-Path $Zip) { Remove-Item $Zip -Force }
-Compress-Archive -Path (Join-Path $Stage '*') -DestinationPath $Zip
+# Not Compress-Archive: under Windows PowerShell 5.1 it writes `\` into entry names (`docs\API.md`),
+# which the zip spec forbids and unzip on macOS/Linux flattens. Name every entry with `/` ourselves.
+Add-Type -AssemblyName System.IO.Compression, System.IO.Compression.FileSystem
+$stageFull = (Resolve-Path $Stage).Path.TrimEnd('\') + '\'
+$stream = [System.IO.File]::Open($Zip, [System.IO.FileMode]::CreateNew)
+try {
+    $archive = New-Object System.IO.Compression.ZipArchive($stream, [System.IO.Compression.ZipArchiveMode]::Create)
+    try {
+        foreach ($f in Get-ChildItem -LiteralPath $Stage -Recurse -File | Sort-Object FullName) {
+            $entry = $f.FullName.Substring($stageFull.Length).Replace('\', '/')
+            [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
+                $archive, $f.FullName, $entry, [System.IO.Compression.CompressionLevel]::Optimal) | Out-Null
+        }
+    } finally { $archive.Dispose() }
+} finally { $stream.Dispose() }
+# Check the result: portable separators, and every staged file present.
+$check = [System.IO.Compression.ZipFile]::OpenRead($Zip)
+try {
+    $names = @($check.Entries | ForEach-Object { $_.FullName })
+} finally { $check.Dispose() }
+$bad = @($names | Where-Object { $_.Contains('\') })
+if ($bad.Count) { throw "zip entries with backslashes: $($bad -join ', ')" }
+$want = @(Get-ChildItem -LiteralPath $Stage -Recurse -File).Count
+if ($names.Count -ne $want) { throw "zip has $($names.Count) entries, staged $want files" }
 Write-Host "==> $Zip"
 Get-FileHash $Zip -Algorithm SHA256 | ForEach-Object { Write-Host ("    sha256 " + $_.Hash) }
