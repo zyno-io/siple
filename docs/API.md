@@ -1282,7 +1282,7 @@ Params: none.
 
 ### `config.edit`
 
-Changes config.toml with typed edits, then reloads it (the same path as an external edit: hot options apply at once, account changes re-register or rebuild as needed). Comments, key order and layout of the file are preserved; only the named keys change. All edits apply together or none do. Params {base_hash?, edits[]}: with `base_hash` (the `hash` of `config.view`) the call fails with invalid_state, data.reason `conflict` and data.current_hash when the file changed since it was read. Result {applied, hash, report, event_seq}: `hash` is the new base_hash, `report` the reload report {applied, changed, summary, errors}. Errors: invalid_params with data.reason `invalid` and data.errors [{path, message}] when an edit is wrong or the edited file would not validate (nothing is written); invalid_state with data.reason `file_invalid` when the file on disk does not parse (edits are refused until it is fixed; a file that parses but fails validation can still be edited, as long as the edited result validates, so an edit can repair it, e.g. disable the bad account). A read-only file is refused with internal. An absent key whose new value equals the default is not written. Edit objects, each with an `op`: {op:set_account, id, field, value} | {op:reset_account, id, field} (removes the key) | {op:add_account, draft:{id, fields:{field: value}}, replace_example?:bool} (`replace_example` replaces the shipped, untouched `example` account) | {op:remove_account, id} | {op:rename_account, from, to} | {op:set_blf, account, entries:[{uri, label, group?, pickup?, pickup_prefix?, pickup_target?}]} (replaces the list; entries matched by uri keep their comments; an empty optional key, or pickup "" for inherit, is removed from the file) | {op:set_section, section, key, value} | {op:reset_section, section, key}. Account fields: enabled, profile, display_name, username, auth_username, password, password_store (file|keyring: with keyring the password lives in the system credential store and `password` must be empty; switching moves the existing password along), domain, registrar, outbound_proxy, transport (udp|tcp|tls|auto: SRV _sips._tcp &gt; _sip._tcp &gt; _sip._udp, else UDP 5060), local_port, tls_verify, tls_fingerprint, srtp (off|optional|mandatory), dnd, auto_answer, answer_delay_ms, allow_intercom, auto_hold, mwi (subscribe|unsolicited|off), sip_trace, pickup (off|prefix|replaces), pickup_prefix, pickup_replaces_target (caller|monitored). Sections: calls, ui (also `shortcuts.<action>`), network, logging, audio, general (only user_agent and log_level; log_dir, log_retention_days and reconfig_force are file-only); `config.view` lists their keys under `editable`. Values are plain booleans, integers or strings, checked per field; unknown sections and keys are rejected. Everything else (extra_headers, [media], [speech], [control], ...) stays file-only.
+Changes config.toml with typed edits, then reloads it (the same path as an external edit: hot options apply at once, account changes re-register or rebuild as needed). Comments, key order and layout of the file are preserved; only the named keys change. All edits apply together or none do. Params {base_hash?, edits[]}: with `base_hash` (the `hash` of `config.view`) the call fails with invalid_state, data.reason `conflict` and data.current_hash when the file changed since it was read. Result {applied, hash, report, event_seq}: `hash` is the new base_hash, `report` the reload report {applied, changed, summary, errors}. Errors: invalid_params with data.reason `invalid` and data.errors [{path, message}] when an edit is wrong or the edited file would not validate (nothing is written); invalid_state with data.reason `file_invalid` when the file on disk does not parse (edits are refused until it is fixed; a file that parses but fails validation can still be edited, as long as the edited result validates, so an edit can repair it, e.g. disable the bad account). A read-only file is refused with internal. An absent key whose new value equals the default is not written. Edit objects, each with an `op`: {op:set_account, id, field, value} | {op:reset_account, id, field} (removes the key) | {op:add_account, draft:{id, fields:{field: value}}, replace_example?:bool} (`replace_example` replaces the shipped, untouched `example` account) | {op:remove_account, id} | {op:move_account, id, index} (moves the account to 0-based position `index` in the account list, which is the display order; an index past the end means last; comments above it move with it) | {op:rename_account, from, to} | {op:set_blf, account, entries:[{uri, label, group?, pickup?, pickup_prefix?, pickup_target?}]} (replaces the list; entries matched by uri keep their comments; an empty optional key, or pickup "" for inherit, is removed from the file) | {op:set_section, section, key, value} | {op:reset_section, section, key}. Account fields: enabled, profile, display_name, username, auth_username, password, password_store (file|keyring: with keyring the password lives in the system credential store and `password` must be empty; switching moves the existing password along), domain, registrar, outbound_proxy, transport (udp|tcp|tls|auto: SRV _sips._tcp &gt; _sip._tcp &gt; _sip._udp, else UDP 5060), local_port, tls_verify, tls_fingerprint, srtp (off|optional|mandatory), dnd, auto_answer, answer_delay_ms, allow_intercom, auto_hold, mwi (subscribe|unsolicited|off), sip_trace, pickup (off|prefix|replaces), pickup_prefix, pickup_replaces_target (caller|monitored). Sections: calls, ui (also `shortcuts.<action>`), network, logging, audio, general (only user_agent and log_level; log_dir, log_retention_days and reconfig_force are file-only); `config.view` lists their keys under `editable`. Values are plain booleans, integers or strings, checked per field; unknown sections and keys are rejected. Everything else (extra_headers, [media], [speech], [control], ...) stays file-only.
 
 | Param | Type | Required | Description |
 |---|---|---|---|
@@ -1464,6 +1464,29 @@ Changes config.toml with typed edits, then reloads it (the same path as an exter
             "required": [
               "op",
               "id"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "description": "Account id.",
+                "type": "string"
+              },
+              "index": {
+                "description": "0-based target position; past the end means last",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "op": {
+                "const": "move_account"
+              }
+            },
+            "required": [
+              "op",
+              "id",
+              "index"
             ],
             "type": "object"
           },

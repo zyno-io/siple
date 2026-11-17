@@ -14,7 +14,7 @@ use super::super::rpc::{self, RpcRequest, RpcTag, TestRun};
 use super::super::{Cx, UiAction, UiState, reg_tone};
 use crate::snapshot::{RegClass, reg_class};
 use crate::theme::{FS_BODY, FS_MICRO, FS_SMALL, Palette, R_LG, SP_S};
-use crate::widgets::{account_switch, chip, mono, paint_lamp, strong};
+use crate::widgets::{Chevron, account_switch, chevron_button, chip, mono, paint_lamp, strong};
 
 /// Account keys only the config file sets; shown read-only when set.
 pub(super) const FILE_ONLY_ACCOUNT_KEYS: &[&str] = &[
@@ -219,8 +219,8 @@ pub(super) fn show(ui: &mut egui::Ui, cx: &Cx, st: &mut UiState, out: &mut Vec<U
         add_form(ui, cx, st, out);
     }
     // The list.
-    for a in accounts {
-        account_row(ui, cx, st, a, out);
+    for (i, a) in accounts.iter().enumerate() {
+        account_row(ui, cx, st, a, (i, accounts.len()), out);
     }
     if accounts.is_empty() {
         ui.label(
@@ -383,6 +383,7 @@ fn account_row(
     cx: &Cx,
     st: &mut UiState,
     a: &AccountConfig,
+    (pos, count): (usize, usize),
     out: &mut Vec<UiAction>,
 ) {
     let p = cx.p;
@@ -441,6 +442,29 @@ fn account_row(
                     let sw = account_switch(ui, p, a.enabled, &format!("Enable {}", a.id));
                     if sw.clicked() {
                         out.push(UiAction::SetAccountEnabled(a.id.clone(), !a.enabled));
+                    }
+                    // Right to left: down, then up, so they read up / down / switch.
+                    for (dir, delta, enabled) in [
+                        (Chevron::Down, 1, pos + 1 < count),
+                        (Chevron::Up, -1, pos > 0),
+                    ] {
+                        let name = if delta < 0 { "up" } else { "down" };
+                        let label = format!("Move {} {name}", a.id);
+                        let r = chevron_button(ui, p, dir, enabled)
+                            .on_hover_text(format!("Move this account {name} in the list"));
+                        r.widget_info(|| {
+                            egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, &label)
+                        });
+                        if enabled && r.clicked() {
+                            out.push(rpc::config_edit(
+                                RpcTag::Instant,
+                                None,
+                                &[ConfigEdit::MoveAccount {
+                                    id: a.id.clone(),
+                                    index: pos.saturating_add_signed(delta),
+                                }],
+                            ));
+                        }
                     }
                 });
             });

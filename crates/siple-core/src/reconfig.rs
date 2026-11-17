@@ -241,6 +241,8 @@ pub enum Change {
         /// What the SIP layer did.
         outcome: UpdateOutcome,
     },
+    /// The accounts (kept ones) are listed in a different order.
+    AccountsReordered,
     /// Log filter replaced.
     LogLevel {
         /// Old value.
@@ -313,6 +315,7 @@ impl std::fmt::Display for Change {
                 };
                 write!(f, "account changed: {id} ({}): {how}", fields.join(", "))
             }
+            Change::AccountsReordered => write!(f, "account order changed"),
             Change::LogLevel { from, to } => write!(f, "log level: {from:?} -> {to:?}"),
             Change::General => write!(f, "general: user_agent/reconfig_force updated"),
             Change::RestartRequired(o) => write!(f, "{o} changed; takes effect after restart"),
@@ -459,6 +462,23 @@ impl Inner {
         self.redactor
             .update(&new.logging, &new.accounts, &self.token);
 
+        // Account display order is the file order (a pure reorder changes nothing else).
+        self.stack.set_account_order(
+            &new.accounts
+                .iter()
+                .map(|a| a.id.clone())
+                .collect::<Vec<_>>(),
+        );
+        let kept = |a: &Config, b: &Config| -> Vec<String> {
+            a.accounts
+                .iter()
+                .filter(|x| b.accounts.iter().any(|y| y.id == x.id))
+                .map(|x| x.id.clone())
+                .collect()
+        };
+        if kept(old, &new) != kept(&new, old) {
+            out.push(Change::AccountsReordered);
+        }
         // [[account]]: removals first (frees ports), then changes, then additions.
         let mut keep_old: Vec<String> = Vec::new(); // failed removals / updates
         let mut drop_new: Vec<String> = Vec::new(); // failed additions

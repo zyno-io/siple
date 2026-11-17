@@ -261,6 +261,14 @@ pub enum ConfigEdit {
         /// Account id.
         id: String,
     },
+    /// Moves an account to position `index` (0-based; past the end means last) in the
+    /// `[[account]]` order, which is the display order. Its comments travel with it.
+    MoveAccount {
+        /// Account id.
+        id: String,
+        /// Target position.
+        index: usize,
+    },
     /// Changes an account id.
     RenameAccount {
         /// Current id.
@@ -893,6 +901,50 @@ fn apply_one(doc: &mut DocumentMut, edit: &ConfigEdit, stash: &mut Stash) -> Res
             }
             Ok(())
         }
+        ConfigEdit::MoveAccount { id, index } => {
+            let (from, _) = find_account(doc, id)?;
+            let aot = accounts_mut(doc)?.expect("account found above");
+            let to = (*index).min(aot.len() - 1);
+            if from == to {
+                return Ok(());
+            }
+            // Slots keep their blank-line separation and neighbours' comments; only the comment
+            // block directly above each account moves with it. Tables print by `position`: the
+            // positions of every account-owned table (accounts and their sub-tables) are
+            // collected, sorted and handed out again in the new depth-first order, so the
+            // slots that other tables (`[ui]`, `[calls]`, ...) occupy between accounts are
+            // untouched.
+            let n = aot.len();
+            let mut tables: Vec<Table> = (0..n).map(|_| aot.remove(0)).collect();
+            let mut slots: Vec<isize> = Vec::new();
+            tables.iter().for_each(|t| collect_positions(t, &mut slots));
+            slots.sort_unstable();
+            let first_slot = slots.first().copied();
+            let mut slots = slots.into_iter();
+            let keeps: Vec<String> = tables
+                .iter()
+                .map(|t| split_prefix(&prefix_of(t.decor())).0)
+                .collect();
+            let moved = tables.remove(from);
+            tables.insert(to, moved);
+            for (t, keep) in tables.iter_mut().zip(keeps) {
+                let own = split_prefix(&prefix_of(t.decor())).1;
+                t.decor_mut().set_prefix(format!("{keep}{own}"));
+                assign_positions(t, &mut slots);
+            }
+            // An account added earlier in the same batch has no position and would print after
+            // the table visited before it (which may follow the other accounts). Leading
+            // unpositioned accounts take the first slot; array order breaks the tie.
+            if let Some(first) = first_slot {
+                for t in tables.iter_mut().take_while(|t| t.position().is_none()) {
+                    t.set_position(Some(first));
+                }
+            }
+            for t in tables {
+                aot.push(t);
+            }
+            Ok(())
+        }
         ConfigEdit::RenameAccount { from, to } => {
             if !valid_id(to) {
                 return fail(
@@ -949,6 +1001,33 @@ fn apply_one(doc: &mut DocumentMut, edit: &ConfigEdit, stash: &mut Stash) -> Res
                 remove_key(table, leaf, &format!("{section}.{key}"), stash);
             }
             Ok(())
+        }
+    }
+}
+
+/// Positions of `t` and the tables nested in it, depth-first.
+fn collect_positions(t: &Table, out: &mut Vec<isize>) {
+    out.extend(t.position());
+    for (_, item) in t.iter() {
+        match item {
+            Item::Table(sub) => collect_positions(sub, out),
+            Item::ArrayOfTables(a) => a.iter().for_each(|x| collect_positions(x, out)),
+            _ => {}
+        }
+    }
+}
+
+/// Hands `slots` to `t` and its nested tables, depth-first; tables without a position (they
+/// follow their parent) keep none.
+fn assign_positions(t: &mut Table, slots: &mut impl Iterator<Item = isize>) {
+    if t.position().is_some() {
+        t.set_position(slots.next());
+    }
+    for (_, item) in t.iter_mut() {
+        match item {
+            Item::Table(sub) => assign_positions(sub, slots),
+            Item::ArrayOfTables(a) => a.iter_mut().for_each(|x| assign_positions(x, slots)),
+            _ => {}
         }
     }
 }
@@ -1456,6 +1535,141 @@ domain = "pbx.example.com"
         assert!(out.contains("# Top comment"));
         let e = err(DOC, &[ConfigEdit::RemoveAccount { id: "x".into() }]);
         assert_eq!(e.path, "account[id=x]");
+    }
+
+    fn mv(id: &str, index: usize) -> ConfigEdit {
+        ConfigEdit::MoveAccount {
+            id: id.into(),
+            index,
+        }
+    }
+
+    fn ids(text: &str) -> Vec<String> {
+        Config::parse(text)
+            .unwrap()
+            .accounts
+            .iter()
+            .map(|a| a.id.clone())
+            .collect()
+    }
+
+    /// Three accounts, a comment block each, a BLF sub-table on `a`, and a section after them.
+    fn move_doc() -> String {
+        "# file header\n\n# --- a ---\n[[account]]\nid = \"a\"\nusername = \"1\"\ndomain = \"d\"\n\n\
+         # blf of a\n[[account.blf]]\nuri = \"9\"\nlabel = \"Nine\"\n\n\
+         # --- b ---\n[[account]]\nid = \"b\"\nusername = \"2\"\ndomain = \"d\"\n# trailing b\n\n\
+         # --- c ---\n[[account]]\nid = \"c\"\nusername = \"3\"\ndomain = \"d\"\n\n\
+         # ui section\n[ui]\ntray = false\n"
+            .into()
+    }
+
+    #[test]
+    fn move_account_first_to_last_and_back() {
+        let d = move_doc();
+        let out = run(&d, &[mv("a", 2)]);
+        assert_eq!(ids(&out), ["b", "c", "a"], "{out}");
+        assert_eq!(Config::parse(&out).unwrap().accounts[2].blf.len(), 1);
+        assert!(out.starts_with("# file header\n\n# --- b ---"), "{out}");
+        assert!(
+            out.trim_end().ends_with("# ui section\n[ui]\ntray = false"),
+            "{out}"
+        );
+        // Comment of each account stays directly above it.
+        let pos = |t: &str, n: &str| t.find(n).unwrap();
+        assert!(pos(&out, "# --- a ---") < pos(&out, "id = \"a\""));
+        assert!(pos(&out, "id = \"c\"") < pos(&out, "# --- a ---"));
+        assert!(pos(&out, "# blf of a") > pos(&out, "id = \"a\""));
+        let back = run(&out, &[mv("a", 0)]);
+        assert_eq!(back, d);
+    }
+
+    #[test]
+    fn move_account_last_to_first_and_middle() {
+        let d = move_doc();
+        let out = run(&d, &[mv("c", 0)]);
+        assert_eq!(ids(&out), ["c", "a", "b"], "{out}");
+        // The comment block above each account travels with it; the gap before the slot stays.
+        assert!(
+            out.contains("# --- c ---\n[[account]]\nid = \"c\""),
+            "{out}"
+        );
+        assert!(out.contains("# trailing b\n\n# --- b ---"), "{out}");
+        assert_eq!(run(&out, &[mv("c", 2)]), d);
+        let out = run(&d, &[mv("a", 1)]);
+        assert_eq!(ids(&out), ["b", "a", "c"], "{out}");
+        let out = run(&d, &[mv("c", 1)]);
+        assert_eq!(ids(&out), ["a", "c", "b"], "{out}");
+    }
+
+    #[test]
+    fn move_account_keeps_interleaved_tables_in_their_slots() {
+        let d = "[[account]]\nid = \"a\"\nusername = \"1\"\ndomain = \"d\"\n\n[ui]\ntray = false\n\n\
+                 [[account]]\nid = \"b\"\nusername = \"2\"\ndomain = \"d\"\n\n[calls]\nhold_scope = \"all\"\n\n\
+                 [[account]]\nid = \"c\"\nusername = \"3\"\ndomain = \"d\"\n";
+        let out = run(d, &[mv("a", 2)]);
+        assert_eq!(
+            out,
+            "[[account]]\nid = \"b\"\nusername = \"2\"\ndomain = \"d\"\n\n[ui]\ntray = false\n\n\
+             [[account]]\nid = \"c\"\nusername = \"3\"\ndomain = \"d\"\n\n[calls]\nhold_scope = \"all\"\n\n\
+             [[account]]\nid = \"a\"\nusername = \"1\"\ndomain = \"d\"\n"
+        );
+    }
+
+    #[test]
+    fn move_account_keeps_a_trailing_ui_shortcuts_table_last() {
+        let d = "[[account]]\nid = \"a\"\nusername = \"1\"\ndomain = \"d\"\n\n\
+                 [[account]]\nid = \"b\"\nusername = \"2\"\ndomain = \"d\"\n\n\
+                 [ui.shortcuts]\nanswer = \"Ctrl+A\"\n";
+        let out = run(d, &[mv("b", 0)]);
+        assert_eq!(
+            out,
+            "[[account]]\nid = \"b\"\nusername = \"2\"\ndomain = \"d\"\n\n\
+             [[account]]\nid = \"a\"\nusername = \"1\"\ndomain = \"d\"\n\n\
+             [ui.shortcuts]\nanswer = \"Ctrl+A\"\n"
+        );
+    }
+
+    /// An account added earlier in the same batch has no table position; moving it first must
+    /// still print it first (toml_edit would otherwise place it after `[ui.shortcuts]`).
+    #[test]
+    fn move_account_added_in_same_batch_to_first() {
+        let d = "[ui]\ntray = false\n\n\
+                 [[account]]\nid = \"a\"\nusername = \"1\"\ndomain = \"d\"\n\n\
+                 [[account]]\nid = \"b\"\nusername = \"2\"\ndomain = \"d\"\n\n\
+                 [ui.shortcuts]\nanswer = \"F1\"\n";
+        let out = run(
+            d,
+            &[
+                ConfigEdit::AddAccount {
+                    draft: draft(
+                        "n",
+                        &[
+                            (AccountField::Username, "3".into()),
+                            (AccountField::Domain, "d".into()),
+                        ],
+                    ),
+                    replace_example: false,
+                },
+                mv("n", 0),
+            ],
+        );
+        assert_eq!(ids(&out), ["n", "a", "b"], "{out}");
+        assert!(out.starts_with("[ui]\ntray = false\n"), "{out}");
+        assert!(
+            out.trim_end().ends_with("[ui.shortcuts]\nanswer = \"F1\""),
+            "{out}"
+        );
+    }
+
+    #[test]
+    fn move_account_edge_cases() {
+        let d = move_doc();
+        assert_eq!(ids(&run(&d, &[mv("a", 99)])), ["b", "c", "a"]);
+        for (id, i) in [("a", 0), ("b", 1), ("c", 2), ("c", 50)] {
+            assert_eq!(run(&d, &[mv(id, i)]), d, "{id} {i}");
+        }
+        let e = err(&d, &[mv("nope", 0)]);
+        assert_eq!(e.path, "account[id=nope]");
     }
 
     #[test]
@@ -2008,6 +2222,7 @@ domain = "pbx.example.com"
               {"op":"reset_account","id":"a","field":"dnd"},
               {"op":"add_account","draft":{"id":"n","fields":{"username":"2","local_port":5070}},"replace_example":true},
               {"op":"remove_account","id":"a"},
+              {"op":"move_account","id":"a","index":2},
               {"op":"rename_account","from":"a","to":"b"},
               {"op":"set_blf","account":"a","entries":[{"uri":"1","label":"x"}]},
               {"op":"set_section","section":"ui","key":"tray","value":false},
@@ -2015,7 +2230,7 @@ domain = "pbx.example.com"
             ]"#,
         )
         .unwrap();
-        assert_eq!(v.len(), 8);
+        assert_eq!(v.len(), 9);
         let back: Vec<ConfigEdit> =
             serde_json::from_str(&serde_json::to_string(&v).unwrap()).unwrap();
         assert_eq!(v, back);

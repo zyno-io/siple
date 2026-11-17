@@ -1,5 +1,5 @@
 //! Header: brand, one chip per account (click: account menu with enable switch, DND,
-//! registration details, voicemail), the voicemail total and the Extensions toggle. Also the
+//! registration details, voicemail), the voicemail total and the extensions chevron. Also the
 //! "config not applied" banner shown at the top of the stage.
 
 use eframe::egui::{self, Align, Color32, CornerRadius, Layout, Margin, RichText, Stroke};
@@ -11,7 +11,8 @@ use crate::theme::{
     self, FS_BODY, FS_MICRO, FS_SMALL, FS_TITLE, Palette, R_LG, R_MD, SP_XS, icon as ic,
 };
 use crate::widgets::{
-    account_switch, chip, hairline, icon, icon_fill, mono, paint_lamp, pill, strong,
+    Chevron, account_switch, chip, hairline, icon, icon_fill, mono, paint_chevron,
+    paint_focus_ring, paint_lamp, pill, strong,
 };
 
 pub(super) fn show(ui: &mut egui::Ui, cx: &Cx, st: &mut UiState, out: &mut Vec<UiAction>) {
@@ -59,29 +60,69 @@ fn settings_button(ui: &mut egui::Ui, cx: &Cx, st: &mut UiState) {
     }
 }
 
-/// The Extensions toggle: pane (wide), drawer (medium) or tab (narrow), with the ringing count.
+/// The Extensions control. Wide and medium: a chevron that collapses (points right, toward the
+/// panel edge) or expands (points left) the right-hand panel, with the ringing count beside it.
+/// Narrow: a text tab, because open swaps the whole central view.
 fn ext_toggle(ui: &mut egui::Ui, cx: &Cx, st: &mut UiState) {
     let p = cx.p;
     let open = cx.ext_open(st);
     let n = cx.ringing_extensions();
-    let text = match (n, cx.mode) {
-        (0, _) => "Ext".to_string(),
-        (n, LayoutMode::Narrow) => format!("Ext {n}"),
-        (n, _) => format!("Ext: {n} ringing"),
-    };
-    let ink = if n > 0 { p.ring.ink } else { p.text };
-    let b = egui::Button::new((
-        icon(ic::DOTS_NINE, 15.0).color(if n > 0 { p.ring.ink } else { p.muted }),
-        RichText::new(text).size(FS_SMALL).color(ink),
-    ))
-    .selected(open)
-    .fill(if n > 0 {
-        p.ring.soft
+    let narrow = cx.mode == LayoutMode::Narrow;
+    let r = if narrow {
+        let text = match n {
+            0 => "Ext".to_string(),
+            n => format!("Ext {n}"),
+        };
+        let ink = if n > 0 { p.ring.ink } else { p.text };
+        let b = egui::Button::new((
+            icon(ic::DOTS_NINE, 15.0).color(if n > 0 { p.ring.ink } else { p.muted }),
+            RichText::new(text).size(FS_SMALL).color(ink),
+        ))
+        .selected(open)
+        .fill(if n > 0 {
+            p.ring.soft
+        } else {
+            Color32::TRANSPARENT
+        })
+        .corner_radius(CornerRadius::same(R_MD));
+        ui.add(b)
     } else {
-        Color32::TRANSPARENT
-    })
-    .corner_radius(CornerRadius::same(R_MD));
-    let r = ui.add(b).on_hover_text(if open {
+        // Right-to-left layout: allocate the whole control, then paint count and chevron in it.
+        let count = (n > 0).then(|| {
+            ui.painter().layout_no_wrap(
+                n.to_string(),
+                egui::FontId::proportional(FS_SMALL),
+                p.ring.ink,
+            )
+        });
+        let w = 28.0 + count.as_ref().map_or(0.0, |g| g.size().x + 6.0);
+        let (rect, r) = ui.allocate_exact_size(egui::vec2(w, 26.0), egui::Sense::click());
+        let fill = if n > 0 {
+            p.ring.soft
+        } else if r.hovered() {
+            p.accent_soft
+        } else {
+            Color32::TRANSPARENT
+        };
+        ui.painter()
+            .rect_filled(rect, CornerRadius::same(R_MD), fill);
+        let ink = if n > 0 { p.ring.ink } else { p.muted };
+        let chev_x = rect.right() - 14.0;
+        if let Some(g) = count {
+            let pos = egui::pos2(rect.left() + 8.0, rect.center().y - g.size().y / 2.0);
+            ui.painter().galley(pos, g, p.ring.ink);
+        }
+        paint_focus_ring(ui, p, &r, rect);
+        paint_chevron(
+            ui.painter(),
+            egui::pos2(chev_x, rect.center().y),
+            if open { Chevron::Right } else { Chevron::Left },
+            10.0,
+            ink,
+        );
+        r
+    };
+    let r = r.on_hover_text(if open {
         "Hide extensions"
     } else {
         "Show extensions"

@@ -545,9 +545,35 @@ async fn add_remove_rename_and_blf_edits() {
     let v = c.call("config.view", Value::Null).await.unwrap();
     assert_eq!(v["config"]["account"][0]["id"], "desk-1");
     assert_eq!(v["config"]["account"][0]["blf"][1]["uri"], "1003");
+    // Reorder: the file order is the display order.
+    c.call("config.edit", json!({"edits":[{"op":"add_account","draft":{"id":"second",
+        "fields":{"username":"1002","domain":"127.0.0.1","registrar":reg.addr.to_string(),"password":"pw"}}}]}))
+        .await
+        .unwrap();
+    let r = c
+        .call(
+            "config.edit",
+            json!({"edits":[{"op":"move_account","id":"desk-1","index":1}]}),
+        )
+        .await
+        .unwrap();
+    assert_eq!(r["applied"], true, "{r}");
+    assert_eq!(r["report"]["changed"], true, "{r}");
+    assert!(
+        r["report"]["summary"][0]
+            .as_str()
+            .unwrap()
+            .contains("account order"),
+        "{r}"
+    );
+    let s = c.call("status", Value::Null).await.unwrap();
+    assert_eq!(s["accounts"][0]["id"], "second");
+    let v = c.call("config.view", Value::Null).await.unwrap();
+    assert_eq!(v["config"]["account"][0]["id"], "second");
+    assert_eq!(v["config"]["account"][1]["id"], "desk-1");
     c.call(
         "config.edit",
-        json!({"edits":[{"op":"remove_account","id":"desk-1"}]}),
+        json!({"edits":[{"op":"remove_account","id":"desk-1"},{"op":"remove_account","id":"second"}]}),
     )
     .await
     .unwrap();

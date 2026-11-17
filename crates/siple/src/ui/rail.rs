@@ -108,8 +108,10 @@ pub(super) fn click_line(cx: &Cx, st: &mut UiState, c: &CallInfo, out: &mut Vec<
 
 /// Narrow: picking a line returns from the extensions tab to the stage.
 pub(super) fn leave_extensions_tab(cx: &Cx, st: &mut UiState) {
-    if cx.mode == super::LayoutMode::Narrow {
-        st.ext_open = Some(false);
+    if cx.mode == super::LayoutMode::Narrow && cx.ext_open(st) {
+        // Back to the default (closed on narrow) rather than a pinned `Some(false)`, so a later
+        // wider window still opens the panel by default.
+        st.ext_open = None;
     }
 }
 
@@ -156,11 +158,7 @@ pub(super) fn show(ui: &mut egui::Ui, cx: &Cx, st: &mut UiState, out: &mut Vec<U
 /// "+ New call": opens the dial bar in the stage, defaulting to the selected line's account.
 pub(super) fn open_new_call(cx: &Cx, st: &mut UiState) {
     st.new_call_open = true;
-    st.ext_open = if cx.mode == super::LayoutMode::Narrow {
-        Some(false)
-    } else {
-        st.ext_open
-    };
+    leave_extensions_tab(cx, st);
     if let Some(c) = cx.selected(st)
         && cx
             .vm

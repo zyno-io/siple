@@ -635,6 +635,12 @@ impl App {
         // next reload retries it.
         let mut applied_cfg = cfg.clone();
         applied_cfg.accounts.clear();
+        stack.set_account_order(
+            &cfg.accounts
+                .iter()
+                .map(|a| a.id.clone())
+                .collect::<Vec<_>>(),
+        );
         for a in &cfg.accounts {
             match stack.add_account(a.clone(), &cfg.general, &cfg.media).await {
                 Ok(()) => {

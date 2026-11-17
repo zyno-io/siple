@@ -81,11 +81,26 @@ fn suggestions<'a>(cx: &Cx<'a>, account: &str, typed: &str) -> Vec<&'a BlfStatus
     v
 }
 
+/// Frame of the composer / session panel: inset inside the call card it acts on (`nested`), a
+/// raised card of its own otherwise (the idle stage, after the lines are gone).
+fn pane(p: &Palette, nested: bool, border: Stroke) -> egui::Frame {
+    if nested {
+        egui::Frame::new()
+            .fill(p.inset)
+            .stroke(border)
+            .corner_radius(CornerRadius::same(R_MD))
+            .inner_margin(Margin::same(10))
+    } else {
+        raised_card(p, border)
+    }
+}
+
 pub(super) fn composer(
     ui: &mut egui::Ui,
     cx: &Cx,
     st: &mut UiState,
     c: &CallInfo,
+    nested: bool,
     out: &mut Vec<UiAction>,
 ) {
     let p = cx.p;
@@ -110,7 +125,7 @@ pub(super) fn composer(
                 })
         })
         .collect();
-    raised_card(p, Stroke::new(1.0, p.accent)).show(ui, |ui| {
+    pane(p, nested, Stroke::new(1.0, p.accent)).show(ui, |ui| {
         ui.set_width(ui.available_width());
         ui.spacing_mut().item_spacing.y = SP_S;
         ui.horizontal(|ui| {
@@ -190,7 +205,7 @@ pub(super) fn composer(
             (format!("{m}+Enter"), "Enter".to_string())
         };
         let mut chosen: Option<bool> = None; // Some(true) = consult
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             if accent_button(ui, p, &format!("Consult first ({consult_hint})"), can, 0.0).clicked()
             {
                 chosen = Some(true);
@@ -341,6 +356,7 @@ pub(super) fn session_panel(
     cx: &Cx,
     st: &mut UiState,
     s: &TransferSession,
+    nested: bool,
     out: &mut Vec<UiAction>,
 ) {
     use TransferPhase::*;
@@ -355,7 +371,7 @@ pub(super) fn session_panel(
         Referring | Transferring => (p.warn, "Transferring"),
         _ => (p.held, "Transfer"),
     };
-    raised_card(p, Stroke::new(1.5, tone.led)).show(ui, |ui| {
+    pane(p, nested, Stroke::new(1.5, tone.led)).show(ui, |ui| {
         ui.set_width(ui.available_width());
         ui.spacing_mut().item_spacing = egui::vec2(8.0, SP_S);
         ui.horizontal(|ui| {

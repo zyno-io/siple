@@ -24,6 +24,71 @@ pub fn icon(glyph: &str, size: f32) -> RichText {
         .size(size)
 }
 
+/// Direction of a [`paint_chevron`].
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Chevron {
+    Up,
+    Down,
+    Left,
+    Right,
+}
+
+/// A stroked chevron centred on `c` (the embedded Phosphor subset has only the caret-down and
+/// caret-right glyphs, so all four directions are drawn the same way).
+pub fn paint_chevron(
+    painter: &egui::Painter,
+    c: egui::Pos2,
+    dir: Chevron,
+    size: f32,
+    color: Color32,
+) {
+    let h = size / 2.0;
+    let k = h * 0.55;
+    // Tip first, then the two ends of the arms.
+    let (tip, a, b) = match dir {
+        Chevron::Right => (egui::vec2(k, 0.0), egui::vec2(-k, -h), egui::vec2(-k, h)),
+        Chevron::Left => (egui::vec2(-k, 0.0), egui::vec2(k, -h), egui::vec2(k, h)),
+        Chevron::Down => (egui::vec2(0.0, k), egui::vec2(-h, -k), egui::vec2(h, -k)),
+        Chevron::Up => (egui::vec2(0.0, -k), egui::vec2(-h, k), egui::vec2(h, k)),
+    };
+    let stroke = Stroke::new(1.8, color);
+    painter.line_segment([c + a, c + tip], stroke);
+    painter.line_segment([c + tip, c + b], stroke);
+}
+
+/// Keyboard focus ring around `rect` when `r` has focus (same style as [`account_switch`]).
+pub fn paint_focus_ring(ui: &egui::Ui, p: &Palette, r: &Response, rect: egui::Rect) {
+    if r.has_focus() {
+        ui.painter().rect_stroke(
+            rect.expand(1.0),
+            CornerRadius::same(R_MD),
+            Stroke::new(1.5, p.accent),
+            StrokeKind::Outside,
+        );
+    }
+}
+
+/// A small square icon button with a chevron. The caller sets the accessible label with
+/// `widget_info` and the hover text.
+pub fn chevron_button(ui: &mut egui::Ui, p: &Palette, dir: Chevron, enabled: bool) -> Response {
+    let (rect, r) = ui.allocate_exact_size(
+        egui::vec2(24.0, 24.0),
+        if enabled {
+            egui::Sense::click()
+        } else {
+            egui::Sense::hover()
+        },
+    );
+    if enabled && r.hovered() {
+        ui.painter()
+            .rect_filled(rect, CornerRadius::same(R_MD), p.accent_soft);
+    }
+    let ink = if enabled { p.text } else { p.faint };
+    paint_chevron(ui.painter(), rect.center(), dir, 10.0, ink);
+    paint_focus_ring(ui, p, &r, rect);
+    r
+}
+
 /// A Phosphor glyph (fill weight).
 pub fn icon_fill(glyph: &str, size: f32) -> RichText {
     RichText::new(glyph).family(theme::icons_fill()).size(size)

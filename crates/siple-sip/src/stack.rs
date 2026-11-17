@@ -37,6 +37,8 @@ const STOP_TIMEOUT: Duration = Duration::from_secs(5);
 pub struct SipStack {
     shared: Arc<Shared>,
     accounts: Arc<Mutex<HashMap<String, AccountHandle>>>,
+    /// Display order of the accounts (config file order); unlisted ids sort last, by id.
+    order: Arc<Mutex<Vec<String>>>,
     general: Arc<Mutex<GeneralConfig>>,
     /// Milliseconds past `expires_at` before a silent BLF subscription is stale.
     blf_stale_grace_ms: Arc<AtomicU64>,
@@ -92,6 +94,7 @@ impl SipStack {
             }),
             accounts: Arc::default(),
             general: Arc::default(),
+            order: Arc::new(Mutex::new(Vec::new())),
             blf_stale_grace_ms: Arc::new(AtomicU64::new(STALE_GRACE_SECS * 1000)),
         };
         stack.spawn_net_forwarder();
@@ -546,7 +549,9 @@ impl SipStack {
             .keys()
             .filter(|k| account.is_none_or(|a| a == k.as_str()))
             .collect();
-        ids.sort();
+        let order = self.order.lock().unwrap_or_else(PoisonError::into_inner);
+        let rank = |id: &str| order.iter().position(|o| o == id).unwrap_or(usize::MAX);
+        ids.sort_by(|a, b| rank(a).cmp(&rank(b)).then_with(|| a.cmp(b)));
         ids.into_iter()
             .flat_map(|k| map[k].subs.blf_statuses(self.stale_grace()))
             .collect()
@@ -694,7 +699,13 @@ impl SipStack {
         self.handle(id, |h| h.status.clone())
     }
 
-    /// Status of all accounts, sorted by id.
+    /// Sets the display order used by [`SipStack::accounts_status`] (the config file order).
+    pub fn set_account_order(&self, ids: &[String]) {
+        *self.order.lock().unwrap_or_else(PoisonError::into_inner) = ids.to_vec();
+    }
+
+    /// Status of all accounts, in the configured order (see [`SipStack::set_account_order`]),
+    /// accounts not in it last, by id.
     pub fn accounts_status(&self) -> Vec<AccountStatus> {
         let mut v: Vec<_> = self
             .accounts
@@ -707,7 +718,9 @@ impl SipStack {
                 st
             })
             .collect();
-        v.sort_by(|a, b| a.id.cmp(&b.id));
+        let order = self.order.lock().unwrap_or_else(PoisonError::into_inner);
+        let rank = |id: &str| order.iter().position(|o| o == id).unwrap_or(usize::MAX);
+        v.sort_by(|a, b| rank(&a.id).cmp(&rank(&b.id)).then_with(|| a.id.cmp(&b.id)));
         v
     }
 

@@ -42,13 +42,6 @@ pub(super) fn show(ui: &mut egui::Ui, cx: &Cx, st: &mut UiState, out: &mut Vec<U
         idle(ui, cx, st, out);
         return;
     };
-    let composing = st.composer.as_ref().is_some_and(|k| k.call_id == c.id);
-    if composing {
-        transfer::composer(ui, cx, st, c, out);
-    }
-    if let Some(s) = session_for(cx, st, &c.id) {
-        transfer::session_panel(ui, cx, st, s, out);
-    }
     line_card(ui, cx, st, c, out);
     if st.new_call_open {
         dial_bar(ui, cx, st, out);
@@ -309,119 +302,143 @@ fn incoming_buttons(
 
 fn line_card(ui: &mut egui::Ui, cx: &Cx, st: &mut UiState, c: &CallInfo, out: &mut Vec<UiAction>) {
     let p = cx.p;
-    let now = cx.vm.now;
-    let tone = state_tone(p, c.state);
-    let incoming_ring = is_waiting(c);
-    let ringing = matches!(c.state, CallState::Ringing | CallState::Early);
-    let border = if incoming_ring {
+    let border = if is_waiting(c) {
         Stroke::new(1.5, p.ring.led)
     } else {
         Stroke::new(1.0, p.border)
     };
-    let ended = c.state == CallState::Ended;
-    let session = session_for(cx, st, &c.id);
     raised_card(p, border).show(ui, |ui| {
         ui.set_width(ui.available_width());
-        if ended {
-            ui.set_opacity(0.6);
-        }
-        ui.spacing_mut().item_spacing.y = SP_XS;
-        // Row 1: direction + account, state pill.
-        ui.horizontal(|ui| {
-            let (glyph, dir) = match c.direction {
-                CallDirection::Inbound => (ic::PHONE_INCOMING, "Incoming"),
-                CallDirection::Outbound => (ic::PHONE_OUTGOING, "Outgoing"),
-            };
-            ui.spacing_mut().item_spacing.x = 5.0;
-            ui.label(icon(glyph, FS_SMALL + 1.0).color(p.muted));
-            ui.label(
-                RichText::new(format!("{dir} on {}", c.account))
-                    .size(FS_SMALL)
-                    .color(p.muted),
-            );
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                let t = if ringing && !cx.blink {
-                    crate::widgets::dimmed(tone)
-                } else {
-                    tone
-                };
-                let label = if c.reconnecting {
-                    "Reconnecting call\u{2026}"
-                } else {
-                    call_state_label(c.state)
-                };
-                pill(ui, t, label, true);
-            });
-        });
-        // Row 2: who + timer.
-        let who = display_name(c);
-        ui.horizontal(|ui| {
-            let timer = format_duration(call_elapsed_secs(c, now));
-            let timer_w = 70.0;
-            let name_w = (ui.available_width() - timer_w).max(60.0);
-            ui.allocate_ui_with_layout(
-                egui::vec2(name_w, 30.0),
-                Layout::left_to_right(Align::Center),
-                |ui| {
-                    ui.add(egui::Label::new(strong(who, FS_DISPLAY).color(p.text)).truncate());
-                },
-            );
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                let color = if c.state == CallState::Active {
-                    p.text
-                } else {
-                    p.muted
-                };
-                ui.label(
-                    RichText::new(timer)
-                        .family(theme::mono_medium())
-                        .size(FS_TIMER)
-                        .color(color),
-                );
-            });
-        });
-        if who != c.remote_uri {
-            ui.add(egui::Label::new(mono(&c.remote_uri, FS_MONO).color(p.muted)).truncate());
-        }
-        media_chips(ui, cx, c, ended);
-        if ended {
-            ui.add_space(SP_S);
-            ui.horizontal(|ui| {
-                if soft_button(ui, p, ic::PHONE_OUTGOING, "Call back", None, true, 0.0).clicked() {
-                    out.push(UiAction::Dial(c.account.clone(), c.remote_uri.clone()));
-                }
-                if soft_button(ui, p, ic::PHONE_X, "Dismiss", None, true, 0.0).clicked() {
-                    st.dismissed_calls.insert(c.id.clone());
-                }
-            });
-            return;
-        }
-        ui.add_space(SP_S + 2.0);
-        let full = ui.available_width();
-        let gap = 6.0;
-        ui.spacing_mut().item_spacing = egui::vec2(gap, gap);
-        if incoming_ring {
-            let current = current_line(cx, Some(c));
-            incoming_buttons(ui, cx, st, c, current, out);
-            return;
-        }
-        if c.direction == CallDirection::Outbound
-            && matches!(c.state, CallState::Dialing | CallState::Early)
-        {
-            // The consult leg of a session: same action and wording as the session panel.
-            let label = match consult_leg(session, c) {
-                Some(s) => format!("Cancel - return to {}", original_name(cx, s)),
-                None => "Cancel".to_string(),
-            };
-            if solid_button(ui, ic::PHONE_X, &label, p.hangup, full).clicked()
-                && let Some(action) = end_action(session, c)
-            {
-                out.push(action);
+        // Own scope: the dimming of an ended call does not reach the transfer pane.
+        ui.scope(|ui| line_card_body(ui, cx, st, c, out));
+        // The transfer composer / session panel of this call, nested in its card.
+        let composing = st.composer.as_ref().is_some_and(|k| k.call_id == c.id);
+        let session = session_for(cx, st, &c.id);
+        if composing || session.is_some() {
+            ui.add_space(SP_S + 2.0);
+            if composing {
+                transfer::composer(ui, cx, st, c, true, out);
             }
-            return;
+            if let Some(s) = session {
+                transfer::session_panel(ui, cx, st, s, true, out);
+            }
         }
-        controls(ui, cx, st, c, session, full, out);
     });
+}
+
+fn line_card_body(
+    ui: &mut egui::Ui,
+    cx: &Cx,
+    st: &mut UiState,
+    c: &CallInfo,
+    out: &mut Vec<UiAction>,
+) {
+    let p = cx.p;
+    let now = cx.vm.now;
+    let tone = state_tone(p, c.state);
+    let incoming_ring = is_waiting(c);
+    let ringing = matches!(c.state, CallState::Ringing | CallState::Early);
+    let ended = c.state == CallState::Ended;
+    let session = session_for(cx, st, &c.id);
+    if ended {
+        ui.set_opacity(0.6);
+    }
+    ui.spacing_mut().item_spacing.y = SP_XS;
+    // Row 1: direction + account, state pill.
+    ui.horizontal(|ui| {
+        let (glyph, dir) = match c.direction {
+            CallDirection::Inbound => (ic::PHONE_INCOMING, "Incoming"),
+            CallDirection::Outbound => (ic::PHONE_OUTGOING, "Outgoing"),
+        };
+        ui.spacing_mut().item_spacing.x = 5.0;
+        ui.label(icon(glyph, FS_SMALL + 1.0).color(p.muted));
+        ui.label(
+            RichText::new(format!("{dir} on {}", c.account))
+                .size(FS_SMALL)
+                .color(p.muted),
+        );
+        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            let t = if ringing && !cx.blink {
+                crate::widgets::dimmed(tone)
+            } else {
+                tone
+            };
+            let label = if c.reconnecting {
+                "Reconnecting call\u{2026}"
+            } else {
+                call_state_label(c.state)
+            };
+            pill(ui, t, label, true);
+        });
+    });
+    // Row 2: who + timer.
+    let who = display_name(c);
+    ui.horizontal(|ui| {
+        let timer = format_duration(call_elapsed_secs(c, now));
+        let timer_w = 70.0;
+        let name_w = (ui.available_width() - timer_w).max(60.0);
+        ui.allocate_ui_with_layout(
+            egui::vec2(name_w, 30.0),
+            Layout::left_to_right(Align::Center),
+            |ui| {
+                ui.add(egui::Label::new(strong(who, FS_DISPLAY).color(p.text)).truncate());
+            },
+        );
+        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            let color = if c.state == CallState::Active {
+                p.text
+            } else {
+                p.muted
+            };
+            ui.label(
+                RichText::new(timer)
+                    .family(theme::mono_medium())
+                    .size(FS_TIMER)
+                    .color(color),
+            );
+        });
+    });
+    if who != c.remote_uri {
+        ui.add(egui::Label::new(mono(&c.remote_uri, FS_MONO).color(p.muted)).truncate());
+    }
+    media_chips(ui, cx, c, ended);
+    if ended {
+        ui.add_space(SP_S);
+        ui.horizontal(|ui| {
+            if soft_button(ui, p, ic::PHONE_OUTGOING, "Call back", None, true, 0.0).clicked() {
+                out.push(UiAction::Dial(c.account.clone(), c.remote_uri.clone()));
+            }
+            if soft_button(ui, p, ic::PHONE_X, "Dismiss", None, true, 0.0).clicked() {
+                st.dismissed_calls.insert(c.id.clone());
+            }
+        });
+        return;
+    }
+    ui.add_space(SP_S + 2.0);
+    let full = ui.available_width();
+    let gap = 6.0;
+    ui.spacing_mut().item_spacing = egui::vec2(gap, gap);
+    if incoming_ring {
+        let current = current_line(cx, Some(c));
+        incoming_buttons(ui, cx, st, c, current, out);
+        return;
+    }
+    if c.direction == CallDirection::Outbound
+        && matches!(c.state, CallState::Dialing | CallState::Early)
+    {
+        // The consult leg of a session: same action and wording as the session panel.
+        let label = match consult_leg(session, c) {
+            Some(s) => format!("Cancel - return to {}", original_name(cx, s)),
+            None => "Cancel".to_string(),
+        };
+        if solid_button(ui, ic::PHONE_X, &label, p.hangup, full).clicked()
+            && let Some(action) = end_action(session, c)
+        {
+            out.push(action);
+        }
+        return;
+    }
+    controls(ui, cx, st, c, session, full, out);
 }
 
 fn media_chips(ui: &mut egui::Ui, cx: &Cx, c: &CallInfo, ended: bool) {
@@ -637,7 +654,7 @@ fn idle(ui: &mut egui::Ui, cx: &Cx, st: &mut UiState, out: &mut Vec<UiAction>) {
     let p = cx.p;
     // A finished transfer stays visible for a while after its lines are gone.
     if let Some(s) = visible_session(cx, st, cx.vm.snap.transfers.iter()) {
-        transfer::session_panel(ui, cx, st, s, out);
+        transfer::session_panel(ui, cx, st, s, false, out);
     }
     panel(p).show(ui, |ui| {
         ui.set_width(ui.available_width());
@@ -700,8 +717,21 @@ fn dial_row(ui: &mut egui::Ui, cx: &Cx, st: &mut UiState, large: bool, out: &mut
             .map(|a| a.id.clone());
     }
     let mut submit = false;
+    // One height for the account picker, the number field and the Call button: the field's
+    // (its font's row plus a vertical margin per variant); `TextEdit` cannot be stretched.
+    let field_font = egui::FontId::new(
+        if large {
+            FS_DISPLAY - 2.0
+        } else {
+            FS_BODY + 0.5
+        },
+        egui::FontFamily::Monospace,
+    );
+    let v_margin: i8 = if large { 9 } else { 6 };
+    let row_h = ui.fonts_mut(|f| f.row_height(&field_font)) + 2.0 * f32::from(v_margin);
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 6.0;
+        ui.spacing_mut().interact_size.y = row_h;
         let selected = st.dial_account.clone();
         let sel_status = usable.iter().find(|a| Some(&a.id) == selected.as_ref());
         egui::ComboBox::from_id_salt("dial_account")
@@ -726,18 +756,19 @@ fn dial_row(ui: &mut egui::Ui, cx: &Cx, st: &mut UiState, large: bool, out: &mut
         let edit = ui.add(
             egui::TextEdit::singleline(&mut st.dial_target)
                 .id_salt("dial_target")
-                .hint_text("Number or SIP URI")
-                .font(egui::FontId::new(
-                    if large {
-                        FS_DISPLAY - 2.0
-                    } else {
-                        FS_BODY + 0.5
-                    },
-                    egui::FontFamily::Monospace,
-                ))
-                .margin(Margin::symmetric(10, if large { 10 } else { 7 }))
+                // egui pins the hint to the top-left in the default font; at the field's size it
+                // fills the row and so sits centred like the typed text.
+                .hint_text(
+                    RichText::new("Number or SIP URI")
+                        .font(egui::FontId::proportional(field_font.size)),
+                )
+                .font(field_font)
+                .margin(Margin::symmetric(10, v_margin))
                 .desired_width(ui.available_width() - btn_w - 6.0),
         );
+        edit.widget_info(|| {
+            egui::WidgetInfo::labeled(egui::WidgetType::TextEdit, true, "Number or SIP URI")
+        });
         if std::mem::take(&mut st.focus_dial) {
             edit.request_focus();
         }
@@ -757,8 +788,10 @@ fn dial_row(ui: &mut egui::Ui, cx: &Cx, st: &mut UiState, large: bool, out: &mut
             Stroke::new(1.0, p.border)
         })
         .corner_radius(CornerRadius::same(R_MD))
-        .min_size(egui::vec2(btn_w, if large { 40.0 } else { 32.0 }));
-        if ui.add_enabled(can, b).clicked() {
+        .min_size(egui::vec2(btn_w, row_h));
+        let call = ui.add_enabled(can, b);
+        call.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, can, "Call"));
+        if call.clicked() {
             submit = true;
         }
     });

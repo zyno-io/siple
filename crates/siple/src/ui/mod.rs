@@ -5,11 +5,12 @@
 //! [`PhoneUi`] is the live wrapper that feeds it the current snapshot and executes the actions.
 //!
 //! Layout, chosen from the window width ([`layout_for`]):
-//! - wide (>= 1180 px): lines rail, stage, extensions pane;
-//! - medium (760-1180 px): rail and stage, extensions as a right drawer;
+//! - wide (>= 1180 px): lines rail, stage, extensions pane (open by default; the header chevron
+//!   collapses it);
+//! - medium (760-1180 px): rail and stage, extensions as a right drawer (open by default when the stage keeps >= 440 px, else collapsed);
 //! - narrow (< 760 px): one column with line tabs, extensions as a tab.
 //!
-//! Modules: [`header`] (brand, account chips and menus, voicemail, Ext toggle), [`rail`] (lines),
+//! Modules: [`header`] (brand, account chips and menus, voicemail, extensions chevron), [`rail`] (lines),
 //! [`stage`] (selected line, call-waiting banners, dial), [`transfer`] (composer and session
 //! panel), [`blf_panel`] (extensions), [`footer`] (status, logs) and [`audio`] (devices).
 
@@ -133,7 +134,10 @@ pub struct UiState {
     pub silenced: HashSet<String>,
     /// The dial bar is open although lines exist ("+ New call").
     pub new_call_open: bool,
-    /// Extensions pane / drawer / tab. `None` until toggled: open on wide windows only.
+    /// Extensions pane / drawer / tab. `None` until toggled: open by default on wide windows and
+    /// on medium ones wide enough to leave the stage 440 px next to the drawer (the header
+    /// chevron collapses it), closed on narrow ones, where open swaps the whole central view to
+    /// the extensions tab.
     pub ext_open: Option<bool>,
 
     pub composer: Option<Composer>,
@@ -221,6 +225,12 @@ pub enum LayoutMode {
     Narrow,
 }
 
+/// Medium layout: rail width, default extensions drawer width, and the stage width the drawer
+/// may leave for it to be open by default.
+const MEDIUM_RAIL_W: f32 = 208.0;
+const MEDIUM_DRAWER_W: f32 = 300.0;
+const MEDIUM_STAGE_MIN: f32 = 440.0;
+
 pub fn layout_for(width: f32) -> LayoutMode {
     if width >= WIDE_BREAKPOINT {
         LayoutMode::Wide
@@ -238,6 +248,8 @@ pub(crate) struct Cx<'a> {
     /// Visible calls (live plus recently ended, minus dismissed).
     pub calls: Vec<&'a CallInfo>,
     pub mode: LayoutMode,
+    /// Window width the layout was chosen from.
+    pub width: f32,
     /// Lamps blink (false in the off phase and when motion is reduced: static then).
     pub blink: bool,
     /// `[ui] reduced_motion = "on"`: ringing shows a static bold border instead of blinking.
@@ -279,7 +291,12 @@ impl<'a> Cx<'a> {
     }
 
     pub fn ext_open(&self, st: &UiState) -> bool {
-        st.ext_open.unwrap_or(self.mode == LayoutMode::Wide)
+        st.ext_open.unwrap_or(match self.mode {
+            LayoutMode::Wide => true,
+            // Only when the stage keeps room for a call card next to the drawer.
+            LayoutMode::Medium => self.width - MEDIUM_RAIL_W - MEDIUM_DRAWER_W >= MEDIUM_STAGE_MIN,
+            LayoutMode::Narrow => false,
+        })
     }
 
     pub fn ringing_extensions(&self) -> usize {
@@ -472,6 +489,7 @@ pub fn draw(ui: &mut egui::Ui, vm: &ViewModel, st: &mut UiState) -> Vec<UiAction
         vm,
         calls,
         mode: layout_for(ui.available_width()),
+        width: ui.available_width(),
         blink: reduce_motion || blink_on(ui),
         reduce_motion,
     };
@@ -510,7 +528,7 @@ pub fn draw(ui: &mut egui::Ui, vm: &ViewModel, st: &mut UiState) -> Vec<UiAction
             let rail_w = if cx.mode == LayoutMode::Wide {
                 240.0
             } else {
-                208.0
+                MEDIUM_RAIL_W
             };
             egui::Panel::left("rail")
                 .exact_size(rail_w)
@@ -524,7 +542,7 @@ pub fn draw(ui: &mut egui::Ui, vm: &ViewModel, st: &mut UiState) -> Vec<UiAction
                     .default_size(if cx.mode == LayoutMode::Wide {
                         340.0
                     } else {
-                        300.0
+                        MEDIUM_DRAWER_W
                     })
                     .size_range(280.0..=420.0)
                     .show_separator_line(false)

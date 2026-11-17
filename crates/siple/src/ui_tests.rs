@@ -65,6 +65,8 @@ fn harness_ext(snap: Snapshot, size: egui::Vec2) -> Harness<'static, State> {
 
 const WIDE: egui::Vec2 = egui::vec2(1240.0, 760.0);
 const MEDIUM: egui::Vec2 = egui::vec2(900.0, 760.0);
+/// Medium with room for the drawer and a 440 px stage.
+const MEDIUM_ROOMY: egui::Vec2 = egui::vec2(1000.0, 760.0);
 const NARROW: egui::Vec2 = egui::vec2(420.0, 980.0);
 
 fn click_first(h: &mut Harness<'_, State>, label: &str) {
@@ -99,7 +101,8 @@ fn wide_shows_three_panes_medium_a_drawer_narrow_tabs() {
     h.run();
     assert!(h.query_by_label("LINES").is_some());
     assert!(h.query_by_label("EXTENSIONS").is_some());
-    // Medium: rail and stage; the extensions are a drawer toggled from the header.
+    // Medium: rail and stage; at 900 px the drawer would leave the stage under 440 px, so it
+    // starts collapsed and the header chevron opens it.
     let mut h = harness(two_calls(), MEDIUM);
     h.run();
     assert!(h.query_by_label("LINES").is_some());
@@ -107,6 +110,14 @@ fn wide_shows_three_panes_medium_a_drawer_narrow_tabs() {
     h.get_by_label_contains("Extensions").click_accesskit();
     h.run();
     assert!(h.query_by_label("EXTENSIONS").is_some());
+    // A roomy medium window opens it by default; the chevron collapses it.
+    let mut h = harness(two_calls(), MEDIUM_ROOMY);
+    h.run();
+    assert!(h.query_by_label("LINES").is_some());
+    assert!(h.query_by_label("EXTENSIONS").is_some());
+    h.get_by_label_contains("Extensions").click_accesskit();
+    h.run();
+    assert!(h.query_by_label("EXTENSIONS").is_none());
     assert!(h.query_by_label("LINES").is_some());
     // Narrow: one column with line tabs; no rail.
     let mut h = harness(two_calls(), NARROW);
@@ -1127,7 +1138,7 @@ fn narrow_returns_to_the_stage_after_a_blf_action() {
         h.state().actions,
         [UiAction::BlfDial("desk-1001".into(), "1002".into())]
     );
-    assert_eq!(h.state().ui.ext_open, Some(false));
+    assert_eq!(h.state().ui.ext_open, None);
 }
 
 // ---- review fixes -----------------------------------------------------------------------------
@@ -3257,9 +3268,137 @@ fn line_shortcuts_close_the_extensions_tab_when_narrow() {
     h.run();
     assert_eq!(h.state().ui.ext_open, Some(true));
     press(&mut h, MOD, egui::Key::Num2);
-    assert_eq!(h.state().ui.ext_open, Some(false));
+    assert_eq!(h.state().ui.ext_open, None);
     let mut h = harness_ext(two_calls(), NARROW);
     h.run();
     press(&mut h, MOD, egui::Key::CloseBracket);
-    assert_eq!(h.state().ui.ext_open, Some(false));
+    assert_eq!(h.state().ui.ext_open, None);
+}
+
+// ---- UX feedback round 1 ----------------------------------------------------------------------
+
+#[test]
+fn account_move_buttons_issue_move_account_and_disable_at_the_ends() {
+    let mut h = settings_harness(base_snapshot(), Section::Accounts, WIDE);
+    let ids: Vec<String> = h
+        .state()
+        .snap
+        .cfg
+        .accounts
+        .iter()
+        .map(|a| a.id.clone())
+        .collect();
+    assert!(ids.len() >= 2, "{ids:?}");
+    let (first, second) = (&ids[0], &ids[1]);
+    assert!(
+        is_disabled(&h, &format!("Move {first} up")),
+        "first row cannot move up"
+    );
+    let last = ids.last().unwrap();
+    assert!(
+        is_disabled(&h, &format!("Move {last} down")),
+        "last row cannot move down"
+    );
+    take(&mut h);
+    h.get_by_label(&format!("Move {first} down"))
+        .click_accesskit();
+    h.run();
+    let req = only_edit(take(&mut h));
+    assert_eq!(req.method, "config.edit");
+    assert_eq!(
+        rpc::edits_of(&req),
+        [ConfigEdit::MoveAccount {
+            id: first.clone(),
+            index: 1
+        }]
+    );
+    h.get_by_label(&format!("Move {second} up"))
+        .click_accesskit();
+    h.run();
+    let req = only_edit(take(&mut h));
+    assert_eq!(
+        rpc::edits_of(&req),
+        [ConfigEdit::MoveAccount {
+            id: second.clone(),
+            index: 0
+        }]
+    );
+}
+
+#[test]
+fn dial_row_widgets_share_one_height() {
+    for (name, mut h) in [
+        ("idle", harness(base_snapshot(), WIDE)),
+        ("dial bar", harness(two_calls(), WIDE)),
+    ] {
+        if name == "dial bar" {
+            h.run();
+            click_first(&mut h, "+ New call");
+        }
+        h.run();
+        let field = h.get_by_label("Number or SIP URI");
+        let combo = h
+            .query_by_role(egui::accesskit::Role::ComboBox)
+            .expect("account picker");
+        // The Call button is disabled while the field is empty; the rect is the same.
+        let call = h.get_by_label("Call");
+        let (f, c, b) = (field.rect(), combo.rect(), call.rect());
+        let near = |a: f32, b: f32| (a - b).abs() < 0.6;
+        assert!(
+            near(f.height(), c.height()),
+            "{name}: field {f:?} combo {c:?}"
+        );
+        assert!(
+            near(f.height(), b.height()),
+            "{name}: field {f:?} call {b:?}"
+        );
+        assert!(
+            near(f.center().y, c.center().y) && near(f.center().y, b.center().y),
+            "{name}: not aligned"
+        );
+    }
+}
+
+#[test]
+fn extensions_panel_is_open_by_default_on_wide_and_roomy_medium_with_a_chevron() {
+    for size in [WIDE, MEDIUM_ROOMY] {
+        let mut h = harness(base_snapshot(), size);
+        h.run();
+        assert!(h.query_by_label("EXTENSIONS").is_some(), "{size:?}");
+        h.get_by_label_contains("Extensions").click_accesskit();
+        h.run();
+        assert!(h.query_by_label("EXTENSIONS").is_none(), "{size:?}");
+        assert_eq!(h.state().ui.ext_open, Some(false));
+    }
+    // Narrow: closed by default, text tab.
+    let mut h = harness(base_snapshot(), NARROW);
+    h.run();
+    assert!(h.query_by_label("EXTENSIONS").is_none());
+}
+
+#[test]
+fn narrow_actions_do_not_pin_the_panel_closed_for_a_wider_window() {
+    let mut h = harness_ext(two_calls(), NARROW);
+    h.run();
+    press(&mut h, MOD, egui::Key::Num2);
+    assert_eq!(h.state().ui.ext_open, None);
+    h.set_size(WIDE);
+    h.run();
+    assert!(h.query_by_label("EXTENSIONS").is_some());
+}
+
+#[test]
+fn composer_actions_fit_inside_a_medium_call_card() {
+    let mut h = harness(two_calls(), MEDIUM);
+    h.state_mut().ui.composer = Some(crate::ui::Composer {
+        call_id: "c1".into(),
+        target: "10".into(),
+    });
+    h.run();
+    let field = h.get_by_role(egui::accesskit::Role::TextInput).rect();
+    let close = h.get_by_label_contains("Close").rect();
+    assert!(
+        close.right() <= field.right() + 1.0,
+        "Close is clipped: {close:?} vs field {field:?}"
+    );
 }

@@ -380,8 +380,8 @@ pub(super) fn show(ui: &mut egui::Ui, cx: &Cx, st: &mut UiState, out: &mut Vec<U
         });
     }
     // Narrow: the extensions are a tab; an acted click returns to the stage.
-    if cx.mode == LayoutMode::Narrow && st.blf_acted {
-        st.ext_open = Some(false);
+    if cx.mode == LayoutMode::Narrow && st.blf_acted && cx.ext_open(st) {
+        st.ext_open = None;
     }
 }
 
