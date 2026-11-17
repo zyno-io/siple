@@ -53,6 +53,9 @@ allow-registry = ["https://github.com/rust-lang/crates.io-index"]
 [advisories]
 # Deliberate, reviewed exceptions only. Each needs a reason and an exit condition.
 ignore = [
+    # chrono declared unmaintained (2026-09-14, no vulnerability). Only Siple's own crates use it
+    # (timestamps, RFC 3339 formatting). Remove once migrated to jiff (docs/TODO.md).
+    { id = "RUSTSEC-2026-0543", reason = "chrono unmaintained notice only; migration to jiff tracked in TODO" },
     # zbus 4.x helper crates, pulled in by egui -> accesskit_unix -> atspi (Linux screen-reader
     # support, needed for accessibility). "Unmaintained" notices, not vulnerabilities. Remove once
     # egui/accesskit move to zbus 5.
