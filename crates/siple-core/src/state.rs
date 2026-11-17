@@ -94,6 +94,31 @@ struct StateFile {
     /// The one-time "still running in the tray" notice was shown.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     tray_hint_shown: bool,
+    /// GUI: the Lines rail was collapsed (`true`) or expanded (`false`) by the user.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    gui_lines_collapsed: Option<bool>,
+    /// GUI: the extensions panel was opened or closed by the user.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    gui_extensions_open: Option<bool>,
+    /// The release the user chose to skip in the update pill ("Skip this version").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    skipped_update: Option<String>,
+    /// Wall-clock time of the last update check that found nothing newer (so a restart does not
+    /// check again within the interval).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    last_update_check: Option<DateTime<Utc>>,
+    /// The release version `app.update_available` was last emitted for.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    announced_update: Option<String>,
+}
+
+/// Panel choices the GUI remembers across launches. `None` = never chosen (the GUI's default).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct GuiPanels {
+    /// Lines rail collapsed.
+    pub lines_collapsed: Option<bool>,
+    /// Extensions panel open.
+    pub extensions_open: Option<bool>,
 }
 
 /// A partial device change (`audio.set_devices` params): `None` leaves the slot alone.
@@ -302,6 +327,30 @@ impl StateStore {
         self.write(&snapshot)
     }
 
+    /// The remembered GUI panel choices.
+    pub fn gui_panels(&self) -> GuiPanels {
+        let d = self.lock();
+        GuiPanels {
+            lines_collapsed: d.gui_lines_collapsed,
+            extensions_open: d.gui_extensions_open,
+        }
+    }
+
+    /// Remembers the GUI panel choices (`None` leaves a slot as it is).
+    pub fn set_gui_panels(&self, panels: GuiPanels) -> io::Result<()> {
+        let snapshot = {
+            let mut d = self.lock();
+            if let Some(v) = panels.lines_collapsed {
+                d.gui_lines_collapsed = Some(v);
+            }
+            if let Some(v) = panels.extensions_open {
+                d.gui_extensions_open = Some(v);
+            }
+            d.clone()
+        };
+        self.write(&snapshot)
+    }
+
     /// Whether the first-close tray notice was already shown.
     pub fn tray_hint_shown(&self) -> bool {
         self.lock().tray_hint_shown
@@ -341,6 +390,55 @@ impl StateStore {
             let mut d = self.lock();
             d.audio = LegacySlots::default();
             d.config_seen = LegacySlots::default();
+            d.clone()
+        };
+        self.write(&snapshot)
+    }
+
+    /// The release version the user skipped in the update pill, if any.
+    pub fn skipped_update(&self) -> Option<String> {
+        self.lock().skipped_update.clone()
+    }
+
+    /// Remembers (or, with `None`, forgets) the skipped release version.
+    pub fn set_skipped_update(&self, version: Option<&str>) -> io::Result<()> {
+        let snapshot = {
+            let mut d = self.lock();
+            d.skipped_update = version.map(str::to_string);
+            d.clone()
+        };
+        self.write(&snapshot)
+    }
+
+    /// When the update check last succeeded without finding a newer release.
+    pub fn last_update_check(&self) -> Option<DateTime<Utc>> {
+        self.lock().last_update_check
+    }
+
+    /// Records (or clears) [`StateStore::last_update_check`].
+    pub fn set_last_update_check(&self, at: Option<DateTime<Utc>>) -> io::Result<()> {
+        self.update(|d| d.last_update_check = at)
+    }
+
+    /// The release version `app.update_available` was last emitted for.
+    pub fn announced_update(&self) -> Option<String> {
+        self.lock().announced_update.clone()
+    }
+
+    /// Records the release version `app.update_available` was emitted for.
+    pub fn set_announced_update(&self, version: &str) -> io::Result<()> {
+        self.update(|d| d.announced_update = Some(version.to_string()))
+    }
+
+    /// Changes the state and rewrites the file when something differs.
+    fn update(&self, f: impl FnOnce(&mut StateFile)) -> io::Result<()> {
+        let snapshot = {
+            let mut d = self.lock();
+            let before = toml::to_string(&*d).ok();
+            f(&mut d);
+            if toml::to_string(&*d).ok() == before {
+                return Ok(());
+            }
             d.clone()
         };
         self.write(&snapshot)
@@ -411,6 +509,37 @@ mod tests {
         assert!(!s.mark_tray_hint_shown());
         let text = std::fs::read_to_string(dir.path().join(STATE_FILE)).unwrap();
         assert!(text.contains("tray_hint_shown = true"), "{text}");
+    }
+
+    #[test]
+    fn skipped_update_persists_and_clears() {
+        let dir = tempfile::tempdir().unwrap();
+        let s = StateStore::open(dir.path());
+        assert_eq!(s.skipped_update(), None);
+        s.set_skipped_update(Some("0.2.0")).unwrap();
+        assert_eq!(
+            StateStore::open(dir.path()).skipped_update().as_deref(),
+            Some("0.2.0")
+        );
+        s.set_skipped_update(None).unwrap();
+        assert_eq!(StateStore::open(dir.path()).skipped_update(), None);
+    }
+
+    #[test]
+    fn update_check_state_persists() {
+        let dir = tempfile::tempdir().unwrap();
+        let s = StateStore::open(dir.path());
+        let t = Utc::now();
+        s.set_last_update_check(Some(t)).unwrap();
+        s.set_announced_update("0.2.0").unwrap();
+        let s = StateStore::open(dir.path());
+        assert_eq!(s.announced_update().as_deref(), Some("0.2.0"));
+        assert_eq!(
+            s.last_update_check().map(|x| x.timestamp()),
+            Some(t.timestamp())
+        );
+        s.set_last_update_check(None).unwrap();
+        assert_eq!(StateStore::open(dir.path()).last_update_check(), None);
     }
 
     #[test]
@@ -543,6 +672,29 @@ mod tests {
         let s = StateStore::open(dir.path());
         assert!(!s.has_legacy_devices());
         assert!(dir.path().join("state.toml.bad").exists());
+    }
+
+    #[test]
+    fn gui_panels_persist_and_merge() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = StateStore::open(dir.path());
+        assert_eq!(store.gui_panels(), GuiPanels::default());
+        store
+            .set_gui_panels(GuiPanels {
+                lines_collapsed: Some(false),
+                extensions_open: None,
+            })
+            .unwrap();
+        let store = StateStore::open(dir.path());
+        store
+            .set_gui_panels(GuiPanels {
+                lines_collapsed: None,
+                extensions_open: Some(true),
+            })
+            .unwrap();
+        let got = StateStore::open(dir.path()).gui_panels();
+        assert_eq!(got.lines_collapsed, Some(false));
+        assert_eq!(got.extensions_open, Some(true));
     }
 
     #[test]

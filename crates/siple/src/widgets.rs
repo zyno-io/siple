@@ -338,16 +338,6 @@ pub fn panel(p: &Palette) -> egui::Frame {
         .inner_margin(Margin::symmetric(14, 12))
 }
 
-/// Section title row: title on the left, optional muted meta text on the right.
-pub fn section_title(ui: &mut egui::Ui, p: &Palette, title: &str, meta: Option<&str>) {
-    ui.horizontal(|ui| {
-        ui.label(strong(title, 14.0).color(p.text));
-        if let Some(m) = meta {
-            ui.label(RichText::new(m).size(FS_SMALL).color(p.muted));
-        }
-    });
-}
-
 /// Full-width hairline.
 pub fn hairline(ui: &mut egui::Ui, p: &Palette) {
     let w = ui.available_width();

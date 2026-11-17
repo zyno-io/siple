@@ -22,6 +22,10 @@ env:
   CARGO_INCREMENTAL: "0"
   SIPLE_RELEASE: "1" # packaging fails without THIRD-PARTY-NOTICES.html
   IS_TAG: ${{ startsWith(github.ref, 'refs/tags/v') }}
+  # Tag builds only: the tag (e.g. v0.2.0-rc.4) is compiled into the binaries (option_env! in
+  # siple-core, crate::update) so a release candidate knows which rc it is and the update check can
+  # compare it. Packages keep the numeric Cargo version. Empty on manual (dev) builds.
+  SIPLE_BUILD_TAG: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}
 
 jobs:
   preflight:

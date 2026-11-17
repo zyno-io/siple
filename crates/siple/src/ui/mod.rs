@@ -41,6 +41,8 @@ use siple_core::state::PartialSelection;
 use siple_sip::{AccountStatus, AnswerMode, CallDirection, CallInfo, CallState, CompleteMode};
 use siple_sip::{RegState, TransferSession};
 
+#[cfg(not(feature = "store"))]
+use crate::actions::open_url;
 use crate::actions::{Actions, open_path};
 use crate::snapshot::{RegClass, Shared, Snapshot, reg_class, visible_calls};
 use crate::theme::{
@@ -134,11 +136,25 @@ pub struct UiState {
     pub silenced: HashSet<String>,
     /// The dial bar is open although lines exist ("+ New call").
     pub new_call_open: bool,
-    /// Extensions pane / drawer / tab. `None` until toggled: open by default on wide windows and
-    /// on medium ones wide enough to leave the stage 440 px next to the drawer (the header
-    /// chevron collapses it), closed on narrow ones, where open swaps the whole central view to
-    /// the extensions tab.
+    /// Wide / medium: this session's extensions panel choice. `None` = the saved choice, else
+    /// the default: open on wide windows and on medium ones wide enough to leave the stage
+    /// 440 px next to the drawer. Latched to the current value when the rail is toggled, so the
+    /// panel does not jump when the rail width changes the default.
     pub ext_open: Option<bool>,
+    /// The panel choice remembered across launches (loaded from `state.toml`, set by an explicit
+    /// toggle or `ui.set_panels`). Wide / medium only.
+    pub ext_pref: Option<bool>,
+    /// Narrow: the extensions tab replaces the stage. Session only, never saved, and separate
+    /// from the wide / medium panel state.
+    pub ext_tab: bool,
+    /// The Lines rail shows the full list; collapsed (the default) is a slim strip of badges.
+    pub lines_expanded: bool,
+    /// The rail choice remembered across launches: `Some(collapsed)`.
+    pub lines_pref: Option<bool>,
+    /// What was last handed to the state writer (or loaded), to skip unchanged writes.
+    pub panels_saved: siple_core::state::GuiPanels,
+    /// Whether the extensions panel was showing in the last frame (for `ui.state`).
+    pub ext_shown: bool,
 
     pub composer: Option<Composer>,
     /// Finished transfer sessions the user dismissed.
@@ -213,6 +229,12 @@ pub enum UiAction {
     FirstRunDone,
     /// Ask the OS for microphone access (macOS prompt; elsewhere a no-op).
     RequestMicAccess,
+    /// Open a release page in the browser (the update pill).
+    #[cfg(not(feature = "store"))]
+    OpenUrl(String),
+    /// "Skip this version" of the update pill: remembered in `state.toml`.
+    #[cfg(not(feature = "store"))]
+    SkipUpdate(String),
 }
 
 // ---- layout -----------------------------------------------------------------------------------
@@ -291,12 +313,35 @@ impl<'a> Cx<'a> {
     }
 
     pub fn ext_open(&self, st: &UiState) -> bool {
-        st.ext_open.unwrap_or(match self.mode {
-            LayoutMode::Wide => true,
-            // Only when the stage keeps room for a call card next to the drawer.
-            LayoutMode::Medium => self.width - MEDIUM_RAIL_W - MEDIUM_DRAWER_W >= MEDIUM_STAGE_MIN,
-            LayoutMode::Narrow => false,
-        })
+        match self.mode {
+            // The narrow tab is its own session state.
+            LayoutMode::Narrow => st.ext_tab,
+            LayoutMode::Wide => st.ext_open.or(st.ext_pref).unwrap_or(true),
+            // Only when the stage keeps room for a call card next to the drawer; a saved
+            // "open" means "open when it fits", a choice made this session is honoured.
+            LayoutMode::Medium => st
+                .ext_open
+                .unwrap_or(st.ext_pref != Some(false) && self.fits(st)),
+        }
+    }
+
+    /// Medium: the drawer leaves the stage its minimum width next to the current rail.
+    fn fits(&self, st: &UiState) -> bool {
+        let rail = if st.lines_expanded {
+            MEDIUM_RAIL_W
+        } else {
+            rail::COLLAPSED_W
+        };
+        self.width - rail - MEDIUM_DRAWER_W >= MEDIUM_STAGE_MIN
+    }
+
+    /// The panel choice as `ui.state` reports it. In narrow windows that is the wide / medium
+    /// panel (the saved or session choice, closed when none), not the tab.
+    fn panel_state(&self, st: &UiState) -> bool {
+        match self.mode {
+            LayoutMode::Narrow => st.ext_open.or(st.ext_pref).unwrap_or(false),
+            _ => self.ext_open(st),
+        }
     }
 
     pub fn ringing_extensions(&self) -> usize {
@@ -310,6 +355,54 @@ impl<'a> Cx<'a> {
 }
 
 impl UiState {
+    /// Restores the remembered panel choices.
+    pub fn restore_panels(&mut self, saved: siple_core::state::GuiPanels) {
+        self.lines_pref = saved.lines_collapsed;
+        self.lines_expanded = saved.lines_collapsed == Some(false);
+        self.ext_pref = saved.extensions_open;
+        self.panels_saved = saved;
+    }
+
+    /// Explicit rail choice (chevron or `ui.set_panels`).
+    pub fn set_lines_expanded(&mut self, expanded: bool) {
+        self.lines_expanded = expanded;
+        self.lines_pref = Some(!expanded);
+    }
+
+    /// Explicit wide / medium extensions panel choice (chevron or `ui.set_panels`).
+    pub fn set_ext_panel(&mut self, open: bool) {
+        self.ext_open = Some(open);
+        self.ext_pref = Some(open);
+    }
+
+    /// Applies a `ui.set_panels` request: the wide / medium layouts only; the narrow view is
+    /// not switched.
+    pub fn apply_panel_request(&mut self, lines_collapsed: Option<bool>, ext_open: Option<bool>) {
+        if let Some(c) = lines_collapsed {
+            self.set_lines_expanded(!c);
+        }
+        if let Some(o) = ext_open {
+            self.set_ext_panel(o);
+        }
+    }
+
+    /// The explicit choices that changed since the last call; `None` when nothing is to write.
+    pub fn take_panel_save(&mut self) -> Option<siple_core::state::GuiPanels> {
+        let differs = |now: Option<bool>, was: Option<bool>| now.filter(|v| Some(*v) != was);
+        let out = siple_core::state::GuiPanels {
+            lines_collapsed: differs(self.lines_pref, self.panels_saved.lines_collapsed),
+            extensions_open: differs(self.ext_pref, self.panels_saved.extensions_open),
+        };
+        if out == siple_core::state::GuiPanels::default() {
+            return None;
+        }
+        self.panels_saved = siple_core::state::GuiPanels {
+            lines_collapsed: self.lines_pref,
+            extensions_open: self.ext_pref,
+        };
+        Some(out)
+    }
+
     /// Routes the answer of an [`UiAction::Rpc`] to the view that asked.
     pub fn deliver(&mut self, reply: rpc::RpcReply, snap: &Snapshot) {
         use rpc::RpcTag as T;
@@ -494,6 +587,7 @@ pub fn draw(ui: &mut egui::Ui, vm: &ViewModel, st: &mut UiState) -> Vec<UiAction
         reduce_motion,
     };
 
+    st.ext_shown = cx.panel_state(st);
     if settings::route(ui, &cx, st, &mut out) {
         return out;
     }
@@ -525,16 +619,23 @@ pub fn draw(ui: &mut egui::Ui, vm: &ViewModel, st: &mut UiState) -> Vec<UiAction
     };
     match cx.mode {
         LayoutMode::Wide | LayoutMode::Medium => {
-            let rail_w = if cx.mode == LayoutMode::Wide {
+            let rail_w = if !st.lines_expanded {
+                rail::COLLAPSED_W
+            } else if cx.mode == LayoutMode::Wide {
                 240.0
             } else {
                 MEDIUM_RAIL_W
+            };
+            let rail_frame = if st.lines_expanded {
+                side_frame(p.surface)
+            } else {
+                side_frame(p.surface).inner_margin(Margin::symmetric(8, SP_S as i8 + 2))
             };
             egui::Panel::left("rail")
                 .exact_size(rail_w)
                 .resizable(false)
                 .show_separator_line(false)
-                .frame(side_frame(p.surface))
+                .frame(rail_frame)
                 .show(ui, |ui| rail::show(ui, &cx, st, &mut out));
             if cx.ext_open(st) {
                 egui::Panel::right("extensions")
@@ -693,6 +794,7 @@ impl PhoneUi {
     pub fn new(shared: Arc<Shared>, actions: Actions) -> Self {
         let mut state = UiState::default();
         state.wizard.dismissed = actions.first_run_completed();
+        state.restore_panels(actions.gui_panels());
         Self {
             shared,
             actions,
@@ -712,6 +814,16 @@ impl PhoneUi {
         self.state.dial_target = target.to_string();
         self.state.new_call_open = true;
         self.state.focus_dial = true;
+    }
+
+    /// Applies `ui.set_panels` requests and saves changed panel choices. Driven from the shell's
+    /// `logic` too, because `ui` does not run while the window is hidden or minimized.
+    pub fn sync_panels(&mut self) {
+        let (lines, ext) = self.shared.take_panel_requests();
+        self.state.apply_panel_request(lines, ext);
+        if let Some(save) = self.state.take_panel_save() {
+            self.actions.set_gui_panels(save);
+        }
     }
 
     /// Opens the Settings page (tray / app menu "Settings…").
@@ -761,6 +873,14 @@ impl PhoneUi {
             UiAction::Rpc(req) => act.rpc(req),
             UiAction::FirstRunDone => act.set_first_run_completed(),
             UiAction::RequestMicAccess => act.request_mic_access(),
+            #[cfg(not(feature = "store"))]
+            UiAction::OpenUrl(url) => {
+                if let Err(e) = open_url(&url) {
+                    self.shared.set_notice(format!("Cannot open the link: {e}"));
+                }
+            }
+            #[cfg(not(feature = "store"))]
+            UiAction::SkipUpdate(v) => act.skip_update(&v),
             UiAction::LogsVisible(open) => {
                 self.shared.want_logs.store(open, Ordering::Relaxed);
                 self.shared.wake.notify_one();
@@ -782,6 +902,7 @@ impl eframe::App for PhoneUi {
         for reply in self.shared.take_replies() {
             self.state.deliver(reply, &snap);
         }
+        self.sync_panels();
         let live = if self.state.wants_live_audio() {
             LiveAudio {
                 mic_dbfs: self.actions.mic_level(),
@@ -805,6 +926,9 @@ impl eframe::App for PhoneUi {
         for a in actions {
             self.dispatch(a);
         }
+        self.sync_panels();
+        self.shared
+            .publish_panels(!self.state.lines_expanded, self.state.ext_shown);
     }
 }
 

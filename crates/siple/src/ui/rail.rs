@@ -8,7 +8,9 @@ use siple_sip::{CallDirection, CallInfo, CallState, EndCause, TransferPhase};
 use super::{Cx, UiAction, UiState, display_name, session_for, state_tone};
 use crate::snapshot::{call_elapsed_secs, format_duration};
 use crate::theme::{FS_BODY, FS_MICRO, FS_SMALL, R_MD, SP_S, Tone, icon as ic};
-use crate::widgets::{icon, paint_lamp, section_title, soft_button};
+use crate::widgets::{
+    Chevron, chevron_button, icon, paint_focus_ring, paint_lamp, soft_button, strong,
+};
 
 /// Glyph, tone and one-line text of a line.
 pub(super) fn line_summary(cx: &Cx, st: &UiState, c: &CallInfo) -> (&'static str, Tone, String) {
@@ -108,19 +110,50 @@ pub(super) fn click_line(cx: &Cx, st: &mut UiState, c: &CallInfo, out: &mut Vec<
 
 /// Narrow: picking a line returns from the extensions tab to the stage.
 pub(super) fn leave_extensions_tab(cx: &Cx, st: &mut UiState) {
-    if cx.mode == super::LayoutMode::Narrow && cx.ext_open(st) {
-        // Back to the default (closed on narrow) rather than a pinned `Some(false)`, so a later
-        // wider window still opens the panel by default.
-        st.ext_open = None;
+    if cx.mode == super::LayoutMode::Narrow && st.ext_tab {
+        st.ext_tab = false;
     }
 }
 
+/// Width of the collapsed rail strip.
+pub(super) const COLLAPSED_W: f32 = 56.0;
+
+/// Expand / collapse the rail; remembered across launches.
+fn set_expanded(cx: &Cx, st: &mut UiState, expanded: bool) {
+    // The rail width moves the medium default; freeze the panel as it is now.
+    if st.ext_open.is_none() {
+        st.ext_open = Some(cx.ext_open(st));
+    }
+    st.set_lines_expanded(expanded);
+}
+
 pub(super) fn show(ui: &mut egui::Ui, cx: &Cx, st: &mut UiState, out: &mut Vec<UiAction>) {
+    if !st.lines_expanded {
+        collapsed(ui, cx, st, out);
+        return;
+    }
     let p = cx.p;
     ui.spacing_mut().item_spacing.y = SP_S;
     let lines = cx.lines(st);
-    let meta = (!lines.is_empty()).then(|| lines.len().to_string());
-    section_title(ui, p, "LINES", meta.as_deref());
+    ui.horizontal(|ui| {
+        ui.label(strong("LINES", 14.0).color(p.text));
+        if !lines.is_empty() {
+            ui.label(
+                RichText::new(lines.len().to_string())
+                    .size(FS_SMALL)
+                    .color(p.muted),
+            );
+        }
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            let r = chevron_button(ui, p, Chevron::Left, true).on_hover_text("Collapse lines");
+            r.widget_info(|| {
+                egui::WidgetInfo::labeled(egui::WidgetType::Button, true, "Collapse lines")
+            });
+            if r.clicked() {
+                set_expanded(cx, st, false);
+            }
+        });
+    });
     egui::ScrollArea::vertical()
         .auto_shrink([false, false])
         .max_height((ui.available_height() - 48.0).max(60.0))
@@ -153,6 +186,111 @@ pub(super) fn show(ui: &mut egui::Ui, cx: &Cx, st: &mut UiState, out: &mut Vec<U
     {
         open_new_call(cx, st);
     }
+}
+
+/// Collapsed rail: expand chevron, one badge per line, "+" at the bottom.
+fn collapsed(ui: &mut egui::Ui, cx: &Cx, st: &mut UiState, out: &mut Vec<UiAction>) {
+    let p = cx.p;
+    ui.spacing_mut().item_spacing.y = SP_S;
+    let lines = cx.lines(st);
+    ui.vertical_centered(|ui| {
+        let r = chevron_button(ui, p, Chevron::Right, true).on_hover_text("Expand lines");
+        r.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, "Expand lines"));
+        if r.clicked() {
+            set_expanded(cx, st, true);
+        }
+        egui::ScrollArea::vertical()
+            .auto_shrink([false, false])
+            .max_height((ui.available_height() - 44.0).max(60.0))
+            .show(ui, |ui| {
+                ui.spacing_mut().item_spacing.y = 6.0;
+                for (slot, c) in &lines {
+                    if line_badge(ui, cx, st, *slot, c) {
+                        click_line(cx, st, c, out);
+                    }
+                }
+            });
+        let (rect, plus) = ui.allocate_exact_size(egui::vec2(36.0, 32.0), egui::Sense::click());
+        let hovered = plus.hovered();
+        ui.painter().rect(
+            rect,
+            CornerRadius::same(R_MD),
+            if hovered { p.accent_soft } else { p.surface },
+            Stroke::new(1.0, p.border_strong),
+            egui::StrokeKind::Inside,
+        );
+        // The embedded icon subset has no plus glyph: draw it.
+        let (c, k) = (rect.center(), 6.0);
+        let plus_stroke = Stroke::new(1.8, p.text);
+        ui.painter().line_segment(
+            [c - egui::vec2(k, 0.0), c + egui::vec2(k, 0.0)],
+            plus_stroke,
+        );
+        ui.painter().line_segment(
+            [c - egui::vec2(0.0, k), c + egui::vec2(0.0, k)],
+            plus_stroke,
+        );
+        paint_focus_ring(ui, p, &plus, rect);
+        plus.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, "New call"));
+        if plus.on_hover_text("New call").clicked() {
+            open_new_call(cx, st);
+        }
+    });
+}
+
+/// One compact line badge (`L2`) tinted by call state; returns true when clicked.
+fn line_badge(ui: &mut egui::Ui, cx: &Cx, st: &UiState, slot: usize, c: &CallInfo) -> bool {
+    let p = cx.p;
+    let selected = st.selected_line.as_deref() == Some(c.id.as_str());
+    let (_, tone, _) = line_summary(cx, st, c);
+    let ringing = c.state == CallState::Ringing;
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(36.0, 36.0), egui::Sense::click());
+    let lit = !ringing || cx.blink;
+    let fill = if lit { tone.soft } else { p.surface };
+    let stroke = if selected {
+        Stroke::new(2.0, p.accent)
+    } else if ringing {
+        Stroke::new(if lit { 2.0 } else { 1.0 }, p.ring.led)
+    } else {
+        Stroke::new(1.0, tone.led)
+    };
+    let painter = ui.painter();
+    painter.rect(
+        rect,
+        CornerRadius::same(R_MD),
+        fill,
+        stroke,
+        egui::StrokeKind::Inside,
+    );
+    if resp.hovered() {
+        painter.rect_filled(
+            rect,
+            CornerRadius::same(R_MD),
+            p.accent_soft.gamma_multiply(0.5),
+        );
+    }
+    if c.state == CallState::Ended {
+        painter.rect_filled(
+            rect,
+            CornerRadius::same(R_MD),
+            p.surface.gamma_multiply(0.4),
+        );
+    }
+    painter.text(
+        rect.center(),
+        egui::Align2::CENTER_CENTER,
+        format!("L{slot}"),
+        egui::FontId::new(FS_BODY, crate::theme::semibold()),
+        tone.ink,
+    );
+    paint_focus_ring(ui, p, &resp, rect);
+    let label = access_label(cx, st, c);
+    resp.widget_info(|| {
+        egui::WidgetInfo::selected(egui::WidgetType::Button, true, selected, label.clone())
+    });
+    resp.on_hover_cursor(egui::CursorIcon::PointingHand)
+        .on_hover_text(access_label(cx, st, c))
+        .clicked()
 }
 
 /// "+ New call": opens the dial bar in the stage, defaulting to the selected line's account.

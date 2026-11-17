@@ -695,7 +695,7 @@ fn check_hello(
     );
     Ok(json!({
         "server": "siple",
-        "version": env!("CARGO_PKG_VERSION"),
+        "version": crate::update::full_version(),
         "protocol": PROTOCOL_VERSION,
         "current_seq": ctx.events.current_seq(),
         "instance_id": ctx.events.instance_id(),

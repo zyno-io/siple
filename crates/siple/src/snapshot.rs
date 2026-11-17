@@ -53,6 +53,23 @@ pub struct Snapshot {
     pub config_unparsable: bool,
     /// Only filled while the log pane is open.
     pub logs: Vec<String>,
+    /// The update check's result (`app.update_status`).
+    pub update: siple_core::update::UpdateStatus,
+    /// The release version the user skipped in the update pill.
+    pub update_skipped: Option<String>,
+}
+
+impl Snapshot {
+    /// The release the header offers: `(version, release page)`. `None` when up to date, when the
+    /// check is off or absent (store builds), and when the user skipped exactly that version (a
+    /// newer one is offered again).
+    #[cfg(not(feature = "store"))]
+    pub fn update_offer(&self) -> Option<(&str, &str)> {
+        let u = &self.update;
+        let (version, url) = (u.latest.as_deref()?, u.release_url.as_deref()?);
+        (u.enabled && u.available && self.update_skipped.as_deref() != Some(version))
+            .then_some((version, url))
+    }
 }
 
 /// The last rejected config, as the views show it.
@@ -78,6 +95,21 @@ pub struct Shared {
     pub ctx: std::sync::OnceLock<eframe::egui::Context>,
     pub config_path: PathBuf,
     pub log_dir: Option<PathBuf>,
+    /// Panel layout shared between the UI thread and the control API (`ui.state`/`ui.set_panels`).
+    panels: Mutex<PanelLink>,
+}
+
+/// Lines rail / extensions panel state as the control API sees it.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct PanelLink {
+    /// The Lines rail is collapsed.
+    pub lines_collapsed: bool,
+    /// The extensions panel is showing.
+    pub extensions_open: bool,
+    /// A `ui.set_panels` request the UI thread has not applied yet.
+    pub pending_lines: Option<bool>,
+    /// Same, for the extensions panel.
+    pub pending_ext: Option<bool>,
 }
 
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -95,6 +127,47 @@ impl Shared {
             ctx: std::sync::OnceLock::new(),
             config_path,
             log_dir,
+            panels: Mutex::new(PanelLink {
+                lines_collapsed: true,
+                ..PanelLink::default()
+            }),
+        }
+    }
+
+    /// Control API: records a `ui.set_panels` request (visible to `ui.state` at once) and returns
+    /// the resulting state.
+    pub fn request_panels(&self, lines: Option<bool>, ext: Option<bool>) -> PanelLink {
+        let mut p = lock(&self.panels);
+        if let Some(v) = lines {
+            p.lines_collapsed = v;
+            p.pending_lines = Some(v);
+        }
+        if let Some(v) = ext {
+            p.extensions_open = v;
+            p.pending_ext = Some(v);
+        }
+        *p
+    }
+
+    /// Control API: the panel state.
+    pub fn panel_link(&self) -> PanelLink {
+        *lock(&self.panels)
+    }
+
+    /// UI thread: takes the requests to apply.
+    pub fn take_panel_requests(&self) -> (Option<bool>, Option<bool>) {
+        let mut p = lock(&self.panels);
+        (p.pending_lines.take(), p.pending_ext.take())
+    }
+
+    /// UI thread: publishes the effective state (a request still queued wins).
+    pub fn publish_panels(&self, lines_collapsed: bool, extensions_open: bool) {
+        let mut p = lock(&self.panels);
+        if p.pending_lines.is_none() {
+            p.lines_collapsed = lines_collapsed;
+        }
+        if p.pending_ext.is_none() {
+            p.extensions_open = extensions_open;
         }
     }
 
@@ -167,6 +240,8 @@ pub fn capture(app: &App, devices: DeviceList, with_logs: bool) -> Snapshot {
             errors: e.errors,
         }),
         logs,
+        update: app.update_status(),
+        update_skipped: app.skipped_update(),
     }
 }
 
@@ -217,10 +292,12 @@ fn change_key(snap: &Snapshot) -> String {
         provenance: _,
         config_unparsable,
         logs,
+        update,
+        update_skipped,
     } = snap;
     format!(
         "{accounts:?}{blf:?}{calls:?}{transfers:?}{active_line:?}{devices:?}{effective:?}{audio:?}\
-         {mic:?}{config_error:?}{ui:?}{:p}{config_hash}{config_unparsable}{logs:?}",
+         {mic:?}{config_error:?}{ui:?}{:p}{config_hash}{config_unparsable}{logs:?}{update:?}{update_skipped:?}",
         Arc::as_ptr(cfg)
     )
 }

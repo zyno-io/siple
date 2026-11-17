@@ -199,6 +199,8 @@ pub(crate) fn base_snapshot() -> Snapshot {
         provenance: serde_json::json!({"account": {"lab-tls": {"extra_headers": "file", "tls_server_name": "file"}}}),
         config_unparsable: false,
         logs: Vec::new(),
+        update: siple_core::update::UpdateStatus::disabled("stable"),
+        update_skipped: None,
     }
 }
 
@@ -585,6 +587,14 @@ fn visual_two_lines() {
     render_all("two_lines", two_calls, |_| {});
 }
 
+/// The Lines rail is collapsed by default; this keeps the expanded rail covered.
+#[test]
+fn visual_two_lines_rail_expanded() {
+    render_all("two_lines_rail_expanded", two_calls, |h| {
+        h.state_mut().state.lines_expanded = true;
+    });
+}
+
 #[test]
 fn visual_call_waiting() {
     render_all("call_waiting", call_waiting, |_| {});
@@ -611,6 +621,7 @@ fn render_blf(name: &str, view: siple_core::config::BlfView) {
     for (theme, tname, width, wname) in variants() {
         let mut h = harness(blf_scenario(view), theme, width);
         h.state_mut().state.ext_open = Some(true);
+        h.state_mut().state.ext_tab = true;
         h.run();
         h.remove_cursor();
         h.run();

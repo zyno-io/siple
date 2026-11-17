@@ -85,6 +85,11 @@ pub struct AppOptions {
     /// Test hook: fake network monitor / probe / clock for the SIP stack (default: the OS).
     #[doc(hidden)]
     pub net: Option<siple_sip::net::NetSetup>,
+    /// Where the update check gets the releases list. [`AppOptions::new`] starts with a fetcher
+    /// that never touches the network (tests and embedders stay offline); a real host calls
+    /// [`AppOptions::use_github_updates`].
+    #[cfg(not(feature = "store"))]
+    pub update_fetcher: Arc<dyn crate::update::ReleaseFetcher>,
 }
 
 impl AppOptions {
@@ -103,7 +108,18 @@ impl AppOptions {
             watch_debounce: config_watch::DEBOUNCE,
             shutdown_timeout: Duration::from_secs(8),
             net: None,
+            #[cfg(not(feature = "store"))]
+            update_fetcher: Arc::new(crate::update::OfflineFetcher),
         }
+    }
+}
+
+#[cfg(not(feature = "store"))]
+impl AppOptions {
+    /// Lets the update check ask GitHub (`[updates] check` still decides whether it runs). The
+    /// `siple` and `siple-cli` binaries call this; nothing else does.
+    pub fn use_github_updates(&mut self) {
+        self.update_fetcher = Arc::new(crate::update::GithubFetcher);
     }
 }
 
@@ -274,6 +290,9 @@ pub(crate) struct Inner {
     pub headless: bool,
     /// The GUI, when there is one (`ui.*` methods).
     pub ui_host: crate::ui_host::UiHostSlot,
+    /// The update checker (absent from store builds).
+    #[cfg(not(feature = "store"))]
+    pub updater: Arc<crate::update::Updater>,
 }
 
 /// Accounts of the applied config (for the redactor at startup).
@@ -554,7 +573,7 @@ impl App {
             tracing::warn!("config warning: {w}");
         }
         tracing::info!(
-            version = env!("CARGO_PKG_VERSION"),
+            version = crate::update::full_version(),
             pid = std::process::id(),
             config = %config_path.display(),
             log_dir = %log_dir.display(),
@@ -666,6 +685,26 @@ impl App {
         );
         let (reload_tx, reload_rx) = unbounded_channel::<ReloadRequest>();
         let cancel = CancellationToken::new();
+        #[cfg(not(feature = "store"))]
+        let updater = {
+            let cell = config_cell.clone();
+            let u = crate::update::Updater::new(crate::update::UpdaterOptions {
+                current: crate::update::current_version(),
+                current_text: crate::update::full_version().to_string(),
+                fetcher: opts.update_fetcher.clone(),
+                events: events.clone(),
+                settings: Arc::new(move || cell.load().updates.clone()),
+                clock: Arc::new(Utc::now),
+                state_dir: Some(config_dir.clone()),
+                initial_delay: crate::update::INITIAL_DELAY,
+                interval: crate::update::CHECK_INTERVAL,
+                min_manual_interval: crate::update::MIN_MANUAL_INTERVAL,
+            });
+            u.set_skipped(state.skipped_update());
+            u
+        };
+        #[cfg(feature = "store")]
+        tracing::debug!("update check not included in this build; [updates] is ignored");
         let inner = Arc::new(Inner {
             config_path: config_path.clone(),
             config_dir: config_dir.clone(),
@@ -702,6 +741,8 @@ impl App {
             started_at: events.started_at(),
             headless: opts.headless,
             ui_host: Mutex::new(None),
+            #[cfg(not(feature = "store"))]
+            updater,
         });
         if !loaded.secret_failures.is_empty() {
             // Accounts whose keyring password could not be read start disabled; say so loudly.
@@ -736,6 +777,12 @@ impl App {
         if inner.audio.is_some() {
             tasks.push(tokio::spawn(audio_poll(inner.clone())));
         }
+        // Last in the list: `shutdown` removes the reload task by index.
+        #[cfg(not(feature = "store"))]
+        tasks.push(crate::update::spawn_updater(
+            inner.updater.clone(),
+            inner.cancel.clone(),
+        ));
 
         let watcher = if opts.watch_config {
             let tx = inner.reload_tx.clone();
@@ -768,7 +815,7 @@ impl App {
                 None,
                 None,
                 json!({
-                    "version": env!("CARGO_PKG_VERSION"),
+                    "version": crate::update::full_version(),
                     "pid": std::process::id(),
                     "control": slot.info.control,
                 }),
@@ -923,6 +970,47 @@ impl App {
     /// Records that the first-run wizard was finished or skipped (`state.toml`).
     pub fn set_first_run_completed(&self) -> std::io::Result<()> {
         StateStore::open(&self.inner.config_dir).set_first_run_completed()
+    }
+
+    /// The remembered GUI panel choices (`state.toml`).
+    pub fn gui_panels(&self) -> crate::state::GuiPanels {
+        StateStore::open(&self.inner.config_dir).gui_panels()
+    }
+
+    /// Remembers GUI panel choices (`state.toml`); `None` slots are left alone.
+    pub fn set_gui_panels(&self, panels: crate::state::GuiPanels) -> std::io::Result<()> {
+        StateStore::open(&self.inner.config_dir).set_gui_panels(panels)
+    }
+
+    /// The update check's result as of the last check (`app.update_status`; no network access).
+    pub fn update_status(&self) -> crate::update::UpdateStatus {
+        self.inner.update_status()
+    }
+
+    /// Checks for a newer release now (`app.check_updates`; limited to one real check per minute).
+    pub async fn check_updates(&self) -> crate::update::UpdateStatus {
+        self.inner.check_updates().await
+    }
+
+    /// The release version the user chose to skip (`state.toml`), if any.
+    pub fn skipped_update(&self) -> Option<String> {
+        #[cfg(not(feature = "store"))]
+        {
+            self.inner.updater.skipped()
+        }
+        #[cfg(feature = "store")]
+        {
+            None
+        }
+    }
+
+    /// Records that the user skipped release `version` (`state.toml`): the GUI stops offering that
+    /// one, and offers the next newer one again. Not part of the control API: agents see
+    /// `app.update_status` unfiltered.
+    pub fn skip_update(&self, version: &str) -> std::io::Result<()> {
+        #[cfg(not(feature = "store"))]
+        self.inner.updater.set_skipped(Some(version.to_string()));
+        StateStore::open(&self.inner.config_dir).set_skipped_update(Some(version))
     }
 
     /// Calls a control-API method in process, exactly as a control client would (`account.test`,

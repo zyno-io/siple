@@ -36,7 +36,7 @@ features:
     details: Re-registers and moves live calls when your network changes, and after sleep and wake.
     link: /guide/network
   - title: Native and private
-    details: Rust and egui, no Electron, no OpenSSL, no telemetry. Passwords can live in the system keychain.
+    details: Rust and egui, no Electron, no OpenSSL, no telemetry (one optional, anonymous version check). Passwords can live in the system keychain.
     link: /guide/first-run
 ---
 

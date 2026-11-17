@@ -192,7 +192,7 @@ pub fn install_app_menu() -> Result<AppMenu, String> {
             None,
             Some(AboutMetadata {
                 name: Some("Siple".into()),
-                version: Some(env!("CARGO_PKG_VERSION").into()),
+                version: Some(siple_core::update::full_version().into()),
                 ..Default::default()
             }),
         ),

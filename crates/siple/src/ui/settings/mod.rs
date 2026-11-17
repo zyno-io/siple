@@ -105,6 +105,8 @@ pub struct SettingsState {
     /// Problems the engine reported for the last edit: `(path, message)`.
     pub errors: Vec<(String, String)>,
     pub notice: Option<String>,
+    /// A "Check for updates" is in flight.
+    pub update_checking: bool,
     /// An Apply is in flight.
     pub applying: bool,
     /// `account.test` results per account id.
@@ -156,7 +158,9 @@ impl SettingsState {
     }
 
     pub fn busy(&self) -> bool {
-        self.applying || self.tests.values().any(|t| matches!(t, TestRun::Running))
+        self.applying
+            || self.update_checking
+            || self.tests.values().any(|t| matches!(t, TestRun::Running))
     }
 
     /// Whether `id` has staged changes (its test would not reflect the form).
@@ -464,6 +468,8 @@ impl SettingsState {
                 }
             }
             (RpcTag::Echo, Err(e)) => self.notice = Some(e.message),
+            #[cfg(not(feature = "store"))]
+            (RpcTag::CheckUpdates, _) => self.update_checking = false,
             _ => {}
         }
     }

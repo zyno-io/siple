@@ -307,6 +307,26 @@ string_enum!(
 );
 
 string_enum!(
+    /// `[updates] channel`: which releases the update check offers.
+    UpdateChannel, {
+        /// Final releases only.
+        Stable,
+        /// Final releases and release candidates.
+        Prerelease,
+    }
+);
+
+impl UpdateChannel {
+    /// The config spelling.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            UpdateChannel::Stable => "stable",
+            UpdateChannel::Prerelease => "prerelease",
+        }
+    }
+}
+
+string_enum!(
     /// `[ui] theme`.
     Theme, {
         /// Follow the operating system.
@@ -633,6 +653,8 @@ pub struct Config {
     pub ui: UiConfig,
     /// `[speech]` external TTS / STT commands.
     pub speech: SpeechConfig,
+    /// `[updates]` update check (direct-download builds only).
+    pub updates: UpdatesConfig,
     /// `[[account]]` SIP accounts.
     #[serde(rename = "account")]
     pub accounts: Vec<AccountConfig>,
@@ -925,6 +947,28 @@ impl Default for SpeechConfig {
             stt_command: Vec::new(),
             stt_timeout_ms: 60_000,
             stt_language: "en".into(),
+        }
+    }
+}
+
+/// `[updates]`: the anonymous check for a newer Siple release. Hot. Accepted but ignored by
+/// store builds (`store` cargo feature), which are updated by their store.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, default)]
+pub struct UpdatesConfig {
+    /// Look for a newer release on GitHub (about once a day).
+    pub check: bool,
+    /// Which releases to offer. Unset (`None`) = automatic: `prerelease` while the running build
+    /// is itself a prerelease, else `stable`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub channel: Option<UpdateChannel>,
+}
+
+impl Default for UpdatesConfig {
+    fn default() -> Self {
+        Self {
+            check: true,
+            channel: None,
         }
     }
 }

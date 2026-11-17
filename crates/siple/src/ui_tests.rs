@@ -60,6 +60,7 @@ fn harness_ui(snap: Snapshot, size: egui::Vec2, ui: UiState) -> Harness<'static,
 fn harness_ext(snap: Snapshot, size: egui::Vec2) -> Harness<'static, State> {
     let mut h = harness(snap, size);
     h.state_mut().ui.ext_open = Some(true);
+    h.state_mut().ui.ext_tab = true;
     h
 }
 
@@ -76,6 +77,11 @@ fn click_first(h: &mut Harness<'_, State>, label: &str) {
         .click_accesskit();
     // Spinners keep repainting, so run a few steps instead of until idle.
     h.run_steps(4);
+}
+
+/// The Lines rail is on screen, collapsed or expanded.
+fn rail_shown(h: &Harness<'_, State>) -> bool {
+    h.query_by_label("LINES").is_some() || h.query_by_label("Expand lines").is_some()
 }
 
 fn take(h: &mut Harness<'_, State>) -> Vec<UiAction> {
@@ -99,13 +105,13 @@ fn wide_shows_three_panes_medium_a_drawer_narrow_tabs() {
     // Wide: rail, stage and the extensions pane.
     let mut h = harness(two_calls(), WIDE);
     h.run();
-    assert!(h.query_by_label("LINES").is_some());
+    assert!(rail_shown(&h));
     assert!(h.query_by_label("EXTENSIONS").is_some());
-    // Medium: rail and stage; at 900 px the drawer would leave the stage under 440 px, so it
+    // Medium: rail and stage; at 780 px the drawer would leave the stage under 440 px, so it
     // starts collapsed and the header chevron opens it.
-    let mut h = harness(two_calls(), MEDIUM);
+    let mut h = harness(two_calls(), egui::vec2(780.0, 760.0));
     h.run();
-    assert!(h.query_by_label("LINES").is_some());
+    assert!(rail_shown(&h));
     assert!(h.query_by_label("EXTENSIONS").is_none());
     h.get_by_label_contains("Extensions").click_accesskit();
     h.run();
@@ -113,22 +119,113 @@ fn wide_shows_three_panes_medium_a_drawer_narrow_tabs() {
     // A roomy medium window opens it by default; the chevron collapses it.
     let mut h = harness(two_calls(), MEDIUM_ROOMY);
     h.run();
-    assert!(h.query_by_label("LINES").is_some());
+    assert!(rail_shown(&h));
     assert!(h.query_by_label("EXTENSIONS").is_some());
     h.get_by_label_contains("Extensions").click_accesskit();
     h.run();
     assert!(h.query_by_label("EXTENSIONS").is_none());
-    assert!(h.query_by_label("LINES").is_some());
+    assert!(rail_shown(&h));
     // Narrow: one column with line tabs; no rail.
     let mut h = harness(two_calls(), NARROW);
     h.run();
-    assert!(h.query_by_label("LINES").is_none());
+    assert!(!rail_shown(&h));
     assert!(h.query_by_label("EXTENSIONS").is_none());
     assert!(h.query_by_label_contains("Line 1, Bob Martin").is_some());
     assert!(h.query_by_label_contains("Line 2,").is_some());
     h.get_by_label_contains("Extensions").click_accesskit();
     h.run();
     assert!(h.query_by_label("EXTENSIONS").is_some());
+}
+
+// ---- update pill ------------------------------------------------------------------------------
+
+const RELEASE_URL: &str = "https://github.com/zyno-io/siple/releases/tag/v0.2.0";
+
+fn update_status(latest: &str, available: bool) -> siple_core::update::UpdateStatus {
+    siple_core::update::UpdateStatus {
+        enabled: true,
+        channel: "stable".into(),
+        current: "0.1.0".into(),
+        latest: Some(latest.into()),
+        available,
+        release_url: Some(RELEASE_URL.into()),
+        published_at: Some("2026-11-01T10:00:00Z".into()),
+        checked_at: Some("2026-11-17T09:00:00Z".into()),
+        error: None,
+    }
+}
+
+#[cfg(not(feature = "store"))]
+#[test]
+fn update_pill_opens_the_release_and_skip_hides_that_version() {
+    let mut snap = base_snapshot();
+    snap.update = update_status("0.2.0", true);
+    let mut h = harness(snap, WIDE);
+    h.run();
+    assert!(h.query_by_label("Siple 0.2.0 is available").is_some());
+    // Download and Release notes both open the release page.
+    for item in ["Download", "Release notes"] {
+        h.get_by_label("Siple 0.2.0 is available").click_accesskit();
+        h.run();
+        h.get_by_label(item).click_accesskit();
+        h.run();
+        assert_eq!(
+            take(&mut h),
+            [UiAction::OpenUrl(RELEASE_URL.into())],
+            "{item}"
+        );
+    }
+    // Skip this version: the action is emitted and, once the engine has recorded it, the pill is gone.
+    h.get_by_label("Siple 0.2.0 is available").click_accesskit();
+    h.run();
+    h.get_by_label("Skip this version").click_accesskit();
+    h.run();
+    assert_eq!(take(&mut h), [UiAction::SkipUpdate("0.2.0".into())]);
+    h.state_mut().snap.update_skipped = Some("0.2.0".into());
+    h.run();
+    assert!(h.query_by_label_contains("is available").is_none());
+    // A newer release is offered again.
+    h.state_mut().snap.update = update_status("0.3.0", true);
+    h.run();
+    assert!(h.query_by_label("Siple 0.3.0 is available").is_some());
+}
+
+#[test]
+fn no_update_pill_when_up_to_date_disabled_or_not_checked() {
+    let mut up_to_date = base_snapshot();
+    up_to_date.update = update_status("0.1.0", false);
+    let mut off = base_snapshot();
+    off.update = update_status("0.2.0", true);
+    off.update.enabled = false;
+    for snap in [up_to_date, off, base_snapshot()] {
+        let mut h = harness(snap, WIDE);
+        h.run();
+        assert!(h.query_by_label_contains("is available").is_none());
+        assert!(h.query_by_label_contains("Update 0").is_none());
+    }
+}
+
+#[cfg(not(feature = "store"))]
+#[test]
+fn settings_show_version_and_check_for_updates() {
+    let mut snap = base_snapshot();
+    snap.update = update_status("0.2.0", true);
+    let mut h = harness(snap, WIDE);
+    h.state_mut().ui.settings.open = true;
+    h.state_mut().ui.settings.section = crate::ui::settings::Section::Advanced;
+    h.run();
+    assert!(
+        h.query_by_label_contains("Siple 0.2.0 is available")
+            .is_some()
+    );
+    h.get_by_label("Check now").click_accesskit();
+    h.run();
+    let acts = take(&mut h);
+    assert!(
+        acts.iter()
+            .any(|a| matches!(a, UiAction::Rpc(r) if r.method == "app.check_updates")),
+        "{acts:?}"
+    );
 }
 
 #[test]
@@ -200,7 +297,7 @@ fn new_call_collapses_into_a_button_while_lines_exist() {
     let mut h = harness(two_calls(), WIDE);
     h.run();
     assert!(h.query_by_label("Number or SIP URI").is_none());
-    click_first(&mut h, "+ New call");
+    click_first(&mut h, "New call");
     assert!(h.state().ui.new_call_open);
     // Idle stage: the dial field is there from the start.
     let mut idle = harness(base_snapshot(), WIDE);
@@ -210,6 +307,101 @@ fn new_call_collapses_into_a_button_while_lines_exist() {
             .is_some(),
         "idle stage has the dial field"
     );
+}
+
+// ---- collapsible rail -------------------------------------------------------------------------
+
+#[test]
+fn rail_is_collapsed_by_default_when_wide_and_medium() {
+    for size in [WIDE, MEDIUM] {
+        let mut h = harness(two_calls(), size);
+        h.run();
+        assert!(h.query_by_label("LINES").is_none());
+        assert!(h.query_by_label("Expand lines").is_some());
+        assert!(h.query_by_label("New call").is_some());
+        // One badge per line, with the row's accessible name.
+        assert!(h.query_by_label_contains("Line 1, Bob Martin").is_some());
+        assert!(h.query_by_label_contains("Line 2,").is_some());
+        assert!(!h.state().ui.lines_expanded);
+    }
+}
+
+#[test]
+fn rail_expands_and_collapses_and_flags_the_choice_for_saving() {
+    let mut h = harness(two_calls(), WIDE);
+    h.run();
+    h.get_by_label("Expand lines").click_accesskit();
+    h.run();
+    assert!(h.query_by_label("LINES").is_some());
+    assert!(h.query_by_label("Expand lines").is_none());
+    assert!(h.state().ui.lines_expanded);
+    assert_eq!(
+        h.state_mut().ui.take_panel_save().unwrap().lines_collapsed,
+        Some(false)
+    );
+    assert!(h.query_all_by_label_contains("New call").next().is_some());
+    h.get_by_label("Collapse lines").click_accesskit();
+    h.run();
+    assert!(h.query_by_label("LINES").is_none());
+    assert!(h.query_by_label("Expand lines").is_some());
+    assert!(!h.state().ui.lines_expanded);
+    assert_eq!(
+        h.state_mut().ui.take_panel_save().unwrap().lines_collapsed,
+        Some(true)
+    );
+}
+
+#[test]
+fn collapsed_badge_selects_its_line_and_plus_opens_the_dial_bar() {
+    let mut h = harness(two_calls(), WIDE);
+    h.run();
+    assert_eq!(h.state().ui.selected_line.as_deref(), Some("c1"));
+    h.get_by_label_contains("Line 2,").click_accesskit();
+    h.run();
+    assert_eq!(h.state().ui.selected_line.as_deref(), Some("c2"));
+    // Same as a row click: a held line becomes the active line.
+    assert_eq!(h.state().actions, [UiAction::Activate("c2".into())]);
+    assert!(h.query_by_label("Number or SIP URI").is_none());
+    h.get_by_label("New call").click_accesskit();
+    h.run();
+    assert!(h.state().ui.new_call_open);
+    assert!(h.query_by_label("Number or SIP URI").is_some());
+}
+
+#[test]
+fn saved_panel_choices_are_restored() {
+    let mut ui = UiState::default();
+    ui.wizard.dismissed = true;
+    ui.lines_expanded = true;
+    ui.ext_pref = Some(false);
+    let mut h = harness_ui(two_calls(), WIDE, ui);
+    h.run();
+    assert!(h.query_by_label("LINES").is_some());
+    assert!(h.query_by_label("EXTENSIONS").is_none());
+    assert!(!h.state().ui.ext_shown);
+    // Narrow ignores the remembered extensions choice and keeps its reset-to-default behaviour.
+    let mut ui = UiState::default();
+    ui.wizard.dismissed = true;
+    ui.ext_pref = Some(true);
+    let mut h = harness_ui(two_calls(), NARROW, ui);
+    h.run();
+    assert!(h.query_by_label("EXTENSIONS").is_none());
+    // The header chevron stores the choice for saving; narrow's tab does not.
+    let mut h = harness(two_calls(), WIDE);
+    h.run();
+    h.get_by_label_contains("Extensions").click_accesskit();
+    h.run();
+    assert_eq!(h.state().ui.ext_pref, Some(false));
+    assert_eq!(
+        h.state_mut().ui.take_panel_save().unwrap().extensions_open,
+        Some(false)
+    );
+    let mut h = harness(two_calls(), NARROW);
+    h.run();
+    h.get_by_label_contains("Extensions").click_accesskit();
+    h.run();
+    assert_eq!(h.state().ui.ext_pref, None);
+    assert!(h.state_mut().ui.take_panel_save().is_none());
 }
 
 // ---- call waiting ---------------------------------------------------------------------------
@@ -565,7 +757,7 @@ fn ringing_blf_with_pickup_configured_picks_up() {
         h.get_by_label("Support queue (desk-1001)")
             .click_accesskit();
         h.run();
-        h.state_mut().ui.ext_open = Some(true); // narrow returns to the stage after an action
+        h.state_mut().ui.ext_tab = true; // narrow returns to the stage after an action
         h.run();
         assert_eq!(
             h.state().actions,
@@ -577,7 +769,7 @@ fn ringing_blf_with_pickup_configured_picks_up() {
         h.get_by_label("Pick up Support queue (desk-1001)")
             .click_accesskit();
         h.run();
-        h.state_mut().ui.ext_open = Some(true); // narrow returns to the stage after an action
+        h.state_mut().ui.ext_tab = true; // narrow returns to the stage after an action
         h.run();
         assert_eq!(
             h.state().actions,
@@ -591,7 +783,7 @@ fn ringing_blf_with_pickup_configured_picks_up() {
         );
         h.get_by_label("Bob Martin (desk-1001)").click_accesskit();
         h.run();
-        h.state_mut().ui.ext_open = Some(true); // narrow returns to the stage after an action
+        h.state_mut().ui.ext_tab = true; // narrow returns to the stage after an action
         h.run();
         assert_eq!(
             h.state().actions,
@@ -609,7 +801,7 @@ fn ringing_blf_with_pickup_configured_picks_up() {
         h.get_by_label("Support queue (desk-1001)")
             .click_accesskit();
         h.run();
-        h.state_mut().ui.ext_open = Some(true); // narrow returns to the stage after an action
+        h.state_mut().ui.ext_tab = true; // narrow returns to the stage after an action
         h.run();
         assert_eq!(
             h.state().actions,
@@ -624,7 +816,7 @@ fn ringing_blf_with_pickup_configured_picks_up() {
         h.get_by_label("Support queue (desk-1001)")
             .click_accesskit();
         h.run();
-        h.state_mut().ui.ext_open = Some(true); // narrow returns to the stage after an action
+        h.state_mut().ui.ext_tab = true; // narrow returns to the stage after an action
         h.run();
         assert_eq!(
             h.state().actions,
@@ -1138,7 +1330,7 @@ fn narrow_returns_to_the_stage_after_a_blf_action() {
         h.state().actions,
         [UiAction::BlfDial("desk-1001".into(), "1002".into())]
     );
-    assert_eq!(h.state().ui.ext_open, None);
+    assert!(!h.state().ui.ext_tab);
 }
 
 // ---- review fixes -----------------------------------------------------------------------------
@@ -1456,7 +1648,7 @@ fn gear_opens_settings_and_back_returns() {
     h.get_by_label("Settings").click_accesskit();
     h.run();
     assert!(h.state().ui.settings.open);
-    assert!(h.query_by_label("LINES").is_none());
+    assert!(!rail_shown(&h));
     for s in [
         "Accounts",
         "Audio",
@@ -1478,7 +1670,7 @@ fn gear_opens_settings_and_back_returns() {
     h.get_by_label_contains("Back").click_accesskit();
     h.run();
     assert!(!h.state().ui.settings.open);
-    assert!(h.query_by_label("LINES").is_some());
+    assert!(rail_shown(&h));
 }
 
 #[test]
@@ -2217,10 +2409,7 @@ fn wizard_shows_without_a_real_account_and_replaces_the_example() {
     h.get_by_label("Finish").click_accesskit();
     h.run();
     assert_eq!(take(&mut h), [UiAction::FirstRunDone]);
-    assert!(
-        h.query_by_label("LINES").is_some(),
-        "the main window is back"
-    );
+    assert!(rail_shown(&h), "the main window is back");
 }
 
 #[test]
@@ -2291,7 +2480,7 @@ fn wizard_skip_records_the_flag_and_is_not_shown_again() {
     h.run();
     assert_eq!(take(&mut h), [UiAction::FirstRunDone]);
     assert!(h.query_by_label("Welcome to Siple").is_none());
-    assert!(h.query_by_label("LINES").is_some());
+    assert!(rail_shown(&h));
     // Settings can run it again.
     h.state_mut().ui.settings.open = true;
     h.run();
@@ -2357,7 +2546,7 @@ fn the_wizard_is_decided_once_and_does_not_pop_up_when_the_last_account_is_disab
     h.state_mut().snap.cfg = std::sync::Arc::new(cfg);
     h.run();
     assert!(h.query_by_label("Welcome to Siple").is_none());
-    assert!(h.query_by_label("LINES").is_some());
+    assert!(rail_shown(&h));
 }
 
 #[test]
@@ -3266,13 +3455,13 @@ fn unbindable_overrides_fall_back_to_the_defaults() {
 fn line_shortcuts_close_the_extensions_tab_when_narrow() {
     let mut h = harness_ext(two_calls(), NARROW);
     h.run();
-    assert_eq!(h.state().ui.ext_open, Some(true));
+    assert!(h.state().ui.ext_tab);
     press(&mut h, MOD, egui::Key::Num2);
-    assert_eq!(h.state().ui.ext_open, None);
+    assert!(!h.state().ui.ext_tab);
     let mut h = harness_ext(two_calls(), NARROW);
     h.run();
     press(&mut h, MOD, egui::Key::CloseBracket);
-    assert_eq!(h.state().ui.ext_open, None);
+    assert!(!h.state().ui.ext_tab);
 }
 
 // ---- UX feedback round 1 ----------------------------------------------------------------------
@@ -3333,7 +3522,7 @@ fn dial_row_widgets_share_one_height() {
     ] {
         if name == "dial bar" {
             h.run();
-            click_first(&mut h, "+ New call");
+            click_first(&mut h, "New call");
         }
         h.run();
         let field = h.get_by_label("Number or SIP URI");
@@ -3378,13 +3567,134 @@ fn extensions_panel_is_open_by_default_on_wide_and_roomy_medium_with_a_chevron()
 
 #[test]
 fn narrow_actions_do_not_pin_the_panel_closed_for_a_wider_window() {
-    let mut h = harness_ext(two_calls(), NARROW);
+    let mut h = harness(two_calls(), NARROW);
+    h.state_mut().ui.ext_tab = true;
     h.run();
     press(&mut h, MOD, egui::Key::Num2);
+    assert!(!h.state().ui.ext_tab);
     assert_eq!(h.state().ui.ext_open, None);
     h.set_size(WIDE);
     h.run();
     assert!(h.query_by_label("EXTENSIONS").is_some());
+}
+
+#[test]
+fn the_narrow_tab_and_the_wide_panel_are_separate_states() {
+    // Tab open in narrow, then widen: the panel follows the saved choice / default, not the tab.
+    let mut h = harness(two_calls(), NARROW);
+    h.run();
+    h.get_by_label_contains("Extensions").click_accesskit();
+    h.run();
+    assert!(h.state().ui.ext_tab);
+    assert_eq!((h.state().ui.ext_open, h.state().ui.ext_pref), (None, None));
+    h.set_size(WIDE);
+    h.run();
+    assert!(
+        h.query_by_label("EXTENSIONS").is_some(),
+        "wide default is open"
+    );
+    let mut ui = UiState::default();
+    ui.wizard.dismissed = true;
+    ui.ext_pref = Some(false);
+    let mut h = harness_ui(two_calls(), NARROW, ui);
+    h.run();
+    h.get_by_label_contains("Extensions").click_accesskit();
+    h.run();
+    assert!(h.state().ui.ext_tab);
+    h.set_size(WIDE);
+    h.run();
+    assert!(
+        h.query_by_label("EXTENSIONS").is_none(),
+        "saved choice wins over the tab"
+    );
+    // Panel open in wide, then narrow: the stage shows, not the tab.
+    let mut h = harness(two_calls(), WIDE);
+    h.run();
+    assert!(h.query_by_label("EXTENSIONS").is_some());
+    h.set_size(NARROW);
+    h.run();
+    assert!(h.query_by_label("EXTENSIONS").is_none());
+    assert!(h.query_by_label_contains("Line 1, Bob Martin").is_some());
+    assert!(!h.state().ui.ext_tab);
+}
+
+#[test]
+fn medium_default_uses_the_actual_rail_width_and_latches_on_rail_toggle() {
+    // 900 px: 56 + 300 + 440 fits with the collapsed rail.
+    let mut h = harness(two_calls(), MEDIUM);
+    h.run();
+    assert!(h.query_by_label("EXTENSIONS").is_some());
+    // Expanding the rail (208 px) would not fit, but the panel does not jump closed.
+    h.get_by_label("Expand lines").click_accesskit();
+    h.run();
+    assert!(h.query_by_label("EXTENSIONS").is_some());
+    assert_eq!(h.state().ui.ext_open, Some(true));
+    assert_eq!(h.state().ui.ext_pref, None, "a latch is not a saved choice");
+    // Below 796 px even the collapsed rail leaves too little room.
+    let mut h = harness(two_calls(), egui::vec2(780.0, 760.0));
+    h.run();
+    assert!(h.query_by_label("EXTENSIONS").is_none());
+}
+
+#[test]
+fn a_saved_open_choice_does_not_override_the_medium_stage_minimum() {
+    let mut ui = UiState::default();
+    ui.wizard.dismissed = true;
+    ui.ext_pref = Some(true);
+    let mut h = harness_ui(two_calls(), egui::vec2(780.0, 760.0), ui);
+    h.run();
+    assert!(h.query_by_label("EXTENSIONS").is_none());
+    // Wide always honours it.
+    let mut ui = UiState::default();
+    ui.wizard.dismissed = true;
+    ui.ext_pref = Some(true);
+    let mut h = harness_ui(two_calls(), WIDE, ui);
+    h.run();
+    assert!(h.query_by_label("EXTENSIONS").is_some());
+}
+
+#[test]
+fn panel_saves_are_per_setting_and_skip_unchanged_values() {
+    let mut st = UiState::default();
+    st.restore_panels(siple_core::state::GuiPanels::default());
+    assert_eq!(st.take_panel_save(), None);
+    // Hiding the extensions saves only that choice.
+    st.set_ext_panel(false);
+    let got = st.take_panel_save().unwrap();
+    assert_eq!(got.extensions_open, Some(false));
+    assert_eq!(got.lines_collapsed, None);
+    assert_eq!(st.take_panel_save(), None);
+    // Expanding the rail saves only the rail.
+    st.set_lines_expanded(true);
+    let got = st.take_panel_save().unwrap();
+    assert_eq!(got.lines_collapsed, Some(false));
+    assert_eq!(got.extensions_open, None);
+    // Re-asserting the same value writes nothing.
+    st.set_lines_expanded(true);
+    assert_eq!(st.take_panel_save(), None);
+}
+
+#[test]
+fn set_panels_requests_apply_and_save_without_a_frame() {
+    // The shell drives this from `logic`, which still runs while the window is hidden.
+    let shared = crate::snapshot::Shared::new(
+        base_snapshot(),
+        std::path::PathBuf::from("config.toml"),
+        None,
+    );
+    let mut st = UiState::default();
+    st.restore_panels(siple_core::state::GuiPanels::default());
+    shared.request_panels(Some(false), Some(false));
+    let (lines, ext) = shared.take_panel_requests();
+    st.apply_panel_request(lines, ext);
+    assert!(st.lines_expanded);
+    assert_eq!(st.ext_open, Some(false));
+    let got = st.take_panel_save().unwrap();
+    assert_eq!(got.lines_collapsed, Some(false));
+    assert_eq!(got.extensions_open, Some(false));
+    // Narrow stays as it is.
+    assert!(!st.ext_tab);
+    assert_eq!(shared.take_panel_requests(), (None, None));
 }
 
 #[test]

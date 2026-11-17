@@ -7,6 +7,11 @@ rust-version.workspace = true
 license.workspace = true
 publish.workspace = true
 
+[features]
+# Mac App Store / Microsoft Store builds: compiles the update check out entirely (no network code,
+# no `app.check_updates` activity; `[updates]` is accepted and ignored). See docs/RELEASING.md.
+store = []
+
 [dependencies]
 siple-config = { path = "../siple-config" }
 siple-sip = { path = "../siple-sip" }
@@ -39,6 +44,11 @@ socket2 = { version = "0.6", features = ["all"] }
 tokio = { version = "1", features = ["rt", "net", "sync", "time", "macros", "io-util", "process"] }
 async-trait = "0.1"
 tokio-util = "0.7"
+# The update check's HTTPS GET (src/update/http.rs): the same rustls + ring + OS verifier stack as
+# siple-sip, no OpenSSL, no HTTP client crate.
+rustls = { version = "0.23", default-features = false, features = ["ring", "tls12", "std"] }
+rustls-platform-verifier = "0.6"
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12"] }
 notify = "8"
 notify-debouncer-full = "0.6"
 

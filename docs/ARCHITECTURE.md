@@ -119,7 +119,8 @@ account actor reacts by re-probing; on a changed path it re-registers (and re-su
 `siple-core/src/logging.rs` sets up the application log (daily files, retention, runtime level changes). The per-account wire
 trace (`sip_trace.rs`) is fed by rsipstack's `WireTap` and writes one file tree per account; the tap is installed only while
 `sip_trace` is on. `redact.rs` masks credentials and SRTP keys when `[logging] redact_credentials` / `redact_srtp_keys` are set.
-Plaintext passwords are never logged. There is no telemetry.
+Plaintext passwords are never logged. There is no telemetry; the one network request Siple makes on its own is the optional,
+anonymous update check (`siple-core/src/update/`, `[updates]`), which only reads the project's GitHub releases list.
 
 ## Testing
 

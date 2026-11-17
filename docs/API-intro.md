@@ -96,6 +96,7 @@ Two ways to consume them:
 | `account.mwi` | account | `{waiting, account_uri, voice:{new,old,urgent_new,urgent_old}, other:{class:counts}, updated_at}` |
 | `account.dnd` | account | `{enabled}` |
 | `account.reconnecting` | account | `{reason}`: the account is re-probing and re-registering (`network_changed`/`os:*`/`wake`/`route_changed`/`manual`, `send_error`, `keepalive_timeout`) |
+| `app.update_available` | - | `{version, url}`: the update check found a release newer than the running one (once per version, remembered across restarts; `version` is e.g. `0.2.0` or `0.2.0-rc.1`, `url` its release page). Not sent while `[updates] check = false` or in a store build |
 | `network.changed` | - | `{generation, reasons:[...], old_local_ip, new_local_ip}`: debounced network change (OS event, wake from sleep, different route, `network.refresh`); `old_local_ip`/`new_local_ip` are the default-route IPv4 source addresses (`null` = no route) |
 | `blf.state` | account | `{uri, label, state: idle\|ringing\|dialing\|busy\|held\|unknown\|failed, dialogs:[...]}` |
 | `subscription.state` | account | `{sub_id, uri, event, kind: blf\|mwi\|generic, state: pending\|active\|terminated\|failed, code?, reason?}` |

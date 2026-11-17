@@ -302,7 +302,7 @@ impl RuntimeInfo {
     pub fn new(control: ControlEndpoints) -> Result<Self, InstanceError> {
         Ok(Self {
             pid: std::process::id(),
-            version: env!("CARGO_PKG_VERSION").to_string(),
+            version: crate::update::full_version().to_string(),
             started_at: DateTime::from_timestamp(Utc::now().timestamp(), 0)
                 .unwrap_or_else(Utc::now),
             control,

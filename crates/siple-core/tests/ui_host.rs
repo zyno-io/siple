@@ -35,7 +35,13 @@ async fn ui_methods_need_a_gui() {
     std::fs::write(&path, "").unwrap();
     let app = start_app(&path).await;
     let mut c = client(&app, "t").await;
-    for m in ["ui.show", "ui.hide", "ui.state", "ui.attention"] {
+    for m in [
+        "ui.show",
+        "ui.hide",
+        "ui.state",
+        "ui.set_panels",
+        "ui.attention",
+    ] {
         let e = c.call(m, json!({})).await.unwrap_err();
         assert!(e.to_string().contains("no GUI"), "{m}: {e}");
         assert_eq!(kind(e), ErrorKind::InvalidState);
@@ -74,6 +80,18 @@ async fn ui_methods_reach_the_host_and_hand_off_works() {
     let mut c = client(&app, "t").await;
     c.call("ui.show", json!({})).await.unwrap();
     c.call("ui.hide", json!({})).await.unwrap();
+    c.call("ui.set_panels", json!({"lines_collapsed": false}))
+        .await
+        .unwrap();
+    c.call("ui.set_panels", json!({"extensions_open": true}))
+        .await
+        .unwrap();
+    // Unknown fields are refused before the GUI is asked.
+    let e = c
+        .call("ui.set_panels", json!({"rail": true}))
+        .await
+        .unwrap_err();
+    assert_eq!(kind(e), ErrorKind::InvalidParams);
     c.call(
         "app.open_uri",
         json!({"uri": "sip:bob@example.test?Replaces=x"}),
@@ -87,17 +105,31 @@ async fn ui_methods_reach_the_host_and_hand_off_works() {
     );
     assert_eq!(hand_off(dir.path(), None).await, HandOff::Done);
     let got = host.0.lock().unwrap().clone();
-    assert_eq!(got.len(), 5, "{got:?}");
+    assert_eq!(got.len(), 7, "{got:?}");
     assert_eq!(got[0], UiRequest::Show);
     assert_eq!(got[1], UiRequest::Hide);
-    let UiRequest::OpenLink(l) = &got[2] else {
+    assert_eq!(
+        got[2],
+        UiRequest::SetPanels {
+            lines_collapsed: Some(false),
+            extensions_open: None
+        }
+    );
+    assert_eq!(
+        got[3],
+        UiRequest::SetPanels {
+            lines_collapsed: None,
+            extensions_open: Some(true)
+        }
+    );
+    let UiRequest::OpenLink(l) = &got[4] else {
         panic!()
     };
     assert_eq!(l.target, "sip:bob@example.test");
-    let UiRequest::OpenLink(l) = &got[3] else {
+    let UiRequest::OpenLink(l) = &got[5] else {
         panic!()
     };
     assert_eq!(l.target, "+15550100");
-    assert_eq!(got[4], UiRequest::Show);
+    assert_eq!(got[6], UiRequest::Show);
     app.shutdown().await;
 }

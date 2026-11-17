@@ -29,6 +29,7 @@ use crate::reconfig::EditFailure;
 use crate::state::PartialSelection;
 use crate::subscriptions::{SUBSCRIPTION_METHODS, subscription_methods};
 use crate::ui_host::{UI_METHODS, ui_methods};
+use crate::update::{UPDATE_METHODS, update_methods};
 
 /// See the module docs.
 pub struct AppBackend {
@@ -145,7 +146,8 @@ impl AppBackend {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .clone();
         json!({
-            "version": env!("CARGO_PKG_VERSION"),
+            "version": crate::update::full_version(),
+            "update": i.update_summary(),
             "pid": std::process::id(),
             "headless": i.headless,
             "started_at": i.started_at.to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
@@ -473,7 +475,7 @@ impl AppBackend {
     }
 }
 
-const CONFIG_EDIT_DOC: &str = "Changes config.toml with typed edits, then reloads it (the same path as an external edit: hot options apply at once, account changes re-register or rebuild as needed). Comments, key order and layout of the file are preserved; only the named keys change. All edits apply together or none do. Params {base_hash?, edits[]}: with `base_hash` (the `hash` of `config.view`) the call fails with invalid_state, data.reason `conflict` and data.current_hash when the file changed since it was read. Result {applied, hash, report, event_seq}: `hash` is the new base_hash, `report` the reload report {applied, changed, summary, errors}. Errors: invalid_params with data.reason `invalid` and data.errors [{path, message}] when an edit is wrong or the edited file would not validate (nothing is written); invalid_state with data.reason `file_invalid` when the file on disk does not parse (edits are refused until it is fixed; a file that parses but fails validation can still be edited, as long as the edited result validates, so an edit can repair it, e.g. disable the bad account). A read-only file is refused with internal. An absent key whose new value equals the default is not written. Edit objects, each with an `op`: {op:set_account, id, field, value} | {op:reset_account, id, field} (removes the key) | {op:add_account, draft:{id, fields:{field: value}}, replace_example?:bool} (`replace_example` replaces the shipped, untouched `example` account) | {op:remove_account, id} | {op:move_account, id, index} (moves the account to 0-based position `index` in the account list, which is the display order; an index past the end means last; comments above it move with it) | {op:rename_account, from, to} | {op:set_blf, account, entries:[{uri, label, group?, pickup?, pickup_prefix?, pickup_target?}]} (replaces the list; entries matched by uri keep their comments; an empty optional key, or pickup \"\" for inherit, is removed from the file) | {op:set_section, section, key, value} | {op:reset_section, section, key}. Account fields: enabled, profile, display_name, username, auth_username, password, password_store (file|keyring: with keyring the password lives in the system credential store and `password` must be empty; switching moves the existing password along), domain, registrar, outbound_proxy, transport (udp|tcp|tls|auto: SRV _sips._tcp > _sip._tcp > _sip._udp, else UDP 5060), local_port, tls_verify, tls_fingerprint, srtp (off|optional|mandatory), dnd, auto_answer, answer_delay_ms, allow_intercom, auto_hold, mwi (subscribe|unsolicited|off), sip_trace, pickup (off|prefix|replaces), pickup_prefix, pickup_replaces_target (caller|monitored). Sections: calls, ui (also `shortcuts.<action>`), network, logging, audio, general (only user_agent and log_level; log_dir, log_retention_days and reconfig_force are file-only); `config.view` lists their keys under `editable`. Values are plain booleans, integers or strings, checked per field; unknown sections and keys are rejected. Everything else (extra_headers, [media], [speech], [control], ...) stays file-only.";
+const CONFIG_EDIT_DOC: &str = "Changes config.toml with typed edits, then reloads it (the same path as an external edit: hot options apply at once, account changes re-register or rebuild as needed). Comments, key order and layout of the file are preserved; only the named keys change. All edits apply together or none do. Params {base_hash?, edits[]}: with `base_hash` (the `hash` of `config.view`) the call fails with invalid_state, data.reason `conflict` and data.current_hash when the file changed since it was read. Result {applied, hash, report, event_seq}: `hash` is the new base_hash, `report` the reload report {applied, changed, summary, errors}. Errors: invalid_params with data.reason `invalid` and data.errors [{path, message}] when an edit is wrong or the edited file would not validate (nothing is written); invalid_state with data.reason `file_invalid` when the file on disk does not parse (edits are refused until it is fixed; a file that parses but fails validation can still be edited, as long as the edited result validates, so an edit can repair it, e.g. disable the bad account). A read-only file is refused with internal. An absent key whose new value equals the default is not written. Edit objects, each with an `op`: {op:set_account, id, field, value} | {op:reset_account, id, field} (removes the key) | {op:add_account, draft:{id, fields:{field: value}}, replace_example?:bool} (`replace_example` replaces the shipped, untouched `example` account) | {op:remove_account, id} | {op:move_account, id, index} (moves the account to 0-based position `index` in the account list, which is the display order; an index past the end means last; comments above it move with it) | {op:rename_account, from, to} | {op:set_blf, account, entries:[{uri, label, group?, pickup?, pickup_prefix?, pickup_target?}]} (replaces the list; entries matched by uri keep their comments; an empty optional key, or pickup \"\" for inherit, is removed from the file) | {op:set_section, section, key, value} | {op:reset_section, section, key}. Account fields: enabled, profile, display_name, username, auth_username, password, password_store (file|keyring: with keyring the password lives in the system credential store and `password` must be empty; switching moves the existing password along), domain, registrar, outbound_proxy, transport (udp|tcp|tls|auto: SRV _sips._tcp > _sip._tcp > _sip._udp, else UDP 5060), local_port, tls_verify, tls_fingerprint, srtp (off|optional|mandatory), dnd, auto_answer, answer_delay_ms, allow_intercom, auto_hold, mwi (subscribe|unsolicited|off), sip_trace, pickup (off|prefix|replaces), pickup_prefix, pickup_replaces_target (caller|monitored). Sections: calls, ui (also `shortcuts.<action>`), network, logging, audio, general (only user_agent and log_level; log_dir, log_retention_days and reconfig_force are file-only), updates (check, channel: stable|prerelease; `reset_section` channel restores the automatic choice); `config.view` lists their keys under `editable`. Values are plain booleans, integers or strings, checked per field; unknown sections and keys are rejected. Everything else (extra_headers, [media], [speech], [control], ...) stays file-only.";
 
 fn config_edit_schema() -> Value {
     let value = json!({"description":"A boolean, integer or string, as the field requires.","type":["boolean","integer","string"]});
@@ -523,7 +525,7 @@ pub fn backend_methods() -> Vec<MethodInfo> {
     vec![
             MethodInfo::new(
                 "status",
-                "Overall state: instance_id and started_at (a changed instance_id means a restart: event seqs and call ids reset), accounts (registration, dnd, mwi summary, blf list, pending_rebuild), calls, active_line (id of the un-held device-bound call that owns the microphone and speaker, or null), network {generation: count of network changes seen}, audio (effective devices from [audio] with source config|default, active devices, mic_permission), speech {tts, stt: whether [speech] tts_command / stt_command are set}, config (path, applied_at, last_error), event_seq.",
+                "Overall state: instance_id and started_at (a changed instance_id means a restart: event seqs and call ids reset), accounts (registration, dnd, mwi summary, blf list, pending_rebuild), calls, active_line (id of the un-held device-bound call that owns the microphone and speaker, or null), network {generation: count of network changes seen}, audio (effective devices from [audio] with source config|default, active devices, mic_permission), speech {tts, stt: whether [speech] tts_command / stt_command are set}, config (path, applied_at, last_error), update {enabled, current, available, latest, release_url: the update check's summary, see app.update_status}, event_seq.",
                 none(),
             ),
             MethodInfo::new("account.list", "Status of all accounts.", none()),
@@ -630,6 +632,7 @@ pub fn backend_methods() -> Vec<MethodInfo> {
         .chain(subscription_methods())
         .chain(agent_methods())
         .chain(ui_methods())
+        .chain(update_methods())
         .chain(std::iter::once(crate::agent::stream::method_info()))
         .collect()
 }
@@ -713,6 +716,10 @@ impl ControlBackend for AppBackend {
             m if SUBSCRIPTION_METHODS.contains(&m) => self.subscription_method(m, params).await,
             m if AGENT_METHODS.contains(&m) => self.agent_method(m, params).await,
             m if UI_METHODS.contains(&m) => self.ui_method(m, params).await,
+            m if UPDATE_METHODS.contains(&m) => {
+                let _: Value = params;
+                self.update_method(m).await
+            }
             // Needs a connection upgrade, which only the control server can do.
             "call.stream" => Err(ApiError::invalid_state(
                 "`call.stream` upgrades the connection to binary; use `siple-cli stream` \

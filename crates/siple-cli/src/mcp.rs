@@ -624,7 +624,7 @@ impl McpServer {
                 Ok(json!({
                     "protocolVersion": version,
                     "capabilities": {"tools": {"listChanged": true}},
-                    "serverInfo": {"name": "siple", "version": env!("CARGO_PKG_VERSION")},
+                    "serverInfo": {"name": "siple", "version": siple_core::update::full_version()},
                     "instructions": INSTRUCTIONS,
                 }))
             }

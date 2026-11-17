@@ -19,6 +19,7 @@ pub const UI_METHODS: &[&str] = &[
     "ui.show",
     "ui.hide",
     "ui.state",
+    "ui.set_panels",
     "ui.attention",
     "app.open_uri",
 ];
@@ -32,10 +33,25 @@ pub enum UiRequest {
     Hide,
     /// Report window and tray state.
     State,
+    /// Collapse / expand the Lines rail and open / close the extensions panel (`None` = leave).
+    SetPanels {
+        /// Lines rail collapsed.
+        lines_collapsed: Option<bool>,
+        /// Extensions panel open.
+        extensions_open: Option<bool>,
+    },
     /// Ask the OS to draw the user's attention (taskbar flash, Dock bounce).
     Attention,
     /// Prefill the dial field with a validated link and raise the window. Never dials.
     OpenLink(LinkTarget),
+}
+
+/// Parameters of `ui.set_panels`.
+#[derive(Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SetPanelsParams {
+    lines_collapsed: Option<bool>,
+    extensions_open: Option<bool>,
 }
 
 /// Implemented by the GUI. Called from control-server tasks, so it must be quick and
@@ -66,8 +82,13 @@ pub fn ui_methods() -> Vec<MethodInfo> {
         ),
         MethodInfo::new(
             "ui.state",
-            "GUI window state: {visible, focused, tray (an icon exists), close_to_tray (closing hides)}. Fails with invalid_state `no GUI` when headless.",
+            "GUI window state: {visible, focused, tray (an icon exists), close_to_tray (closing hides), lines_collapsed (the Lines rail is the slim strip), extensions_open (the extensions panel is open; in a narrow window, where the panel is a tab, the saved or session panel choice, false when none)}. Fails with invalid_state `no GUI` when headless.",
             none_params(),
+        ),
+        MethodInfo::new(
+            "ui.set_panels",
+            "Collapse or expand the Lines rail and open or close the extensions panel, as the GUI chevrons do; the choice is remembered across launches (state.toml). Omitted fields are left alone. Both settings are for the wide and medium layouts: in a narrow window they are stored (and applied when the window widens) but the narrow view does not change, and the narrow extensions tab is never affected. Result: the same fields as ui.state's `lines_collapsed` and `extensions_open`, as applied (reported once the GUI processed the request; may lag one frame). Fails with invalid_state `no GUI` when headless.",
+            json!({"type":"object","properties":{"lines_collapsed":{"type":"boolean","description":"true = slim strip of line badges, false = full Lines list."},"extensions_open":{"type":"boolean","description":"true = show the extensions panel, false = hide it."}},"additionalProperties":false}),
         ),
         MethodInfo::new(
             "ui.attention",
@@ -104,6 +125,13 @@ impl AppBackend {
             "ui.show" => UiRequest::Show,
             "ui.hide" => UiRequest::Hide,
             "ui.state" => UiRequest::State,
+            "ui.set_panels" => {
+                let p: SetPanelsParams = parse_params(params)?;
+                UiRequest::SetPanels {
+                    lines_collapsed: p.lines_collapsed,
+                    extensions_open: p.extensions_open,
+                }
+            }
             "ui.attention" => UiRequest::Attention,
             "app.open_uri" => {
                 let p: OpenUriParams = parse_params(params)?;

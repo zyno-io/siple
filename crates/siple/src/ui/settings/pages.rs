@@ -438,6 +438,102 @@ pub(super) fn advanced(ui: &mut egui::Ui, cx: &Cx, st: &mut UiState, out: &mut V
             st.wizard.restart();
         }
     });
+    group(ui, p, "About", |ui| {
+        info_row(ui, p, "Version", &snap.update.current);
+    });
+    #[cfg(not(feature = "store"))]
+    updates_group(ui, cx, st, out);
+}
+
+/// `[updates]`: the switch, the channel and the last result of the check.
+#[cfg(not(feature = "store"))]
+fn updates_group(ui: &mut egui::Ui, cx: &Cx, st: &mut UiState, out: &mut Vec<UiAction>) {
+    let p = cx.p;
+    let snap = cx.vm.snap;
+    let v = serde_json::to_value(&snap.cfg.updates).unwrap_or(Value::Null);
+    group(ui, p, "Updates", |ui| {
+        sec_toggle(
+            ui,
+            p,
+            out,
+            "updates",
+            "check",
+            "Check for updates",
+            "Once a day Siple asks GitHub whether a newer release exists (one anonymous request that carries only the version). Nothing is downloaded or installed.",
+            &v,
+        );
+        let u = &snap.update;
+        let automatic = snap.cfg.updates.channel.is_none();
+        let cur = if automatic {
+            format!("auto_{}", u.channel)
+        } else {
+            u.channel.clone()
+        };
+        let auto_label = format!("Automatic ({})", u.channel);
+        if let Some(new) = choice_row(
+            ui,
+            p,
+            "Channel",
+            &cur,
+            &[
+                (&format!("auto_{}", u.channel), &auto_label),
+                ("stable", "Stable releases"),
+                ("prerelease", "Stable and release candidates"),
+            ],
+            None,
+        ) {
+            if new.starts_with("auto_") {
+                out.push(rpc::config_edit(
+                    RpcTag::Instant,
+                    None,
+                    &[siple_core::config::edit::ConfigEdit::ResetSection {
+                        section: "updates".into(),
+                        key: "channel".into(),
+                    }],
+                ));
+            } else {
+                out.push(rpc::set_section("updates", "channel", EditValue::Str(new)));
+            }
+        }
+        let result = if st.settings.update_checking {
+            "Checking...".to_string()
+        } else if !u.enabled {
+            "Off".to_string()
+        } else if let Some(e) = &u.error {
+            format!("Last check failed: {e}")
+        } else if u.checked_at.is_none() {
+            "Not checked yet".to_string()
+        } else if u.available {
+            format!(
+                "Siple {} is available",
+                u.latest.as_deref().unwrap_or_default()
+            )
+        } else {
+            "You have the latest version".to_string()
+        };
+        info_row(ui, p, "Status", &result);
+        if let Some(t) = &u.checked_at {
+            info_row(ui, p, "Last checked", &crate::ui::short_time(t));
+        }
+        ui.horizontal(|ui| {
+            if small_button(
+                ui,
+                p,
+                "Check now",
+                u.enabled && !st.settings.update_checking,
+            )
+            .clicked()
+            {
+                st.settings.update_checking = true;
+                out.push(rpc::check_updates());
+            }
+            if let Some((_, url)) = snap.update_offer()
+                && small_button(ui, p, "Download", true).clicked()
+            {
+                out.push(UiAction::OpenUrl(url.to_string()));
+            }
+        });
+    });
 }
 
 pub(super) fn developer(ui: &mut egui::Ui, cx: &Cx, out: &mut Vec<UiAction>) {

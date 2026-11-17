@@ -104,6 +104,16 @@ stt_command = []                      # e.g. ["whisper-cli", "-m", "ggml-base.en
 stt_timeout_ms = 60000                # 1000..120000
 stt_language = "en"                   # value for {lang}; same charset as tts_voice
 
+[updates]
+# Tell me when a newer Siple release exists (a pill in the header; nothing is downloaded or
+# installed). What is sent: one anonymous HTTPS GET to api.github.com about once a day (and when
+# you press "Check for updates"), with the header `User-Agent: Siple/<version>`. Nothing else: no
+# identifier, no account, no usage data. Hot reloadable. Ignored by Mac App Store / Microsoft
+# Store builds, which update through the store.
+check = true
+# channel = "stable"                  # stable | prerelease. Unset: prerelease while you run a release
+                                      # candidate, else stable.
+
 # Sample account. It is disabled so a fresh install never tries to register; set enabled = true
 # (the default for accounts) after filling in your details. Add more [[account]] blocks as needed.
 [[account]]

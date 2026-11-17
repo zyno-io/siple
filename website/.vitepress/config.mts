@@ -125,7 +125,8 @@ export default defineConfig({
             { text: 'Keyboard shortcuts', link: '/guide/shortcuts' },
             { text: 'Tray and notifications', link: '/guide/tray' },
             { text: 'sip: and tel: links', link: '/guide/links' },
-            { text: 'Network changes', link: '/guide/network' }
+            { text: 'Network changes', link: '/guide/network' },
+            { text: 'Updates', link: '/guide/updates' }
           ]
         },
         { text: 'Troubleshooting', link: '/guide/troubleshooting' }

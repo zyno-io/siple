@@ -20,6 +20,7 @@ pub mod state;
 pub mod subscriptions;
 pub mod tones;
 pub mod ui_host;
+pub mod update;
 pub mod uri;
 
 pub use app::{App, AppError, AppOptions, LoggingMode, ReloadReport};

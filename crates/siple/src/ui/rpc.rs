@@ -28,6 +28,9 @@ pub enum RpcTag {
     SetPassword(String),
     /// `audio.echo_test`.
     Echo,
+    /// `app.check_updates` ("Check for updates" in Settings).
+    #[cfg(not(feature = "store"))]
+    CheckUpdates,
 }
 
 /// A call to a control-API method.
@@ -133,6 +136,16 @@ pub fn set_section(section: &str, key: &str, value: EditValue) -> UiAction {
             value,
         }],
     )
+}
+
+/// `app.check_updates`.
+#[cfg(not(feature = "store"))]
+pub fn check_updates() -> UiAction {
+    UiAction::Rpc(RpcRequest {
+        tag: RpcTag::CheckUpdates,
+        method: "app.check_updates",
+        params: json!({}),
+    })
 }
 
 /// The edits carried by a `config.edit` request.

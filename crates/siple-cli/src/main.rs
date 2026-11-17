@@ -16,7 +16,7 @@ mod mcp;
 #[derive(Parser)]
 #[command(
     name = "siple-cli",
-    version,
+    version = siple_core::update::full_version(),
     about = "Siple SIP test softphone (console)"
 )]
 struct Cli {
@@ -654,6 +654,8 @@ async fn run(args: RunArgs) -> Result<ExitCode> {
     let resolved = config::resolve_config_path(args.config)
         .context("cannot determine the default config directory")?;
     let mut opts = AppOptions::new(resolved.path);
+    #[cfg(not(feature = "store"))]
+    opts.use_github_updates();
     opts.migrate_legacy_config = resolved.is_default;
     opts.startup_warnings = resolved.warnings;
     opts.headless = true;

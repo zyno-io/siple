@@ -135,7 +135,7 @@ impl ControlBackend for StubBackend {
         match method {
             "status" => Ok(json!({
                 "stub": true,
-                "version": env!("CARGO_PKG_VERSION"),
+                "version": crate::update::full_version(),
                 "accounts": [],
                 "calls": [],
             })),

@@ -156,6 +156,8 @@ pub struct ConfigDiff {
     pub calls: bool,
     /// `[ui]` changed (hot; nothing to push, the GUI reads the effective config).
     pub ui: bool,
+    /// `[updates]` changed (hot; the update checker re-reads it).
+    pub updates: bool,
 }
 
 impl ConfigDiff {
@@ -220,6 +222,7 @@ pub fn diff(old: &Config, new: &Config) -> ConfigDiff {
     d.speech = old.speech != new.speech;
     d.calls = old.calls != new.calls;
     d.ui = old.ui != new.ui;
+    d.updates = old.updates != new.updates;
     d
 }
 
@@ -271,6 +274,8 @@ pub enum Change {
     Calls,
     /// `[ui]` updated (no account is touched).
     Ui,
+    /// `[updates]` updated (the update checker follows it).
+    Updates,
     /// A change could not be applied.
     Failed {
         /// What was attempted.
@@ -354,6 +359,7 @@ impl std::fmt::Display for Change {
                 "logging settings updated (redaction applies to new log lines and trace records)"
             ),
             Change::Ui => write!(f, "ui settings updated"),
+            Change::Updates => write!(f, "update check settings updated"),
             Change::Failed { what, error } => write!(f, "FAILED {what}: {error}"),
         }
     }
@@ -457,6 +463,10 @@ impl Inner {
         // [ui]: hot, no side effects here.
         if d.ui {
             out.push(Change::Ui);
+        }
+        // [updates]: hot; the checker is woken once the new config is stored.
+        if d.updates {
+            out.push(Change::Updates);
         }
         // Log/trace masking follows [logging] and the configured passwords (cheap; always).
         self.redactor
@@ -665,6 +675,10 @@ impl Inner {
         let old = self.config.load_full();
         let (effective, changes) = self.apply_config(&old, loaded.config).await;
         self.config.store(Arc::new(effective));
+        #[cfg(not(feature = "store"))]
+        if changes.iter().any(|c| matches!(c, Change::Updates)) {
+            self.updater.config_changed();
+        }
         // After the config: a reader that sees the new hash also sees the new config (the other
         // way round it only sees a stale hash, which makes an edit fail safe with a conflict).
         *self

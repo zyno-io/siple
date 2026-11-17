@@ -1,6 +1,16 @@
 <!-- siple-rename: keep (this file documents the legacy ZynoPhone names on purpose) -->
 # Changelog
 
+## Unreleased: update check
+
+Siple can tell you that a newer release exists (direct-download builds only; detection, nothing is downloaded or installed). `[updates]`
+has `check = true` and `channel` (`stable` or `prerelease`; unset follows the running build). One anonymous HTTPS GET of the GitHub
+releases list, 30 s after start and then every 24 h, uses ETags and backs off when rate limited. A pill in the header
+("Update 0.2.0": Download, Release notes, Skip this version) and a Settings > Advanced section show the result. API:
+`app.update_status`, `app.check_updates`, the event `app.update_available` and `status.update`. Release-candidate builds now know
+their own `-rc.N` (the release workflow passes the tag as `SIPLE_BUILD_TAG`), shown in `status.version` and `--version`. The `store`
+cargo feature (Mac App Store, Microsoft Store builds) compiles the check out; see `docs/RELEASING.md`.
+
 ## Unreleased: signed releases
 
 `.github/workflows/release.yml` replaces `package.yml`: a `v*` tag builds all platforms, signs the macOS app (Developer ID,

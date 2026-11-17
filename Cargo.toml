@@ -12,3 +12,9 @@ publish = false
 
 [profile.release]
 lto = "thin"
+
+# Build scripts and proc macros: never strip. On macOS 27 the default release stripping leaves
+# proc-macro dylibs the loader rejects ("mis-aligned LINKEDIT string pool"), so release builds fail
+# with "can't find crate for `thiserror_impl`" (docs/spikes/mas-sandbox.md).
+[profile.release.build-override]
+strip = false

@@ -132,6 +132,7 @@ struct WindowStatus {
 /// The control-API face of the GUI.
 struct GuiHost {
     tx: ShellTx,
+    shared: Arc<Shared>,
     status: Arc<Mutex<WindowStatus>>,
     limiter: Arc<Mutex<LinkRateLimit>>,
 }
@@ -163,7 +164,20 @@ impl UiHost for GuiHost {
                 "focused": st.focused,
                 "tray": st.tray,
                 "close_to_tray": st.close_to_tray,
+                "lines_collapsed": self.shared.panel_link().lines_collapsed,
+                "extensions_open": self.shared.panel_link().extensions_open,
             })),
+            UiRequest::SetPanels {
+                lines_collapsed,
+                extensions_open,
+            } => {
+                let p = self.shared.request_panels(lines_collapsed, extensions_open);
+                self.tx.send(ShellMsg::Wake);
+                Ok(json!({
+                    "lines_collapsed": p.lines_collapsed,
+                    "extensions_open": p.extensions_open,
+                }))
+            }
             UiRequest::Attention => {
                 self.tx.send(ShellMsg::Ui(UiRequest::Attention));
                 Ok(json!({"ok": true}))
@@ -296,6 +310,7 @@ impl Shell {
         let limiter = Arc::new(Mutex::new(LinkRateLimit::new(8, Duration::from_secs(10))));
         app.set_ui_host(Arc::new(GuiHost {
             tx: tx.clone(),
+            shared: shared.clone(),
             status: status.clone(),
             limiter: limiter.clone(),
         }));
@@ -678,7 +693,7 @@ impl Shell {
                 self.show_window(ctx);
                 links.push(l);
             }
-            ShellMsg::Ui(UiRequest::State) => {}
+            ShellMsg::Ui(UiRequest::State | UiRequest::SetPanels { .. }) => {}
             ShellMsg::Url(raw) if !lock(&self.limiter).allow(Instant::now()) => {
                 tracing::warn!(
                     "ignoring link: too many in a short time ({} bytes)",
@@ -848,6 +863,8 @@ impl ShellApp {
 
 impl eframe::App for ShellApp {
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // Panel requests from the control API apply (and save) even while hidden.
+        self.inner.sync_panels();
         for l in self.shell.logic(ctx) {
             self.inner.prefill_dial(&l.target);
         }

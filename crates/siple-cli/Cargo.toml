@@ -7,6 +7,10 @@ rust-version.workspace = true
 license.workspace = true
 publish.workspace = true
 
+[features]
+# Store builds (Mac App Store, Microsoft Store): no update check, no update UI. See docs/RELEASING.md.
+store = ["siple-core/store"]
+
 [dependencies]
 siple-core = { path = "../siple-core" }
 anyhow = "1"

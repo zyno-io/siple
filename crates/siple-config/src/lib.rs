@@ -1779,6 +1779,7 @@ session_timers = false
         assert_eq!(ex.media, d.media);
         assert_eq!(ex.audio, d.audio);
         assert_eq!(ex.speech, d.speech);
+        assert_eq!(ex.updates, d.updates);
         assert_eq!(ex.calls, d.calls);
         assert_eq!(ex.ui, d.ui);
         // The sample account differs from defaults only in identity and `enabled`.

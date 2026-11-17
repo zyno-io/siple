@@ -45,6 +45,8 @@ pub(super) fn show(ui: &mut egui::Ui, cx: &Cx, st: &mut UiState, out: &mut Vec<U
             ext_toggle(ui, cx, st);
             settings_button(ui, cx, st);
             voicemail(ui, cx);
+            #[cfg(not(feature = "store"))]
+            update_pill(ui, cx, out);
         });
     });
 }
@@ -140,8 +142,88 @@ fn ext_toggle(ui: &mut egui::Ui, cx: &Cx, st: &mut UiState) {
         )
     });
     if r.clicked() {
-        st.ext_open = Some(!open);
+        if narrow {
+            // The narrow tab is a transient view, not a saved panel choice.
+            st.ext_tab = !open;
+        } else {
+            st.set_ext_panel(!open);
+        }
     }
+}
+
+/// "Update 0.2.0": a quiet pill, only while a newer release (not skipped) exists. Click opens a
+/// small menu: Download, Release notes, Skip this version.
+#[cfg(not(feature = "store"))]
+fn update_pill(ui: &mut egui::Ui, cx: &Cx, out: &mut Vec<UiAction>) {
+    let Some((version, url)) = cx.vm.snap.update_offer() else {
+        return;
+    };
+    let p = cx.p;
+    let text = if cx.mode == LayoutMode::Narrow {
+        "Update".to_string()
+    } else {
+        format!("Update {version}")
+    };
+    let galley = ui.painter().layout_no_wrap(
+        text,
+        egui::FontId::new(FS_SMALL, theme::semibold()),
+        p.accent,
+    );
+    let (rect, resp) = ui.allocate_exact_size(
+        egui::vec2(galley.size().x + 20.0, 24.0),
+        egui::Sense::click(),
+    );
+    let open = egui::Popup::is_id_open(ui.ctx(), egui::Popup::default_response_id(&resp));
+    ui.painter().rect(
+        rect,
+        CornerRadius::same(255),
+        p.accent_soft,
+        Stroke::new(
+            1.0,
+            if open || resp.hovered() {
+                p.accent
+            } else {
+                p.accent_soft
+            },
+        ),
+        egui::StrokeKind::Inside,
+    );
+    ui.painter().galley(
+        egui::pos2(rect.left() + 10.0, rect.center().y - galley.size().y / 2.0),
+        galley,
+        p.accent,
+    );
+    paint_focus_ring(ui, p, &resp, rect);
+    let label = format!("Siple {version} is available");
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, label.clone()));
+    let resp = resp
+        .on_hover_cursor(egui::CursorIcon::PointingHand)
+        .on_hover_text(label);
+    egui::Popup::from_toggle_button_response(&resp)
+        .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+        .show(|ui| {
+            ui.set_min_width(240.0);
+            ui.spacing_mut().item_spacing.y = SP_XS + 2.0;
+            ui.label(strong(format!("New version {version}"), FS_BODY).color(p.text));
+            ui.label(
+                RichText::new(format!("You are running {}.", cx.vm.snap.update.current))
+                    .size(FS_SMALL)
+                    .color(p.muted),
+            );
+            hairline(ui, p);
+            if ui.button("Download").clicked() {
+                out.push(UiAction::OpenUrl(url.to_string()));
+                ui.close();
+            }
+            if ui.button("Release notes").clicked() {
+                out.push(UiAction::OpenUrl(url.to_string()));
+                ui.close();
+            }
+            if ui.button("Skip this version").clicked() {
+                out.push(UiAction::SkipUpdate(version.to_string()));
+                ui.close();
+            }
+        });
 }
 
 /// Voicemail total over the accounts that report MWI.

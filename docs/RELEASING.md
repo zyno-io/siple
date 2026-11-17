@@ -82,6 +82,34 @@ secrets (`tenant`, `appId`, `password`). Rotate the secret before it expires.
   `apple-codesign-<v>-macos-universal.tar.gz` from the `indygreg/apple-platform-rs` release, verify it against the
   release page, update version and hash.
 
+## Version of release candidates
+
+The packages keep the numeric Cargo version (macOS and Windows version fields must be numeric), so `0.2.0-rc.1` and `0.2.0-rc.2`
+would both report `0.2.0`. To tell them apart, the workflow sets `SIPLE_BUILD_TAG` (workflow-level `env`, the tag name, tag builds
+only; empty on manual runs) and `siple-core` reads it at compile time with `option_env!`
+(`crates/siple-core/src/update/version.rs`): when it is a valid version that starts with the Cargo version, its `-rc.N` suffix
+becomes part of the full version shown by `status.version`, `siple --version` and the Settings page, and used by the update check.
+A tag for another version is ignored. Packaging scripts need no change.
+
+## Update check, and store builds
+
+Direct-download builds look for a newer GitHub release (`[updates]` in `docs/CONFIG.md`; detection only). Releases that should be
+offered must be **published** (drafts are skipped), tagged `v<semver>`; release candidates `v<semver>-rc.N` are marked as GitHub
+pre-releases and are only offered to users on the `prerelease` channel (the default for someone already running a release candidate).
+
+Builds for the Mac App Store and the Microsoft Store update through their store, so they must not contain the check or its UI.
+Build them with the cargo feature `store` (off by default):
+
+```sh
+cargo build --release --locked -p siple -p siple-cli --features store
+```
+
+The feature is declared on `siple-core`, `siple` and `siple-cli` (the last two forward it). With it, the checker, its HTTP code,
+the header pill and the Settings section are not compiled; `[updates]` is still accepted in `config.toml` (so a config can move
+between builds) but ignored, with a debug log line; `app.update_status` reports `enabled: false` and `app.check_updates` does
+nothing. CI runs clippy with the feature. The store packaging itself (sandbox entitlements, App Store signing, MSIX) does not exist
+yet; when it is added, its build step must pass `--features store`.
+
 ## Verify a download
 
 macOS:

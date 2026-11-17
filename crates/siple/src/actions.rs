@@ -21,14 +21,62 @@ pub struct Actions {
     app: Weak<App>,
     rt: Handle,
     shared: Arc<Shared>,
+    panel_writer: Arc<PanelWriter>,
+}
+
+/// Latest panel choices not yet written to `state.toml`. One worker thread writes them in
+/// order, so toggles never block the UI thread on file IO and a burst coalesces to its last
+/// value.
+#[derive(Default)]
+struct PanelWriter {
+    pending: std::sync::Mutex<siple_core::state::GuiPanels>,
+    wake: std::sync::Condvar,
+}
+
+impl PanelWriter {
+    fn lock(&self) -> std::sync::MutexGuard<'_, siple_core::state::GuiPanels> {
+        self.pending.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    fn submit(&self, p: siple_core::state::GuiPanels) {
+        let mut g = self.lock();
+        g.lines_collapsed = p.lines_collapsed.or(g.lines_collapsed);
+        g.extensions_open = p.extensions_open.or(g.extensions_open);
+        self.wake.notify_one();
+    }
+
+    fn run(&self, app: &Weak<App>, shared: &Shared) {
+        loop {
+            let batch = {
+                let mut g = self.lock();
+                while *g == siple_core::state::GuiPanels::default() {
+                    g = self.wake.wait(g).unwrap_or_else(|e| e.into_inner());
+                }
+                std::mem::take(&mut *g)
+            };
+            let Some(app) = app.upgrade() else { return };
+            if let Err(e) = app.set_gui_panels(batch) {
+                shared.set_notice(format!("Cannot remember the panel layout: {e}"));
+            }
+        }
+    }
 }
 
 impl Actions {
     pub fn new(app: Arc<App>, rt: Handle, shared: Arc<Shared>) -> Self {
+        let panel_writer = Arc::new(PanelWriter::default());
+        {
+            let (writer, weak, shared) =
+                (panel_writer.clone(), Arc::downgrade(&app), shared.clone());
+            let _ = std::thread::Builder::new()
+                .name("siple-gui-state".into())
+                .spawn(move || writer.run(&weak, &shared));
+        }
         Self {
             app: Arc::downgrade(&app),
             rt,
             shared,
+            panel_writer,
         }
     }
 
@@ -272,6 +320,17 @@ impl Actions {
         self.app().is_none_or(|a| a.first_run_completed())
     }
 
+    /// The panel choices remembered from earlier launches.
+    pub fn gui_panels(&self) -> siple_core::state::GuiPanels {
+        self.app().map(|a| a.gui_panels()).unwrap_or_default()
+    }
+
+    /// Remembers the panel choices (`None` slots are left alone). Returns at once; a worker
+    /// thread does the file IO.
+    pub fn set_gui_panels(&self, panels: siple_core::state::GuiPanels) {
+        self.panel_writer.submit(panels);
+    }
+
     /// Records that the first-run wizard was finished or skipped.
     pub fn set_first_run_completed(&self) {
         if let Some(app) = self.app()
@@ -280,6 +339,18 @@ impl Actions {
             self.shared
                 .set_notice(format!("Cannot record the setup state: {e}"));
         }
+    }
+
+    /// Records that the user skipped release `version` in the update pill.
+    #[cfg(not(feature = "store"))]
+    pub fn skip_update(&self, version: &str) {
+        if let Some(app) = self.app()
+            && let Err(e) = app.skip_update(version)
+        {
+            self.shared
+                .set_notice(format!("Cannot record the skipped version: {e}"));
+        }
+        self.shared.wake.notify_one();
     }
 
     /// Asks macOS for microphone access when the app is bundled and the answer is still open.
@@ -318,6 +389,34 @@ impl Actions {
     }
 }
 
+/// Whether `url` is exactly `https://github.com/zyno-io/siple/releases/tag/v<version>` with a
+/// version made of `[0-9A-Za-z.-]`, no empty or dot-leading segment (so no `..`, `/.` or other path
+/// trickery) and nothing after it.
+#[cfg(not(feature = "store"))]
+pub(crate) fn is_release_url(url: &str) -> bool {
+    let Some(rest) = url.strip_prefix("https://github.com/zyno-io/siple/releases/tag/v") else {
+        return false;
+    };
+    !rest.is_empty()
+        && rest
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'.')
+        && rest.split('.').all(|seg| !seg.is_empty())
+}
+
+/// Opens a release page of this project in the default browser. Only [`is_release_url`] links are
+/// opened (the link comes from a network response and is handed to the platform opener).
+#[cfg(not(feature = "store"))]
+pub fn open_url(url: &str) -> std::io::Result<()> {
+    if !is_release_url(url) {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "not a link to a Siple release",
+        ));
+    }
+    open_path(Path::new(url), false)
+}
+
 /// Opens a file (in the default text editor) or a folder with the platform opener.
 pub fn open_path(path: &Path, as_text: bool) -> std::io::Result<()> {
     use std::process::Command;
@@ -344,5 +443,41 @@ pub fn open_path(path: &Path, as_text: bool) -> std::io::Result<()> {
     {
         let _ = as_text;
         Command::new("xdg-open").arg(path).spawn().map(|_| ())
+    }
+}
+
+#[cfg(all(test, not(feature = "store")))]
+mod url_tests {
+    use super::is_release_url;
+
+    #[test]
+    fn only_release_tag_pages_are_openable() {
+        for ok in [
+            "https://github.com/zyno-io/siple/releases/tag/v0.2.0",
+            "https://github.com/zyno-io/siple/releases/tag/v0.2.0-rc.1",
+        ] {
+            assert!(is_release_url(ok), "{ok}");
+        }
+        for bad in [
+            "https://github.com/zyno-io/siple/../../evil/repo/releases",
+            "https://github.com/zyno-io/siple/releases/tag/v../../../evil",
+            "https://github.com/zyno-io/siple/releases/tag/v0.2.0/../x",
+            "https://github.com/zyno-io/siple/releases/tag/v0.2.0/",
+            "https://github.com/zyno-io/siple/releases/tag/v..",
+            "https://github.com/zyno-io/siple/releases/tag/v0..2",
+            "https://github.com/zyno-io/siple/releases/tag/v",
+            "https://github.com/zyno-io/siple/releases/tag/v0.2.0?x=1",
+            "https://github.com/zyno-io/siple/releases/tag/v0.2.0#a",
+            "https://github.com/zyno-io/siple/releases/tag/v0.2.0%2e%2e",
+            "https://github.com/zyno-io/siple/releases/tag/v0.2.0 &calc",
+            "https://github.com/zyno-io/siple/releases",
+            "https://github.com/zyno-io/siple-evil/releases/tag/v1.0.0",
+            "http://github.com/zyno-io/siple/releases/tag/v1.0.0",
+            "https://example.com/zyno-io/siple/releases/tag/v1.0.0",
+            "file:///etc/passwd",
+            "",
+        ] {
+            assert!(!is_release_url(bad), "{bad}");
+        }
     }
 }

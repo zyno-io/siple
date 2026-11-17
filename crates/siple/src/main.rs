@@ -27,7 +27,7 @@ use siple_core::instance::InstanceError;
 use siple_core::{App, AppError, AppOptions, config};
 
 #[derive(Parser)]
-#[command(name = "siple", version, about = "Siple (SIP test softphone)")]
+#[command(name = "siple", version = siple_core::update::full_version(), about = "Siple (SIP test softphone)")]
 struct Cli {
     /// Config file; defaults to the platform config directory.
     #[arg(long, env = "SIPLE_CONFIG")]
@@ -124,6 +124,8 @@ fn main() -> ExitCode {
     #[cfg(target_os = "macos")]
     shell::early_init();
     let mut opts = AppOptions::new(config_path);
+    #[cfg(not(feature = "store"))]
+    opts.use_github_updates();
     opts.migrate_legacy_config = is_default_path;
     opts.startup_warnings = startup_warnings;
     opts.headless = false;
@@ -500,6 +502,8 @@ async fn headless(
     no_audio: bool,
 ) -> ExitCode {
     let mut opts = AppOptions::new(config_path);
+    #[cfg(not(feature = "store"))]
+    opts.use_github_updates();
     opts.migrate_legacy_config = is_default_path;
     opts.startup_warnings = startup_warnings;
     opts.headless = true;

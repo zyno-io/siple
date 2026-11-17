@@ -104,7 +104,7 @@ log_level = "info"          # trace/debug show more; log_dir and log_retention_d
 
 Plaintext passwords are never written to a log or trace by Siple itself, whatever these options say (a digest `response` is a hash, not the
 password); the options only mask what already reached a line. A password shorter than 4 characters is not searched for literally. There
-is no telemetry.
+is no telemetry; the only request Siple makes on its own is the optional update check ([`[updates]`](#updates)).
 
 ## `[control]`
 
@@ -252,6 +252,24 @@ Rules: no shell is ever involved; placeholders are replaced inside argv elements
 braces, and an unknown placeholder is a config error. `tts_voice`, `stt_language` and any per-request voice/language
 must match `[A-Za-z0-9][A-Za-z0-9_.+:-]{0,63}` (no leading `-`). Text to speak is passed on stdin and in `{text_file}`,
 never in argv.
+
+## `[updates]`
+
+The update check: Siple tells you when a newer release exists. **Hot.** Detection only: nothing is downloaded or installed; a
+pill in the header (and Settings > Advanced) links to the release page. Mac App Store and Microsoft Store builds do not contain
+the check at all (they update through the store); there `[updates]` is accepted and ignored.
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `check` | bool | `true` | Look for a newer release about 30 seconds after start (not when a check found nothing newer less than 24 hours ago), then every 24 hours of wall-clock time, so time spent asleep counts (and on `app.check_updates` or "Check now"; a manual check restarts the 24 hours). |
+| `channel` | `stable\|prerelease` | unset | `stable` offers final releases only; `prerelease` also offers release candidates (`-rc.N`). Unset = automatic: `prerelease` while the running build is itself a release candidate, otherwise `stable`. `reset_section updates channel` returns to automatic. |
+
+What is sent: one anonymous HTTPS `GET https://api.github.com/repos/zyno-io/siple/releases?per_page=20` with the headers
+`User-Agent: Siple/<version>` and `Accept: application/vnd.github+json` (plus `If-None-Match` with the ETag of the previous answer,
+so an unchanged list costs almost nothing). Nothing else: no identifier, account, install ID or usage data, and the request carries
+no cookies. GitHub sees your IP address, as any web server does. Failures (offline, rate limited, odd answer) are logged and shown in
+Settings; they never raise a dialog. API: `app.update_status`, `app.check_updates`, the event `app.update_available` and the `update`
+summary of `status`. The user guide has a page, "Updates".
 
 ## `[[account]]`
 

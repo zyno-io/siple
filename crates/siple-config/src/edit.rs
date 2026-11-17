@@ -359,6 +359,7 @@ const BLF_RINGING: &[&str] = &["pickup", "call"];
 const BLF_GROUP: &[&str] = &["account", "group", "none"];
 const TRANSFER_ENTER: &[&str] = &["consult", "blind"];
 const BACKEND: &[&str] = &["auto", "none", "always"];
+const UPDATE_CHANNEL: &[&str] = &["stable", "prerelease"];
 
 /// The keys of each editable section. Other sections (`control`, `media`, `speech`) and the
 /// file-only `[general]` keys (`log_dir`, `log_retention_days`, `reconfig_force`: a log directory
@@ -424,6 +425,13 @@ const SECTIONS: &[(&str, &[(&str, Kind)])] = &[
     (
         "general",
         &[("user_agent", Kind::Str), ("log_level", Kind::Str)],
+    ),
+    (
+        "updates",
+        &[
+            ("check", Kind::Bool),
+            ("channel", Kind::Enum(UPDATE_CHANNEL)),
+        ],
     ),
 ];
 
@@ -2310,9 +2318,11 @@ domain = "pbx.example.com"
                     "{section}.{key} is in the schema but not editable (add it to SECTIONS)"
                 );
             }
+            // Optional keys have no default value, so the serialized defaults omit them.
+            let optional = [("updates", "channel")];
             for (key, kind) in *keys {
                 assert!(
-                    table.contains_key(*key),
+                    table.contains_key(*key) || optional.contains(&(*section, *key)),
                     "{section}.{key} is not in the schema"
                 );
                 // Every offered enum value must be accepted by the real parser.
