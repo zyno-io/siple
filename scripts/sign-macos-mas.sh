@@ -86,6 +86,9 @@ PY
 fi
 
 find "$APP" -print0 | xargs -0 xattr -c
+# The installer lays the bundle down as root: anything not world-readable (e.g. the profile, copied from a 0600
+# secret file) breaks code-signature checks for normal users and fails App Store validation (90255).
+chmod -R u+rwX,go+rX,go-w "$APP"
 
 echo "==> signing siple-cli (io.zyno.siple-cli)"
 codesign "${SIGN_OPTS[@]}" ${KC[@]+"${KC[@]}"} --sign "$MAS_APP_IDENTITY" \
