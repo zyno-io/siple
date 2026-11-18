@@ -1,6 +1,17 @@
 <!-- siple-rename: keep (this file documents the legacy ZynoPhone names on purpose) -->
 # Changelog
 
+## 0.1.1 (2026-11-18)
+
+First release for the Mac App Store and the Microsoft Store. The direct downloads behave as before.
+
+- Store editions: a sandboxed Mac App Store build (macOS 13+, config in the app group container) and a Microsoft
+  Store MSIX bundle (x64 and arm64, config in the package's LocalState). Both are updated by their store and make no
+  update check. The Mac App Store edition has no `[speech]` hooks.
+- API: `hello` and `status` report `build.channel` (`direct`, `mas` or `msix`); new error kind `unsupported`
+  (code -32006) for methods an edition cannot run.
+- Privacy policy: https://siple.app/privacy/.
+
 ## 0.1.0 (2026-11-17)
 
 First public release: a native SIP softphone for macOS (universal, notarized), Windows (x64 and arm64, signed) and Linux
