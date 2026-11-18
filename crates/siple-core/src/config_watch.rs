@@ -147,7 +147,6 @@ mod tests {
         false
     }
 
-    #[cfg(unix)] // only the symlink test needs it
     /// Waits until no event arrived for `quiet` (at most 15 s) and returns the count. Late,
     /// coalesced FSEvents deliveries for an earlier step must not be taken for a new event.
     fn settle(count: &AtomicUsize, quiet: Duration) -> usize {
@@ -184,8 +183,8 @@ mod tests {
             c.fetch_add(1, Ordering::SeqCst);
         })
         .unwrap();
-        std::thread::sleep(Duration::from_millis(300));
-        let before = count.load(Ordering::SeqCst);
+        // FSEvents may still deliver the initial write late; count from a quiet baseline.
+        let before = settle(&count, Duration::from_millis(500));
 
         // Unrelated file: no reaction.
         std::fs::write(dir.path().join("other.toml"), "y").unwrap();
