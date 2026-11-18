@@ -57,7 +57,7 @@ bv="$(plist_get "$IP" CFBundleVersion)"
 sv="$(plist_get "$IP" CFBundleShortVersionString)"
 [[ "$sv" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] && pass "CFBundleShortVersionString $sv" || fail "CFBundleShortVersionString '$sv' is not X.Y.Z"
 enc="$(plist_get "$IP" ITSAppUsesNonExemptEncryption)"
-[ -n "$enc" ] && pass "ITSAppUsesNonExemptEncryption=$enc (owner decision S10)" || fail "ITSAppUsesNonExemptEncryption missing"
+[ -n "$enc" ] && pass "ITSAppUsesNonExemptEncryption=$enc" || fail "ITSAppUsesNonExemptEncryption missing"
 check "PrivacyInfo.xcprivacy present and valid" plutil -lint "$APP/Contents/Resources/PrivacyInfo.xcprivacy"
 check "NSMicrophoneUsageDescription present" "$PB" -c "Print :NSMicrophoneUsageDescription" "$IP"
 

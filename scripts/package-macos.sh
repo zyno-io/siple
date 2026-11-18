@@ -85,9 +85,10 @@ if [ "$MAS" = "1" ]; then
   "$PB" -c "Set :LSMinimumSystemVersion 13.0" "$P"
   "$PB" -c "Set :CFBundleVersion $MAC_BUILD" "$P"
   "$PB" -c "Set :LSApplicationCategoryType public.app-category.business" "$P"
-  # Export compliance. OWNER DECISION PENDING (S10): the default "true" is the conservative answer (the
-  # app implements SIP/TLS/SRTP-class crypto); change this single line to false only on legal sign-off.
-  "$PB" -c "Add :ITSAppUsesNonExemptEncryption bool true" "$P"
+  # Export compliance: false = exempt. Siple implements only standard algorithms (TLS via rustls/ring, SRTP
+  # AES/HMAC-SHA1), nothing proprietary, and its source is publicly available. `true` would require an App
+  # Store Connect encryption declaration and ITSEncryptionExportComplianceCode, or validation fails (90592).
+  "$PB" -c "Add :ITSAppUsesNonExemptEncryption bool false" "$P"
   echo "==> MAS: CFBundleVersion=$MAC_BUILD, LSMinimumSystemVersion=13.0"
 fi
 plutil -lint "$APP/Contents/Info.plist" >/dev/null
