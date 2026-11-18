@@ -4,13 +4,20 @@
 Outputs: siple-1024.png, siple.ico (Windows, multi-size). The macOS .icns is built from the
 PNG by scripts/package-macos.sh with sips + iconutil. The outputs are checked in, so Pillow
 (`pip install pillow`) is only needed when the artwork changes.
+
+It also writes the MSIX visual assets to packaging/windows/msix-assets/ (tile and app-list
+logos at every scale / target size, derived from siple-1024.png; also checked in so CI needs no
+Pillow). `--msix-only` regenerates just those from the existing siple-1024.png.
 """
+import sys
 import math
 import pathlib
 
 from PIL import Image, ImageDraw, ImageFilter
 
-OUT = pathlib.Path(__file__).resolve().parent.parent / "packaging" / "icons"
+ROOT = pathlib.Path(__file__).resolve().parent.parent
+OUT = ROOT / "packaging" / "icons"
+MSIX_OUT = ROOT / "packaging" / "windows" / "msix-assets"
 S = 4096  # supersampled canvas; downscaled at the end
 
 
@@ -62,7 +69,50 @@ def handset():
     return layer
 
 
+def msix_assets():
+    """Writes the MSIX logos. Names follow the resource qualifiers makepri indexes
+    (<Name>.scale-<N>.png, <Name>.targetsize-<N>[_altform-unplated].png)."""
+    MSIX_OUT.mkdir(parents=True, exist_ok=True)
+    src = Image.open(OUT / "siple-1024.png").convert("RGBA")
+    m = 100  # transparent margin of the rounded square in the 1024 source
+    body = src.crop((m, m, 1024 - m, 1024 - m))  # the rounded square itself
+
+    def canvas(w, h, frac):
+        """body scaled to `frac` of the shorter side, centred on a transparent w x h canvas."""
+        side = max(1, round(min(w, h) * frac))
+        img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+        sq = body.resize((side, side), Image.LANCZOS)
+        img.paste(sq, ((w - side) // 2, (h - side) // 2), sq)
+        return img
+
+    scales = (100, 125, 150, 200, 400)
+    written = []
+
+    def save(name, w, h, frac):
+        canvas(w, h, frac).save(MSIX_OUT / name)
+        written.append(name)
+
+    # (base name, width, height at scale 100, fraction of the shorter side the glyph fills)
+    for base, w, h, frac in (
+        ("Square44x44Logo", 44, 44, 1.0),
+        ("StoreLogo", 50, 50, 1.0),
+        ("SmallTile", 71, 71, 0.8),
+        ("Square150x150Logo", 150, 150, 0.7),
+        ("Wide310x150Logo", 310, 150, 0.8),
+        ("LargeTile", 310, 310, 0.6),
+    ):
+        for sc in scales:
+            save(f"{base}.scale-{sc}.png", round(w * sc / 100), round(h * sc / 100), frac)
+    for t in (16, 24, 32, 48, 256):
+        save(f"Square44x44Logo.targetsize-{t}.png", t, t, 1.0)
+        save(f"Square44x44Logo.targetsize-{t}_altform-unplated.png", t, t, 1.0)
+    print("wrote", len(written), "files to", MSIX_OUT)
+
+
 def main():
+    if "--msix-only" in sys.argv:
+        msix_assets()
+        return
     OUT.mkdir(parents=True, exist_ok=True)
     img, mask = background()
     g = handset()
@@ -80,6 +130,7 @@ def main():
         sizes=[(16, 16), (24, 24), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)],
     )
     print("wrote", OUT)
+    msix_assets()
 
 
 if __name__ == "__main__":

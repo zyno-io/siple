@@ -4,6 +4,7 @@ pub mod agent;
 pub mod app;
 pub mod audio;
 pub mod backend;
+pub mod build;
 pub use siple_config as config;
 pub mod call_media;
 pub mod calls;

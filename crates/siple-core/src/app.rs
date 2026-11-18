@@ -78,6 +78,9 @@ pub struct AppOptions {
     pub startup_warnings: Vec<String>,
     /// Watch the config file for changes.
     pub watch_config: bool,
+    /// Test hook: the distribution channel to behave as (default: the detected one).
+    #[doc(hidden)]
+    pub channel: Option<config::channel::Channel>,
     /// Debounce of the config watcher.
     pub watch_debounce: Duration,
     /// Upper bound for the SIP unregister phase of [`App::shutdown`].
@@ -105,6 +108,7 @@ impl AppOptions {
             migrate_legacy_config: false,
             startup_warnings: Vec::new(),
             watch_config: true,
+            channel: None,
             watch_debounce: config_watch::DEBOUNCE,
             shutdown_timeout: Duration::from_secs(8),
             net: None,
@@ -288,6 +292,8 @@ pub(crate) struct Inner {
     pub cancel: CancellationToken,
     pub started_at: DateTime<Utc>,
     pub headless: bool,
+    /// The distribution channel gating reads (detected, or injected by tests).
+    pub channel: config::channel::Channel,
     /// The GUI, when there is one (`ui.*` methods).
     pub ui_host: crate::ui_host::UiHostSlot,
     /// The update checker (absent from store builds).
@@ -465,7 +471,8 @@ impl Inner {
             Arc::new(AppBackend::new(self.clone())),
             self.logging.clone(),
             self.token.clone(),
-        );
+        )
+        .with_channel(&self.channel);
         let server = ControlServer::start(&requested, ctx, self.cancel.child_token()).await?;
         slot.server = Some(server);
         if let Err(e) = self.publish_runtime(slot) {
@@ -642,6 +649,8 @@ impl App {
 
         // Calls: the media engine behind every SIP call. The config cell is shared with `Inner`
         // so `[media]` changes apply to the next call.
+        let channel = opts.channel.unwrap_or(*config::channel::current());
+        crate::agent::speech::warn_if_unsupported(&cfg.speech, &channel);
         let config_cell = Arc::new(ArcSwap::from_pointee(cfg.clone()));
         let provider = EngineMediaProvider::new(media.clone(), config_cell.clone());
         let call_media = provider.registry.clone();
@@ -740,6 +749,7 @@ impl App {
             cancel: cancel.clone(),
             started_at: events.started_at(),
             headless: opts.headless,
+            channel,
             ui_host: Mutex::new(None),
             #[cfg(not(feature = "store"))]
             updater,

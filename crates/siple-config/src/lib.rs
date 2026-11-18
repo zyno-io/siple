@@ -1,5 +1,6 @@
 //! Configuration: schema, parsing, validation and default paths.
 
+pub mod channel;
 pub mod edit;
 pub mod log_level;
 mod migrate;

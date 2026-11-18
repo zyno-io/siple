@@ -1,0 +1,495 @@
+# Builds the store packages: a Mac App Store .pkg (for Transporter) and a Microsoft Store .msixbundle
+# (x64 + arm64). Runs on `v*` tags and workflow_dispatch, as its own run: it can never block or fail
+# release.yml. Output is workflow artifacts only; nothing is uploaded to a store (submit by hand: see
+# docs/RELEASING.md, "Store packages").
+#
+#   Mac App Store   mas-build (no secrets) -> mas-sign (environment `store`, signing only, no cargo)
+#   Microsoft Store msix-build (no secrets) -> msix-package (no secrets at all; the Store bundle is
+#                   UNSIGNED, Partner Center signs it; a test-signed sideload copy is built every run)
+#
+# Missing secrets / variables: the gated job emits a notice, stays green and skips its remaining steps,
+# until the repository variable STORE_MAS_ENABLED / STORE_MSIX_ENABLED is `true`; after that, missing
+# values are errors. A tag that does not match the Cargo version is always an error.
+# Same invariant as release.yml: jobs that run cargo never see secrets; the signing job never runs cargo.
+name: Store packages
+
+on:
+  workflow_dispatch:
+    inputs:
+      msix_store_version:
+        description: "Override the MSIX version with a Store-eligible X.Y.Z.0 (first Partner Center certification test of a branch build)"
+        required: false
+        default: ""
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: store-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+  SIPLE_RELEASE: "1" # packaging fails without THIRD-PARTY-NOTICES.html
+  IS_TAG: ${{ startsWith(github.ref, 'refs/tags/v') }}
+  # Tag builds only: compiled into the binaries so a release candidate knows which rc it is (see docs/RELEASING.md).
+  SIPLE_BUILD_TAG: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}
+
+jobs:
+  version:
+    name: Store version numbers
+    runs-on: ubuntu-latest
+    outputs:
+      kind: ${{ steps.v.outputs.KIND }}
+      label: ${{ steps.v.outputs.LABEL }}
+      short_version: ${{ steps.v.outputs.SHORT_VERSION }}
+      bundle_version: ${{ steps.v.outputs.BUNDLE_VERSION }}
+      msix_version: ${{ steps.v.outputs.MSIX_VERSION }}
+      msix_store_eligible: ${{ steps.v.outputs.MSIX_STORE_ELIGIBLE }}
+      retention: ${{ steps.v.outputs.RETENTION }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Self-test, then compute versions
+        id: v
+        env:
+          MSIX_OVERRIDE: ${{ inputs.msix_store_version }}
+        run: |
+          set -euo pipefail
+          scripts/store-version.sh --self-test
+          if [ "$IS_TAG" = "true" ]; then
+            scripts/store-version.sh "$GITHUB_REF_NAME" | tee "$RUNNER_TEMP/v.env"
+          else
+            scripts/store-version.sh "" "$GITHUB_RUN_NUMBER" | tee "$RUNNER_TEMP/v.env"
+          fi
+          cat "$RUNNER_TEMP/v.env" >> "$GITHUB_OUTPUT"
+          if [ -n "$MSIX_OVERRIDE" ]; then
+            [[ "$MSIX_OVERRIDE" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.0$ ]] || { echo "::error::msix_store_version must look like X.Y.Z.0"; exit 1; }
+            echo "MSIX_VERSION=$MSIX_OVERRIDE" >> "$GITHUB_OUTPUT"
+            echo "MSIX_STORE_ELIGIBLE=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::MSIX version overridden to $MSIX_OVERRIDE (Store-eligible)"
+          fi
+          kind="$(sed -n 's/^KIND=//p' "$RUNNER_TEMP/v.env")"
+          [ "$kind" = final ] && echo "RETENTION=90" >> "$GITHUB_OUTPUT" || echo "RETENTION=30" >> "$GITHUB_OUTPUT"
+
+  # ---------------------------------------------------------------------------------------------
+  # Mac App Store
+  # ---------------------------------------------------------------------------------------------
+  mas-build:
+    name: Mac App Store bundle (build)
+    needs: version
+    # Pinned runner label: the App Store requires the macOS 26 SDK; verify-macos-mas.sh fails early if it is older.
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install Rust with both Apple targets
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustup target add aarch64-apple-darwin x86_64-apple-darwin
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          key: mas
+      - uses: taiki-e/install-action@ab49d3c64680143e184118bed66a46419fc15519 # v2.90.5
+        with:
+          tool: cargo-about
+      - name: Package (MAS bundle only)
+        env:
+          MAC_BUILD: ${{ needs.version.outputs.bundle_version }}
+        run: |
+          MAS=1 BUNDLE_ONLY=1 scripts/package-macos.sh
+          # tar keeps modes and the bundle layout across artifact upload.
+          COPYFILE_DISABLE=1 tar -C dist/mas -cf dist/mas/Siple-app.tar Siple.app
+      - name: Verify unsigned bundle
+        run: scripts/verify-macos-mas.sh --unsigned dist/mas/Siple.app
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: mas-unsigned-app
+          path: dist/mas/Siple-app.tar
+          if-no-files-found: error
+          retention-days: 7
+
+  mas-sign:
+    name: Mac App Store sign + pkg
+    # Tag refs only: the `store` environment only admits v* tags. To sign a tag once the secrets exist,
+    # re-run with workflow_dispatch on that tag ref.
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [version, mas-build]
+    runs-on: macos-26
+    environment: store
+    timeout-minutes: 60
+    outputs:
+      result: ${{ steps.sign.outputs.result || steps.gate.outputs.result }}
+    env:
+      LABEL: ${{ needs.version.outputs.label }}
+    steps:
+      # Gate first: no step after it runs unless it says ready=true.
+      - name: Gate (secrets present?)
+        id: gate
+        env:
+          ENABLED: ${{ vars.STORE_MAS_ENABLED }}
+          MAS_CERTS_P12: ${{ secrets.MAS_CERTS_P12 }}
+          MAS_CERTS_PASSWORD: ${{ secrets.MAS_CERTS_PASSWORD }}
+          MAS_PROVISIONING_PROFILE: ${{ secrets.MAS_PROVISIONING_PROFILE }}
+        run: |
+          set -euo pipefail
+          missing=()
+          for v in MAS_CERTS_P12 MAS_CERTS_PASSWORD MAS_PROVISIONING_PROFILE; do
+            [ -n "${!v}" ] || missing+=("$v")
+          done
+          if [ "${#missing[@]}" -eq 0 ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+            echo "result=gate passed" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "$ENABLED" = "true" ]; then
+            echo "::error::vars.STORE_MAS_ENABLED is true but secrets are missing in the 'store' environment: ${missing[*]}"
+            exit 1
+          fi
+          echo "::notice::Mac App Store signing skipped: missing ${missing[*]} (set vars.STORE_MAS_ENABLED=true once the secrets exist)"
+          echo "ready=false" >> "$GITHUB_OUTPUT"
+          echo "result=skipped (missing: ${missing[*]})" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: steps.gate.outputs.ready == 'true'
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        if: steps.gate.outputs.ready == 'true'
+        with:
+          name: mas-unsigned-app
+          path: dist/mas
+      - name: Unpack bundle
+        if: steps.gate.outputs.ready == 'true'
+        run: tar -C dist/mas -xf dist/mas/Siple-app.tar && rm dist/mas/Siple-app.tar
+
+      - name: Temporary keychain and identities
+        if: steps.gate.outputs.ready == 'true'
+        env:
+          MAS_CERTS_P12: ${{ secrets.MAS_CERTS_P12 }}
+          MAS_CERTS_PASSWORD: ${{ secrets.MAS_CERTS_PASSWORD }}
+          MAS_PROVISIONING_PROFILE: ${{ secrets.MAS_PROVISIONING_PROFILE }}
+        run: |
+          set -euo pipefail
+          umask 077
+          KC="$RUNNER_TEMP/store-signing.keychain-db"
+          KC_PW="$(uuidgen)"
+          security create-keychain -p "$KC_PW" "$KC"
+          security set-keychain-settings -lut 21600 "$KC"
+          security unlock-keychain -p "$KC_PW" "$KC"
+          printf '%s' "$MAS_CERTS_P12" | base64 --decode > "$RUNNER_TEMP/mas-certs.p12"
+          security import "$RUNNER_TEMP/mas-certs.p12" -k "$KC" -P "$MAS_CERTS_PASSWORD" \
+            -T /usr/bin/codesign -T /usr/bin/productbuild -T /usr/bin/security >/dev/null
+          rm "$RUNNER_TEMP/mas-certs.p12"
+          # Apple Worldwide Developer Relations intermediates (G3 and G6), pinned by sha256.
+          fetch_ca() { # url sha256
+            curl -fsSL "$1" -o "$RUNNER_TEMP/ca.cer"
+            echo "$2  $RUNNER_TEMP/ca.cer" | shasum -a 256 -c -
+            security import "$RUNNER_TEMP/ca.cer" -k "$KC" >/dev/null
+          }
+          fetch_ca https://www.apple.com/certificateauthority/AppleWWDRCAG3.cer dcf21878c77f4198e4b4614f03d696d89c66c66008d4244e1b99161aac91601f
+          fetch_ca https://www.apple.com/certificateauthority/AppleWWDRCAG6.cer bdd4ed6e74691f0c2bfd01be0296197af1379e0418e2d300efa9c3bef642ca30
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KC_PW" "$KC" >/dev/null
+          # Search list: our keychain first, then the existing ones.
+          # shellcheck disable=SC2046
+          security list-keychains -d user -s "$KC" $(security list-keychains -d user | tr -d '"')
+          # Exactly one identity of each kind (the .p12 holds both).
+          ids="$(security find-identity -v "$KC")"
+          pick() { # regex -> SHA-1
+            local n
+            n="$(grep -cE "$1" <<<"$ids" || true)"
+            [ "$n" = "1" ] || { echo "::error::expected exactly one identity matching '$1' in MAS_CERTS_P12, found $n" >&2; exit 1; }
+            grep -E "$1" <<<"$ids" | awk '{print $2}'
+          }
+          app_id="$(pick '"Apple Distribution:')"
+          inst_sha="$(pick '"(3rd Party Mac Developer Installer|Mac Installer Distribution):')"
+          # productbuild --sign documents a certificate name (not a hash): resolve the unique name.
+          inst_id="$(grep -E "$inst_sha" <<<"$ids" | sed -E 's/^[^"]*"([^"]*)".*/\1/')"
+          printf '%s' "$MAS_PROVISIONING_PROFILE" | base64 --decode > "$RUNNER_TEMP/mas.provisionprofile"
+          {
+            echo "MAS_APP_IDENTITY=$app_id"
+            echo "MAS_INSTALLER_IDENTITY=$inst_id"
+            echo "MAS_PROFILE=$RUNNER_TEMP/mas.provisionprofile"
+            echo "MAS_KEYCHAIN=$KC"
+          } >> "$GITHUB_ENV"
+          echo "identities: app $(grep -E '"Apple Distribution:' <<<"$ids" | sed 's/^[^"]*//'), installer $(grep -E 'Installer' <<<"$ids" | sed 's/^[^"]*//')"
+
+      - name: Sign, build pkg, verify
+        id: sign
+        if: steps.gate.outputs.ready == 'true'
+        run: |
+          set -euo pipefail
+          pkg="dist/mas/Siple-${LABEL}-mas.pkg"
+          scripts/sign-macos-mas.sh dist/mas/Siple.app "$pkg"
+          scripts/verify-macos-mas.sh dist/mas/Siple.app "$pkg"
+          mkdir -p dist/mas-out
+          mv "$pkg" dist/mas-out/
+          echo "result=signed" >> "$GITHUB_OUTPUT"
+          (cd dist/mas-out && shasum -a 256 "Siple-${LABEL}-mas.pkg" > SHA256SUMS)
+          cat > dist/mas-out/SUBMIT.md <<DOC
+          # Submit Siple ${LABEL} to the Mac App Store
+
+          1. Open Transporter (Mac App Store), sign in with the Apple ID of the Signal24 developer team.
+          2. Drag \`Siple-${LABEL}-mas.pkg\` into the window, or press +, then Deliver.
+          3. Wait for processing in App Store Connect > Siple > TestFlight (a few minutes to an hour).
+             "Missing Compliance" on the build is the export-compliance question: answer it there.
+          4. Release candidates (-rc.N): test via TestFlight. Final tags: add the build to a version and submit for review.
+
+          Build numbers only ever increase (CFBundleVersion encodes the tag), so a re-upload of the same tag is a
+          "redundant binary": tag a new rc to ship a fix. See docs/RELEASING.md.
+          DOC
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: steps.gate.outputs.ready == 'true'
+        with:
+          name: store-macos-appstore-${{ needs.version.outputs.label }}
+          path: dist/mas-out/*
+          if-no-files-found: error
+          retention-days: ${{ fromJSON(needs.version.outputs.retention) }}
+
+      # After the upload on purpose: a validation failure must never hide the artifact.
+      - name: Validate with App Store Connect (altool)
+        if: steps.gate.outputs.ready == 'true' && vars.MAS_VALIDATE == 'true'
+        env:
+          APP_STORE_CONNECT_API_KEY: ${{ secrets.APP_STORE_CONNECT_API_KEY }}
+        run: |
+          set -euo pipefail
+          [ -n "$APP_STORE_CONNECT_API_KEY" ] || { echo "::error::vars.MAS_VALIDATE is true but secret APP_STORE_CONNECT_API_KEY is not set"; exit 1; }
+          umask 077
+          # Same format as release.yml: base64 of {"issuer_id","key_id","private_key"}.
+          printf '%s' "$APP_STORE_CONNECT_API_KEY" | base64 --decode > "$RUNNER_TEMP/asc.json"
+          key_id="$(jq -r '.key_id' "$RUNNER_TEMP/asc.json")"
+          issuer="$(jq -r '.issuer_id' "$RUNNER_TEMP/asc.json")"
+          mkdir -p "$HOME/.appstoreconnect/private_keys"
+          jq -r '.private_key' "$RUNNER_TEMP/asc.json" > "$HOME/.appstoreconnect/private_keys/AuthKey_${key_id}.p8"
+          rm "$RUNNER_TEMP/asc.json"
+          xcrun altool --validate-app -f "dist/mas-out/Siple-${LABEL}-mas.pkg" -t macos --apiKey "$key_id" --apiIssuer "$issuer"
+
+      - name: Remove keychain and credentials
+        if: always() && steps.gate.outputs.ready == 'true'
+        run: |
+          security delete-keychain "$RUNNER_TEMP/store-signing.keychain-db" 2>/dev/null || true
+          rm -rf "$RUNNER_TEMP/mas.provisionprofile" "$HOME/.appstoreconnect" "$RUNNER_TEMP/asc.json" "$RUNNER_TEMP/mas-certs.p12"
+
+  # ---------------------------------------------------------------------------------------------
+  # Microsoft Store
+  # ---------------------------------------------------------------------------------------------
+  msix-build:
+    name: Windows ${{ matrix.arch }} store stage (build)
+    needs: version
+    # arm64 is cross-compiled on the x64 runner (MSVC ARM64 tools and LLVM are in the image).
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            target: x86_64-pc-windows-msvc
+          - arch: arm64
+            target: aarch64-pc-windows-msvc
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install Rust
+        shell: bash
+        run: |
+          rustup toolchain install stable --profile minimal --target ${{ matrix.target }}
+          rustup default stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          key: ${{ matrix.target }}-store
+      - uses: taiki-e/install-action@ab49d3c64680143e184118bed66a46419fc15519 # v2.90.5
+        with:
+          tool: cargo-about
+      - name: Package (stage only, --features store)
+        shell: pwsh
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-windows.ps1 -Arch ${{ matrix.arch }} -StageOnly -Store
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: msix-stage-${{ matrix.arch }}
+          # Wildcard keeps the Siple-<version>-windows-<arch>-store/ directory name inside the artifact.
+          path: dist/Siple-*-windows-${{ matrix.arch }}-store/**
+          if-no-files-found: error
+          retention-days: 7
+
+  msix-package:
+    name: Windows MSIX bundle
+    needs: [version, msix-build]
+    runs-on: windows-latest
+    timeout-minutes: 60
+    outputs:
+      result: ${{ steps.pkgdone.outputs.result || 'failed before packaging finished' }}
+    env:
+      LABEL: ${{ needs.version.outputs.label }}
+      MSIX_VERSION: ${{ needs.version.outputs.msix_version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: msix-stage-*
+          merge-multiple: true
+          path: dist
+
+      - name: Identity (Partner Center values, or test placeholders)
+        id: identity
+        shell: bash
+        env:
+          ENABLED: ${{ vars.STORE_MSIX_ENABLED }}
+          IDENTITY_NAME: ${{ vars.MSIX_IDENTITY_NAME }}
+          PUBLISHER: ${{ vars.MSIX_PUBLISHER }}
+          PUBLISHER_DISPLAY_NAME: ${{ vars.MSIX_PUBLISHER_DISPLAY_NAME }}
+          DISPLAY_NAME: ${{ vars.MSIX_DISPLAY_NAME }}
+          ELIGIBLE: ${{ needs.version.outputs.msix_store_eligible }}
+        run: |
+          set -euo pipefail
+          missing=()
+          [ -n "$IDENTITY_NAME" ] || missing+=(MSIX_IDENTITY_NAME)
+          [ -n "$PUBLISHER" ] || missing+=(MSIX_PUBLISHER)
+          [ -n "$PUBLISHER_DISPLAY_NAME" ] || missing+=(MSIX_PUBLISHER_DISPLAY_NAME)
+          if [ "${#missing[@]}" -eq 0 ]; then
+            real=true
+          elif [ "$ENABLED" = "true" ]; then
+            echo "::error::vars.STORE_MSIX_ENABLED is true but repository variables are missing: ${missing[*]}"
+            exit 1
+          else
+            real=false
+            echo "::notice::MSIX identity variables not set (${missing[*]}): building the test placeholder identity only; no Store bundle artifact"
+            IDENTITY_NAME="io.zyno.siple"; PUBLISHER="CN=Siple Test"; PUBLISHER_DISPLAY_NAME="Siple"
+          fi
+          {
+            echo "real=$real"
+            echo "name=$IDENTITY_NAME"
+            echo "publisher=$PUBLISHER"
+            echo "publisher_display=$PUBLISHER_DISPLAY_NAME"
+            echo "display=${DISPLAY_NAME:-Siple}"
+          } >> "$GITHUB_OUTPUT"
+          store=false
+          [ "$real" = true ] && [ "$ELIGIBLE" = true ] && store=true
+          echo "store_artifact=$store" >> "$GITHUB_OUTPUT"
+          if [ "$store" = true ]; then echo "detail=store bundle + sideload"
+          elif [ "$real" = true ]; then echo "detail=sideload only (version is not Store-eligible: rc or branch build)"
+          else echo "detail=sideload only (MSIX_* variables not set)"; fi >> "$GITHUB_OUTPUT"
+
+      - name: Package bundle (+ test-signed sideload copy)
+        id: pkgdone
+        shell: pwsh
+        env:
+          ID_DETAIL: ${{ steps.identity.outputs.detail }}
+          ID_NAME: ${{ steps.identity.outputs.name }}
+          ID_PUBLISHER: ${{ steps.identity.outputs.publisher }}
+          ID_PUBLISHER_DISPLAY: ${{ steps.identity.outputs.publisher_display }}
+          ID_DISPLAY: ${{ steps.identity.outputs.display }}
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-msix.ps1 `
+            -MsixVersion $env:MSIX_VERSION -IdentityName $env:ID_NAME -Publisher $env:ID_PUBLISHER `
+            -PublisherDisplayName $env:ID_PUBLISHER_DISPLAY -DisplayName $env:ID_DISPLAY -TestSign
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "result=$env:ID_DETAIL" | Add-Content -Path $env:GITHUB_OUTPUT
+
+      # Unsigned: Partner Center signs it. Only for a real identity on a Store-eligible (X.Y.Z.0) version.
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: steps.identity.outputs.store_artifact == 'true'
+        with:
+          name: store-windows-msix-${{ needs.version.outputs.label }}
+          path: dist/msix/*.msixbundle
+          if-no-files-found: error
+          retention-days: 90
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: sideload-windows-msix-${{ needs.version.outputs.label }}
+          path: dist/msix/sideload/*
+          if-no-files-found: error
+          retention-days: 30
+
+      # Smoke install of the test-signed x64 bundle. continue-on-error until proven on the hosted runner.
+      - name: Smoke install (x64)
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $side = Join-Path $PWD 'dist\msix\sideload'
+          & (Join-Path $side 'install-test.ps1')
+          $name = (Get-Content (Join-Path $side 'identity.txt') -Raw).Trim()
+          $pkg = Get-AppxPackage -Name $name
+          if (-not $pkg) { throw "package $name not installed" }
+          $pkg | Format-List Name, Version, Architecture, SignatureKind
+          $alias = Join-Path $env:LOCALAPPDATA 'Microsoft\WindowsApps\siple-cli.exe'
+          & $alias --version
+          if ($LASTEXITCODE -ne 0) { throw 'siple-cli alias failed' }
+          $rules = @(Get-NetFirewallRule -ErrorAction SilentlyContinue | Where-Object { $_.DisplayName -like '*Siple*' -or $_.Group -like "*$name*" })
+          Write-Host "firewall rules: $($rules.Count)"
+          # Engine check (needs the channel code): headless run, then `ctl status`.
+          $p = Start-Process -FilePath $alias -ArgumentList 'run', '--headless', '--no-audio' -PassThru -WindowStyle Hidden
+          try {
+            Start-Sleep -Seconds 8
+            $status = & $alias ctl status | Out-String
+            Write-Host $status
+            if ($status -notmatch '"channel"\s*:\s*"msix"') { throw 'status.build.channel is not msix' }
+            if ($status -notmatch 'LocalState') { throw 'config_dir is not under LocalState' }
+          } finally {
+            if ($p -and -not $p.HasExited) { Stop-Process -Id $p.Id -Force }
+            & (Join-Path $side 'install-test.ps1') -Uninstall
+          }
+
+      # Windows App Certification Kit, only when the runner image has it. Non-blocking until proven.
+      - name: WACK
+        id: wack
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $appcert = Join-Path ${env:ProgramFiles(x86)} 'Windows Kits\10\App Certification Kit\appcert.exe'
+          if (-not (Test-Path $appcert)) { Write-Host '::notice::appcert.exe not on this runner image: WACK skipped'; return }
+          $x64 = Get-ChildItem dist\msix-work\bundle-in -Filter *_x64.msix | Select-Object -First 1
+          # appcert tests one package; the x64 .msix stands in for the bundle.
+          & $appcert reset | Out-Null
+          & $appcert test -appxpackagepath $x64.FullName -reportoutputpath (Join-Path $PWD 'wack.xml')
+          Write-Host "appcert exit code $LASTEXITCODE"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always() && hashFiles('wack.xml') != ''
+        with:
+          name: wack-report-${{ needs.version.outputs.label }}
+          path: wack.xml
+          retention-days: 30
+
+  summary:
+    name: Summary
+    if: always()
+    needs: [version, mas-build, mas-sign, msix-build, msix-package]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Write summary
+        env:
+          LABEL: ${{ needs.version.outputs.label }}
+          MSIX_VERSION: ${{ needs.version.outputs.msix_version }}
+          BUNDLE_VERSION: ${{ needs.version.outputs.bundle_version }}
+          R_VERSION: ${{ needs.version.result }}
+          R_MAS_BUILD: ${{ needs.mas-build.result }}
+          R_MAS_SIGN: ${{ needs.mas-sign.result }}
+          O_MAS_SIGN: ${{ needs.mas-sign.outputs.result }}
+          R_MSIX_BUILD: ${{ needs.msix-build.result }}
+          R_MSIX_PKG: ${{ needs.msix-package.result }}
+          O_MSIX_PKG: ${{ needs.msix-package.outputs.result }}
+        run: |
+          {
+            echo "## Store packages: ${LABEL}"
+            echo
+            echo "CFBundleVersion \`${BUNDLE_VERSION}\`, MSIX version \`${MSIX_VERSION}\`."
+            echo
+            echo "| Package | Result | Detail |"
+            echo "| --- | --- | --- |"
+            echo "| Version numbers | ${R_VERSION} | |"
+            echo "| Mac App Store bundle (unsigned) | ${R_MAS_BUILD} | artifact \`mas-unsigned-app\` (7 days) |"
+            if [ "$R_MAS_SIGN" = skipped ] && [ "$IS_TAG" != true ]; then
+              echo "| Mac App Store .pkg | skipped | not a tag ref: signing runs on \`v*\` tags only (or re-run on a tag) |"
+            elif [ "$R_MAS_SIGN" = skipped ]; then
+              echo "| Mac App Store .pkg | skipped | an earlier job (version or mas-build) failed |"
+            else
+              echo "| Mac App Store .pkg | ${R_MAS_SIGN} | ${O_MAS_SIGN:-n/a} |"
+            fi
+            echo "| Windows store stages | ${R_MSIX_BUILD} | |"
+            echo "| Microsoft Store bundle | ${R_MSIX_PKG} | ${O_MSIX_PKG:-n/a} |"
+            echo
+            echo "### Submit"
+            echo "- **Mac App Store:** download \`store-macos-appstore-${LABEL}\`, open Transporter, add \`Siple-${LABEL}-mas.pkg\`, Deliver."
+            echo "- **Microsoft Store:** download \`store-windows-msix-${LABEL}\`, Partner Center > Siple > Submission > Packages, upload the \`.msixbundle\` (final \`X.Y.Z.0\` versions only)."
+            echo "- **Sideload test (Windows):** \`sideload-windows-msix-${LABEL}\`, run \`install-test.ps1\` from an elevated PowerShell."
+            echo
+            echo "Details: docs/RELEASING.md, section Store packages."
+          } >> "$GITHUB_STEP_SUMMARY"

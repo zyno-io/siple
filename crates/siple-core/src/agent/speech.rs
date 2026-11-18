@@ -69,6 +69,30 @@ pub enum SpeechError {
     /// Anything else (including "not implemented yet").
     #[error("{0}")]
     Internal(String),
+    /// This edition cannot run external commands (Mac App Store build).
+    #[error(
+        "speech hooks are not available in this edition (the Mac App Store build cannot run \
+         external commands); use `siple-cli stream` or base64 audio with your own TTS/STT instead"
+    )]
+    Unsupported,
+}
+
+/// Fails with [`SpeechError::Unsupported`] when `channel` cannot run external commands.
+pub fn check_supported(channel: &siple_config::channel::Channel) -> Result<(), SpeechError> {
+    if channel.can_exec {
+        Ok(())
+    } else {
+        Err(SpeechError::Unsupported)
+    }
+}
+
+/// Logs that `[speech]` commands are configured but ignored by `channel`.
+pub fn warn_if_unsupported(cfg: &SpeechConfig, channel: &siple_config::channel::Channel) {
+    if !channel.can_exec && (!cfg.tts_command.is_empty() || !cfg.stt_command.is_empty()) {
+        tracing::warn!(
+            "[speech] tts_command / stt_command are ignored: speech hooks are not available in this edition"
+        );
+    }
 }
 
 impl From<SpeechError> for ApiError {
@@ -85,6 +109,7 @@ impl From<SpeechError> for ApiError {
                 serde_json::json!({ "exit_code": exit_code, "stderr_tail": stderr_tail }),
             ),
             SpeechError::Internal(_) => ApiError::internal(e.to_string()),
+            SpeechError::Unsupported => ApiError::new(ErrorKind::Unsupported, e.to_string()),
         }
     }
 }

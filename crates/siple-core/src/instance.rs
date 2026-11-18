@@ -155,16 +155,12 @@ impl ControlEndpoints {
             });
         } else {
             let path = if control.unix_socket.is_empty() {
-                let p = config_dir.join("control.sock");
-                if p.as_os_str().len() > MAX_SOCKET_PATH {
-                    // On failure keep the long path; binding it reports the problem.
-                    short_socket_path(&p.to_string_lossy()).unwrap_or_else(|e| {
-                        tracing::error!("cannot use a short control socket path: {e}");
-                        p
-                    })
-                } else {
-                    p
-                }
+                let channel = siple_config::channel::current();
+                // Only the Mac App Store build needs the group container (a passwd lookup).
+                let group = (channel.kind == siple_config::channel::ChannelKind::MacAppStore)
+                    .then(siple_config::channel::mas_group_dir)
+                    .flatten();
+                default_unix_socket(config_dir, channel, group.as_deref())
             } else {
                 PathBuf::from(&control.unix_socket)
             };
@@ -177,9 +173,45 @@ impl ControlEndpoints {
     }
 }
 
+/// Default control socket for `config_dir`: `<config_dir>/control.sock`, or a short fallback when
+/// that exceeds `sun_path`.
+///
+/// Mac App Store: the fallback is `<group container>/s.sock` for the default config dir and
+/// `<group container>/s-<hash>.sock` for any other (inside the container, reachable from the
+/// unsandboxed world; the sandbox's own `$TMPDIR` is not), never `temp_dir()`. When even that is
+/// too long the long path is returned after logging how to avoid it; binding reports the failure.
+fn default_unix_socket(
+    config_dir: &Path,
+    channel: &siple_config::channel::Channel,
+    mas_group: Option<&Path>,
+) -> PathBuf {
+    let p = config_dir.join("control.sock");
+    if p.as_os_str().len() <= MAX_SOCKET_PATH {
+        return p;
+    }
+    if channel.kind == siple_config::channel::ChannelKind::MacAppStore {
+        if let Some(s) = mas_group.map(|g| {
+            if config_dir == g.join(siple_config::channel::SIPLE_DIR) {
+                g.join("s.sock")
+            } else {
+                g.join(format!("s-{}.sock", dir_hash8(config_dir)))
+            }
+        }) && s.as_os_str().len() <= MAX_SOCKET_PATH
+        {
+            return s;
+        }
+        tracing::error!("control socket path is too long; set [control] tcp_listen");
+        return p;
+    }
+    // On failure keep the long path; binding it reports the problem.
+    short_socket_path(&p.to_string_lossy()).unwrap_or_else(|e| {
+        tracing::error!("cannot use a short control socket path: {e}");
+        p
+    })
+}
+
 /// First 8 hex chars of sha256 over the absolute config directory: makes default endpoint
 /// names unique per config directory (two instances of one user can coexist).
-#[cfg_attr(not(windows), allow(dead_code))]
 fn dir_hash8(config_dir: &Path) -> String {
     use sha2::{Digest, Sha256};
     let abs = crate::config::absolute_path(config_dir);
@@ -197,6 +229,16 @@ fn hex(bytes: &[u8]) -> String {
 /// and verified: owned by this user, a real directory, not a symlink; anything else is
 /// refused). macOS and other platforms: `$TMPDIR` (per-user already).
 pub fn short_socket_dir() -> io::Result<PathBuf> {
+    // The sandbox's `$TMPDIR` is inside the app container: unreachable for the CLI. Stay in the
+    // group container instead.
+    if siple_config::channel::current().kind == siple_config::channel::ChannelKind::MacAppStore {
+        return siple_config::channel::mas_group_dir().ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::NotFound,
+                "cannot determine the home directory",
+            )
+        });
+    }
     #[cfg(target_os = "linux")]
     {
         // SAFETY: geteuid has no preconditions and cannot fail.
@@ -578,6 +620,66 @@ mod tests {
     fn pipe_name_hash_is_per_directory() {
         assert_ne!(dir_hash8(Path::new("/a")), dir_hash8(Path::new("/b")));
         assert_eq!(dir_hash8(Path::new("/a")).len(), 8);
+    }
+
+    #[test]
+    fn mas_default_socket_fits_for_normal_users() {
+        use siple_config::channel::{Channel, mas_dir_in, mas_group_in};
+        let home = Path::new("/Users/someone");
+        let cfg = mas_dir_in(home);
+        let p = default_unix_socket(&cfg, &Channel::MAC_APP_STORE, Some(&mas_group_in(home)));
+        assert_eq!(
+            p,
+            Path::new(
+                "/Users/someone/Library/Group Containers/VUDU4KEQ99.io.zyno.siple/Siple/control.sock"
+            )
+        );
+        // 76 bytes plus the user name, as documented.
+        assert_eq!(p.as_os_str().len(), 76 + "someone".len());
+    }
+
+    #[test]
+    fn mas_long_home_falls_back_inside_the_group_container() {
+        use siple_config::channel::{Channel, mas_dir_in, mas_group_in};
+        let user = "u".repeat(30);
+        let home = PathBuf::from(format!("/Users/{user}"));
+        let group = mas_group_in(&home);
+        let p = default_unix_socket(&mas_dir_in(&home), &Channel::MAC_APP_STORE, Some(&group));
+        assert_eq!(p, group.join("s.sock"));
+        assert!(p.as_os_str().len() <= MAX_SOCKET_PATH);
+        assert!(!p.starts_with(std::env::temp_dir()));
+    }
+
+    #[test]
+    fn mas_other_profile_gets_its_own_short_socket() {
+        use siple_config::channel::{Channel, mas_group_in};
+        let home = PathBuf::from(format!("/Users/{}", "u".repeat(20)));
+        let group = mas_group_in(&home);
+        let p2 = group.join("second-profile");
+        let p = default_unix_socket(&p2, &Channel::MAC_APP_STORE, Some(&group));
+        assert_eq!(p, group.join(format!("s-{}.sock", dir_hash8(&p2))));
+        assert!(p.as_os_str().len() <= MAX_SOCKET_PATH);
+    }
+
+    #[test]
+    fn mas_too_long_even_for_the_short_name_keeps_the_long_path() {
+        use siple_config::channel::{Channel, mas_dir_in, mas_group_in};
+        let home = PathBuf::from(format!("/Users/{}", "u".repeat(60)));
+        let cfg = mas_dir_in(&home);
+        let p = default_unix_socket(&cfg, &Channel::MAC_APP_STORE, Some(&mas_group_in(&home)));
+        // Never a temp_dir() socket: the caller gets the long path and a bind error.
+        assert_eq!(p, cfg.join("control.sock"));
+        let p = default_unix_socket(&cfg, &Channel::MAC_APP_STORE, None);
+        assert_eq!(p, cfg.join("control.sock"));
+    }
+
+    #[test]
+    fn direct_long_path_uses_short_hashed_socket() {
+        use siple_config::channel::Channel;
+        let long = PathBuf::from(format!("/{}", "d/".repeat(60)));
+        let p = default_unix_socket(&long, &Channel::DIRECT, None);
+        assert!(p.as_os_str().len() <= MAX_SOCKET_PATH);
+        assert!(p.to_string_lossy().contains("siple-"));
     }
 
     #[test]

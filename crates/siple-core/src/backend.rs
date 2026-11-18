@@ -147,6 +147,7 @@ impl AppBackend {
             .clone();
         json!({
             "version": crate::update::full_version(),
+            "build": crate::build::build_info(&i.channel),
             "update": i.update_summary(),
             "pid": std::process::id(),
             "headless": i.headless,
@@ -525,7 +526,7 @@ pub fn backend_methods() -> Vec<MethodInfo> {
     vec![
             MethodInfo::new(
                 "status",
-                "Overall state: instance_id and started_at (a changed instance_id means a restart: event seqs and call ids reset), accounts (registration, dnd, mwi summary, blf list, pending_rebuild), calls, active_line (id of the un-held device-bound call that owns the microphone and speaker, or null), network {generation: count of network changes seen}, audio (effective devices from [audio] with source config|default, active devices, mic_permission), speech {tts, stt: whether [speech] tts_command / stt_command are set}, config (path, applied_at, last_error), update {enabled, current, available, latest, release_url: the update check's summary, see app.update_status}, event_seq.",
+                "Overall state: instance_id and started_at (a changed instance_id means a restart: event seqs and call ids reset), accounts (registration, dnd, mwi summary, blf list, pending_rebuild), calls, active_line (id of the un-held device-bound call that owns the microphone and speaker, or null), network {generation: count of network changes seen}, audio (effective devices from [audio] with source config|default, active devices, mic_permission), build {channel: direct|mas|msix, sandboxed, store: compiled without the update check, version}, speech {tts, stt: whether [speech] tts_command / stt_command are set}, config (path, applied_at, last_error), update {enabled, current, available, latest, release_url: the update check's summary, see app.update_status}, event_seq.",
                 none(),
             ),
             MethodInfo::new("account.list", "Status of all accounts.", none()),

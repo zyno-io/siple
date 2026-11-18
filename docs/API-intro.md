@@ -33,11 +33,15 @@ connection is closed. A connection that does not complete `hello` within 10 s (3
 ```json
 {"jsonrpc":"2.0","id":1,"method":"hello","params":{"token":"<from runtime.json>","client":"my-script"}}
 {"jsonrpc":"2.0","id":1,"result":{"server":"siple","version":"0.1.0","protocol":1,
-  "current_seq":42,"instance_id":"9f3c1a07d2b4e611","started_at":"2026-10-08T12:00:00.000Z"}}
+  "current_seq":42,"instance_id":"9f3c1a07d2b4e611","started_at":"2026-10-08T12:00:00.000Z",
+  "build":{"channel":"direct","sandboxed":false,"store":false,"version":"0.1.0"}}}
 ```
 
 - `token` is optional on the Unix socket / named pipe (the OS already restricts access) but
   mandatory on TCP. If sent it must be correct.
+- `build` says which edition answers: `channel` is `direct`, `mas` (Mac App Store, sandboxed) or
+  `msix` (Microsoft Store package); `store` is true for builds compiled without the update check.
+  `status` carries the same object. Some features are unavailable in some editions (see `unsupported`).
 - `instance_id` is random per process run. **If it differs from the one you saw before, the
   application restarted**: event sequence numbers and call ids (`c1`, `c2`, ...) start over, so
   discard remembered `seq` values and call ids.
@@ -58,6 +62,7 @@ Standard JSON-RPC error objects; the machine-readable kind is `error.data.kind`:
 | `unauthorized` | -32003 | No/incorrect token, or `hello` not done |
 | `sip_error` | -32004 | SIP-level failure; `data.sip_code` is the response code (0 = local failure) |
 | `timeout` | -32005 | A wait expired (`call.wait_for`, `call.expect_dtmf`, ...) |
+| `unsupported` | -32006 | Not available in this edition (`[speech]` hooks in the Mac App Store build: `call.say`, `call.listen`/`call.rx_audio` with `transcribe`, `speech.*`). Use `call.play`, base64 audio or `siple-cli stream` with your own TTS/STT |
 | `invalid_params` | -32602 | Missing or malformed parameters (unknown fields are rejected), or a `since` ahead of the log |
 | `internal` | -32603 | Bug or unexpected failure |
 | `invalid_request` | -32600 | JSON, but not a JSON-RPC request |

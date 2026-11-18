@@ -565,6 +565,7 @@ impl Inner {
 
         // [speech]: read from the config snapshot when a job starts; nothing to push.
         if d.speech {
+            crate::agent::speech::warn_if_unsupported(&new.speech, &self.channel);
             out.push(Change::Speech);
         }
 

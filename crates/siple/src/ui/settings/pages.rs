@@ -412,11 +412,10 @@ pub(super) fn advanced(ui: &mut egui::Ui, cx: &Cx, st: &mut UiState, out: &mut V
             ui,
             p,
             "Speech commands",
-            if cfg.speech.tts_command.is_empty() && cfg.speech.stt_command.is_empty() {
-                "(none)"
-            } else {
-                "configured"
-            },
+            speech_commands_label(
+                !cfg.speech.tts_command.is_empty() || !cfg.speech.stt_command.is_empty(),
+                siple_core::config::channel::current(),
+            ),
         );
         for a in &cfg.accounts {
             let prov = &snap.provenance["account"][a.id.as_str()];
@@ -627,4 +626,34 @@ pub(in crate::ui) fn sec_toggle_pub(
     v: &Value,
 ) {
     sec_toggle(ui, p, out, section, key, label, "", v);
+}
+
+/// Value of the "Speech commands" info row: the Mac App Store edition cannot run them at all.
+fn speech_commands_label(
+    configured: bool,
+    channel: &siple_core::config::channel::Channel,
+) -> &'static str {
+    if !channel.can_exec {
+        "not available in this edition"
+    } else if configured {
+        "configured"
+    } else {
+        "(none)"
+    }
+}
+
+#[cfg(test)]
+mod speech_label_tests {
+    use super::speech_commands_label;
+    use siple_core::config::channel::Channel;
+
+    #[test]
+    fn speech_row_by_channel() {
+        assert_eq!(
+            speech_commands_label(true, &Channel::MAC_APP_STORE),
+            "not available in this edition"
+        );
+        assert_eq!(speech_commands_label(true, &Channel::DIRECT), "configured");
+        assert_eq!(speech_commands_label(false, &Channel::DIRECT), "(none)");
+    }
 }

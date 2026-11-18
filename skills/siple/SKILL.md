@@ -35,8 +35,9 @@ echo '{"call_id":"c1"}' | siple-cli ctl call.get -   # params from stdin
 - Success: the result as JSON on stdout, exit code 0.
 - Failure: exit code 1 and JSON on stderr. From Siple: a JSON-RPC error
   `{"code", "message", "data": {"kind", ...}}` where `data.kind` is `not_found`, `invalid_state`,
-  `invalid_params`, `sip_error` (with `sip_code`), `timeout`, `unauthorized`, `method_not_found` or
-  `internal`. From the CLI itself (Siple not running, unreadable params, connection lost):
+  `invalid_params`, `sip_error` (with `sip_code`), `timeout`, `unauthorized`, `method_not_found`,
+  `unsupported` or `internal`. `unsupported` means this edition cannot do it: the Mac App Store
+  edition has no `[speech]` hooks (`call.say`, transcription, `speech.*`). From the CLI itself (Siple not running, unreadable params, connection lost):
   `{"error": "<message>"}` with no `kind`.
 - On Windows PowerShell, quoting JSON is fragile: write params to a file and pass it quoted,
   `siple-cli ctl config.edit '@edits.json'` (a bare `@` is PowerShell syntax), or pipe it:

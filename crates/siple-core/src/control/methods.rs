@@ -179,6 +179,8 @@ pub struct ControlContext {
     pub big_read_idle: Duration,
     /// Longest total time to receive a big line ([`BIG_READ_TOTAL`]; overridable in tests).
     pub big_read_total: Duration,
+    /// The `build` object reported by `hello`.
+    pub build: Value,
 }
 
 impl ControlContext {
@@ -198,7 +200,14 @@ impl ControlContext {
             big_permit_wait: BIG_PERMIT_WAIT,
             big_read_idle: BIG_READ_IDLE,
             big_read_total: BIG_READ_TOTAL,
+            build: crate::build::build_info(siple_config::channel::current()),
         }
+    }
+
+    /// Reports `channel` in `hello.build` instead of the process's own.
+    pub fn with_channel(mut self, channel: &siple_config::channel::Channel) -> Self {
+        self.build = crate::build::build_info(channel);
+        self
     }
 
     /// Built-in methods plus the backend's, for `methods.list`.
@@ -364,7 +373,7 @@ pub fn builtin_methods() -> Vec<MethodInfo> {
     vec![
         MethodInfo::new(
             "hello",
-            "Handshake; must be the first message. Returns server version, current event seq, and `instance_id` / `started_at` (a different instance_id than before means the application restarted: event seqs and call ids reset).",
+            "Handshake; must be the first message. Returns server version, current event seq, `instance_id` / `started_at` and `build` ({channel: direct|mas|msix, sandboxed, store, version}: which edition answers) (a different instance_id than before means the application restarted: event seqs and call ids reset).",
             json!({"type":"object","properties":{
                 "token":{"type":"string","description":"Per-run token from runtime.json (mandatory on TCP)."},
                 "client":{"type":"string","description":"Client name for logs."}},

@@ -798,3 +798,115 @@ fn visual_wizard_done() {
         h.state_mut().state.wizard.step = crate::ui::wizard::Step::Done;
     });
 }
+
+// ---- store screenshots -------------------------------------------------------------------------
+
+/// A healthy variant of a scene for the store listings: both accounts registered, no errors,
+/// no failed or unknown lamps. Leaves the golden scenes alone.
+fn store_clean(mut s: Snapshot) -> Snapshot {
+    s.accounts.truncate(2);
+    s.accounts[1].registration = RegState::Registered {
+        registered_at: now() - Duration::seconds(90),
+        last_renewed_at: now() - Duration::seconds(90),
+        expires_at: now() + Duration::seconds(210),
+        granted_secs: 300,
+    };
+    s.accounts[1].pending_rebuild = false;
+    for b in &mut s.blf {
+        match b.label.as_str() {
+            "" => b.label = "Dispatch".into(),
+            "Old lobby" => b.label = "Lobby".into(),
+            _ => {}
+        }
+        if matches!(b.state, BlfState::Unknown | BlfState::Failed) {
+            b.state = BlfState::Idle;
+            b.subscription = blf(&b.uri, &b.label, BlfState::Idle).subscription;
+        }
+        b.stale = false;
+    }
+    s
+}
+
+/// Ten extensions in two groups, so the list ends cleanly in the 1240x760 window.
+fn store_blf_list() -> Snapshot {
+    let rows = [
+        ("Sales", "1002", "Reception", BlfState::Idle),
+        ("Sales", "1005", "Warehouse", BlfState::Held),
+        ("Sales", "1011", "Dock", BlfState::Idle),
+        ("Sales", "1015", "Gate", BlfState::Idle),
+        ("Sales", "1016", "Front desk", BlfState::Idle),
+        ("Support", "1003", "Bob Martin", BlfState::Busy),
+        ("Support", "1004", "Helpdesk", BlfState::Ringing),
+        ("Support", "1006", "Dispatch", BlfState::Dialing),
+        ("Support", "1012", "Yard", BlfState::Busy),
+        ("Support", "1007", "Conference room", BlfState::Idle),
+    ];
+    let mut s = store_clean(blf_scenario(siple_core::config::BlfView::List));
+    s.blf = rows
+        .into_iter()
+        .map(|(g, uri, label, st)| {
+            let mut b = blf(uri, label, st);
+            b.group = g.into();
+            if st == BlfState::Ringing {
+                b.pickup = siple_sip::PickupMode::Prefix;
+            }
+            b
+        })
+        .collect();
+    s
+}
+
+/// Renders the wide scenes at 2x for the store listings (`siple-web` composes them into frames).
+/// Not a golden: writes `target/store-shots/<scene>_<theme>.png` (2480x1520). Run with
+/// `cargo test -p siple --release store_screenshots -- --ignored`.
+#[test]
+#[ignore = "writes marketing renders to target/store-shots; run explicitly"]
+fn store_screenshots() {
+    let out = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/store-shots");
+    std::fs::create_dir_all(&out).unwrap();
+    type Prepare = fn(&mut Harness<'_, TestApp>);
+    type Scene = (&'static str, fn() -> Snapshot, Prepare);
+    let scenes: [Scene; 4] = [
+        ("two_lines", || store_clean(two_calls()), |_| {}),
+        ("incoming", || store_clean(incoming()), |_| {}),
+        (
+            "transfer_consult",
+            || store_clean(transfer_consult()),
+            |_| {},
+        ),
+        ("blf_list", store_blf_list, |h| {
+            h.state_mut().state.ext_open = Some(true);
+            h.state_mut().state.ext_tab = true;
+        }),
+    ];
+    for (theme, tname) in [(egui::Theme::Light, "light"), (egui::Theme::Dark, "dark")] {
+        for (name, make, prepare) in &scenes {
+            let mut h = Harness::builder()
+                .with_size(egui::vec2(1240.0, 760.0))
+                .with_pixels_per_point(2.0)
+                .with_step_dt(1.0 / 240.0)
+                .with_theme(theme)
+                .wgpu()
+                .build_eframe(move |cc| {
+                    theme::install(&cc.egui_ctx);
+                    TestApp {
+                        snap: make(),
+                        state: UiState::default(),
+                        config_path: PathBuf::from(
+                            "/Users/engineer/Library/Application Support/Siple/config.toml",
+                        ),
+                        notice: None,
+                        live: Default::default(),
+                    }
+                });
+            h.run();
+            prepare(&mut h);
+            h.run();
+            h.remove_cursor();
+            h.run();
+            let img = h.render().expect("render");
+            assert_eq!((img.width(), img.height()), (2480, 1520));
+            img.save(out.join(format!("{name}_{tname}.png"))).unwrap();
+        }
+    }
+}

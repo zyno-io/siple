@@ -24,9 +24,16 @@ const APP_DIR: &str = "Siple";
 #[cfg(not(any(target_os = "macos", target_os = "windows")))]
 const APP_DIR: &str = "siple";
 
-/// Platform config directory: `~/Library/Application Support/Siple`,
-/// `%APPDATA%\Siple`, or `$XDG_CONFIG_HOME/siple` elsewhere.
+/// Config directory of this process's distribution channel (see [`crate::channel`]): the
+/// platform default for direct installs (`~/Library/Application Support/Siple`,
+/// `%APPDATA%\Siple`, or `$XDG_CONFIG_HOME/siple` elsewhere), the app group container for the Mac
+/// App Store build, the package's LocalState for MSIX.
 pub fn default_config_dir() -> Option<PathBuf> {
+    crate::channel::config_dir()
+}
+
+/// The platform default config directory of unpackaged installs.
+pub(crate) fn direct_config_dir() -> Option<PathBuf> {
     dirs::config_dir().map(|d| d.join(APP_DIR))
 }
 

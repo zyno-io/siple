@@ -107,8 +107,114 @@ cargo build --release --locked -p siple -p siple-cli --features store
 The feature is declared on `siple-core`, `siple` and `siple-cli` (the last two forward it). With it, the checker, its HTTP code,
 the header pill and the Settings section are not compiled; `[updates]` is still accepted in `config.toml` (so a config can move
 between builds) but ignored, with a debug log line; `app.update_status` reports `enabled: false` and `app.check_updates` does
-nothing. CI runs clippy with the feature. The store packaging itself (sandbox entitlements, App Store signing, MSIX) does not exist
-yet; when it is added, its build step must pass `--features store`.
+nothing. CI runs clippy with the feature. The store packaging builds with it: see "Store packages" below.
+
+## Store packages (Mac App Store, Microsoft Store)
+
+`.github/workflows/store.yml` runs on `v*` tags and on `workflow_dispatch`, as its own run (it never blocks or fails
+`release.yml`). It only produces **workflow artifacts**; nothing is uploaded to a store. Both packages are built with
+`--features store`.
+
+| Artifact | Contents | Retention |
+| --- | --- | --- |
+| `store-macos-appstore-<label>` | `Siple-<label>-mas.pkg` (signed), `SHA256SUMS`, `SUBMIT.md` | final 90 days, rc 30 |
+| `store-windows-msix-<label>` | unsigned `Siple_<ver>_x64_arm64.msixbundle`; only with the `MSIX_*` variables set and a Store-eligible version (`X.Y.Z.0`) | 90 days |
+| `sideload-windows-msix-<label>` | the same bundle test-signed with a throwaway certificate, `siple-test.cer`, `install-test.ps1`, README | 30 days |
+| `mas-unsigned-app`, `msix-stage-<arch>` | intermediates for the signing and packaging jobs | 7 days |
+
+Jobs: `version` (runs `scripts/store-version.sh --self-test`), `mas-build` (no secrets: `MAS=1 BUNDLE_ONLY=1
+scripts/package-macos.sh`, then `verify-macos-mas.sh --unsigned`), `mas-sign` (environment `store`, runs no cargo),
+`msix-build` (x64 and arm64, `package-windows.ps1 -StageOnly -Store`), `msix-package` (no secrets at all), `summary`.
+
+### Download and submit
+
+```sh
+gh run download <run-id> -n store-macos-appstore-0.2.0-rc.1      # or the Actions UI
+gh run download <run-id> -n store-windows-msix-0.2.0
+```
+
+- **Mac App Store.** Open Transporter, sign in with the developer-team Apple ID, drag in `Siple-<label>-mas.pkg` (or + then
+  Deliver). It appears under App Store Connect > Siple > TestFlight once processed. An rc goes to TestFlight; a final tag
+  can be added to a version and submitted for review. "Missing Compliance" on a build is the export-compliance question
+  (see below).
+- **Microsoft Store.** Partner Center > Siple > Submission > Packages: upload the `.msixbundle`. It is unsigned on purpose
+  (the Store signs it). Only a final tag (or a dispatch with `msix_store_version`) produces one.
+- **Sideload test (Windows).** From the `sideload-windows-msix-<label>` artifact, in an elevated PowerShell:
+  `.\install-test.ps1` (imports the `.cer` into `LocalMachine\TrustedPeople`, then `Add-AppxPackage
+  -ForceUpdateFromAnyVersion`); `.\install-test.ps1 -Uninstall` removes the package and the certificate. The sideload
+  package carries the same identity as the Store one: uninstall one before installing the other. Uninstalling an MSIX
+  deletes its LocalState (config, logs).
+
+### Version scheme (`scripts/store-version.sh`)
+
+Both stores reject a number lower than one already uploaded, so the numbers are computed from the tag, deterministically:
+
+- `CFBundleVersion` = `X*1000000 + Y*10000 + Z*100 + (final: 99, rc N: N, branch build: 0)`; minor and patch must be
+  <= 99 and rc N in 1..98 (otherwise the script fails). `CFBundleShortVersionString` = the Cargo version.
+- MSIX: final `X.Y.Z.0` (the only form the Microsoft Store accepts: it reserves the fourth field); rc `X.Y.Z.N` (sideload
+  only); branch build `X.Y.Z.(1 + run % 65000)` (sideload only).
+
+| Tag | CFBundleVersion | MSIX | Use |
+| --- | --- | --- | --- |
+| `v0.2.0-rc.1` | 20001 | 0.2.0.1 | TestFlight; MSIX sideload |
+| `v0.2.0-rc.2` | 20002 | 0.2.0.2 | same |
+| `v0.2.0` | 20099 | 0.2.0.0 | both stores |
+| `v0.2.1` | 20199 | 0.2.1.0 | both stores |
+
+Consequences: re-running the workflow on a tag gives the same numbers, so uploading it again is a "redundant binary": tag a
+new rc to ship a fix. Release trains must ship in order. The tag must match `Cargo.toml` (the `version` job fails
+otherwise).
+
+### Setup (owner prerequisites)
+
+GitHub environment `store`: deployment tags limited to `v*`, no required reviewers (same as `release`). It holds the
+Mac App Store signing secrets. Nothing for the Microsoft Store is secret.
+
+| Kind | Name | Value |
+| --- | --- | --- |
+| secret (`store` env) | `MAS_CERTS_P12` | base64 of ONE `.p12` holding both identities: **Apple Distribution** and **Mac Installer Distribution** (Xcode > Settings > Accounts > Manage Certificates creates them; export both in Keychain Access) |
+| secret (`store` env) | `MAS_CERTS_PASSWORD` | the password of that `.p12` |
+| secret (`store` env) | `MAS_PROVISIONING_PROFILE` | base64 of the **Mac App Store Connect** distribution profile for `io.zyno.siple` (the Apple Distribution certificate, the app group). Renew yearly; the signing step warns 30 days ahead and fails if expired |
+| secret (`store` env) | `APP_STORE_CONNECT_API_KEY` | only for `MAS_VALIDATE`: same base64 JSON as in "Secrets" above |
+| variable | `STORE_MAS_ENABLED` | `true` once the secrets exist: from then on missing secrets fail the job instead of skipping it |
+| variable | `STORE_MSIX_ENABLED` | `true` once the `MSIX_*` variables exist (same semantics) |
+| variable | `MAS_VALIDATE` | `true` to run `xcrun altool --validate-app` after the artifact is uploaded (needs the App Store Connect app record and `APP_STORE_CONNECT_API_KEY`) |
+| variable | `MSIX_IDENTITY_NAME` | Partner Center > Product identity > Package/Identity/Name |
+| variable | `MSIX_PUBLISHER` | Package/Identity/Publisher (`CN=<GUID>`) |
+| variable | `MSIX_PUBLISHER_DISPLAY_NAME` | Package/Properties/PublisherDisplayName |
+| variable | `MSIX_DISPLAY_NAME` | optional, default `Siple` |
+
+These values must match Partner Center exactly or the upload is rejected. Before the first upload also create the App ID
+`io.zyno.siple` (with the App Groups capability) and the App Store Connect app record (the API cannot create it),
+and reserve the app name in Partner Center.
+
+Skip behaviour: while a `*_ENABLED` variable is unset, a gated job prints a notice and stays green (`mas-sign` skips its
+steps; `msix-package` builds only the placeholder-identity sideload package). On a branch (`workflow_dispatch`) `mas-sign`
+does not run at all. If the secrets arrive after a tag was pushed, re-run the workflow with `workflow_dispatch` on that tag
+(the tag ref satisfies the `store` environment rule). `msix_store_version` (dispatch input, `X.Y.Z.0`) lets a branch build
+produce a Store-eligible bundle for a first Partner Center certification test.
+
+### Scripts
+
+| Script | What |
+| --- | --- |
+| `scripts/store-version.sh [TAG] [RUN] / --self-test` | the version numbers above, as `KEY=VALUE` |
+| `MAS=1 scripts/package-macos.sh` | `--features store`, `MACOSX_DEPLOYMENT_TARGET=13.0`, store Info.plist patches, privacy manifest; stops at `dist/mas/Siple.app` |
+| `scripts/sign-macos-mas.sh <app> <pkg>` | profile checks, inside-out `codesign` (`siple-cli` first, never `--deep`), `productbuild`. `MAS_LOCAL_TEST=1` signs a copy with any identity and no identifier keys, for running the sandboxed app locally |
+| `scripts/verify-macos-mas.sh [--unsigned\|--local-test] <app> [pkg]` | SDK/minos, universal, Info.plist, no update-check code, the CLI's embedded Info.plist, entitlements, signatures, pkg |
+| `scripts/package-windows.ps1 -Store` | stage with `--features store` (`dist\Siple-<v>-windows-<arch>-store`) |
+| `scripts/package-msix.ps1 [-TestSign]` | manifest from `packaging/windows/AppxManifest.xml.in`, `makepri`, `makeappx pack` + `bundle`, validation, optional test-signed sideload copy |
+| `scripts/install-test.ps1` | trust the test certificate and install / uninstall the sideload bundle |
+| `python scripts/make-icons.py --msix-only` | regenerate `packaging/windows/msix-assets/` (checked in) |
+
+### Open items
+
+- **Export compliance (`ITSAppUsesNonExemptEncryption`).** Owner decision pending. `package-macos.sh` sets it to `true` on one
+  commented line (the conservative answer); `true` may leave each TestFlight build at "Missing Compliance" until answered
+  in App Store Connect.
+- The MAS and MSIX builds depend on the channel, gating and CLI Info.plist code (plan tasks T2 to T5); `verify-macos-mas.sh`
+  fails until the CLI embeds its Info.plist.
+- Cost: each tag adds one universal macOS build (billed at 10x while the repository is private).
 
 ## Verify a download
 

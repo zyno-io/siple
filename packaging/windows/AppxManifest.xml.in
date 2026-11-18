@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Siple MSIX manifest template. scripts/package-msix.ps1 replaces the at-sign tokens below and writes AppxManifest.xml.
+     Identity Name, Publisher and PublisherDisplayName must match Partner Center (Product identity) EXACTLY for a
+     Store upload. Design: one Application, a console alias for siple-cli.exe only (no siple.exe alias), firewall rules. -->
+<Package
+  xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:uap3="http://schemas.microsoft.com/appx/manifest/uap/windows10/3"
+  xmlns:uap5="http://schemas.microsoft.com/appx/manifest/uap/windows10/5"
+  xmlns:desktop="http://schemas.microsoft.com/appx/manifest/desktop/windows10"
+  xmlns:desktop2="http://schemas.microsoft.com/appx/manifest/desktop/windows10/2"
+  xmlns:desktop4="http://schemas.microsoft.com/appx/manifest/desktop/windows10/4"
+  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+  IgnorableNamespaces="uap uap3 uap5 desktop desktop2 desktop4 rescap">
+
+  <Identity Name="@IDENTITY_NAME@" Publisher="@PUBLISHER@" Version="@VERSION@" ProcessorArchitecture="@ARCH@"/>
+
+  <Properties>
+    <DisplayName>@DISPLAY_NAME@</DisplayName>
+    <PublisherDisplayName>@PUBLISHER_DISPLAY_NAME@</PublisherDisplayName>
+    <Logo>Assets\StoreLogo.png</Logo>
+    <Description>Siple SIP softphone</Description>
+  </Properties>
+
+  <Dependencies>
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.19041.0" MaxVersionTested="10.0.26100.0"/>
+  </Dependencies>
+
+  <Resources>
+    <Resource Language="en-us"/>
+  </Resources>
+
+  <Applications>
+    <Application Id="App" Executable="siple.exe" EntryPoint="Windows.FullTrustApplication"
+      desktop4:SupportsMultipleInstances="true">
+      <uap:VisualElements DisplayName="@DISPLAY_NAME@" Description="Siple SIP softphone"
+        BackgroundColor="transparent" Square150x150Logo="Assets\Square150x150Logo.png" Square44x44Logo="Assets\Square44x44Logo.png">
+        <uap:DefaultTile Wide310x150Logo="Assets\Wide310x150Logo.png" Square71x71Logo="Assets\SmallTile.png"
+          Square310x310Logo="Assets\LargeTile.png" ShortName="Siple"/>
+      </uap:VisualElements>
+      <Extensions>
+        <!-- Parameters mirror the unpackaged HKCU command (siple.exe, then the dash-dash separator, then the URI); verify the argv interactively (spike row e). -->
+        <uap3:Extension Category="windows.protocol" Executable="siple.exe" EntryPoint="Windows.FullTrustApplication">
+          <uap3:Protocol Name="sip" Parameters="-- &quot;%1&quot;"><uap:DisplayName>SIP link</uap:DisplayName></uap3:Protocol>
+        </uap3:Extension>
+        <uap3:Extension Category="windows.protocol" Executable="siple.exe" EntryPoint="Windows.FullTrustApplication">
+          <uap3:Protocol Name="sips" Parameters="-- &quot;%1&quot;"><uap:DisplayName>Secure SIP link</uap:DisplayName></uap3:Protocol>
+        </uap3:Extension>
+        <uap3:Extension Category="windows.protocol" Executable="siple.exe" EntryPoint="Windows.FullTrustApplication">
+          <uap3:Protocol Name="tel" Parameters="-- &quot;%1&quot;"><uap:DisplayName>Phone number link</uap:DisplayName></uap3:Protocol>
+        </uap3:Extension>
+        <uap3:Extension Category="windows.protocol" Executable="siple.exe" EntryPoint="Windows.FullTrustApplication">
+          <uap3:Protocol Name="callto" Parameters="-- &quot;%1&quot;"><uap:DisplayName>Callto link</uap:DisplayName></uap3:Protocol>
+        </uap3:Extension>
+        <desktop:Extension Category="windows.startupTask" Executable="siple.exe" EntryPoint="Windows.FullTrustApplication">
+          <desktop:StartupTask TaskId="SipleStartup" Enabled="false" DisplayName="@DISPLAY_NAME@"/>
+        </desktop:Extension>
+        <uap5:Extension Category="windows.appExecutionAlias" Executable="siple-cli.exe" EntryPoint="Windows.FullTrustApplication">
+          <uap5:AppExecutionAlias desktop4:Subsystem="console">
+            <uap5:ExecutionAlias Alias="siple-cli.exe"/>
+          </uap5:AppExecutionAlias>
+        </uap5:Extension>
+      </Extensions>
+    </Application>
+  </Applications>
+
+  <Capabilities>
+    <Capability Name="internetClientServer"/>
+    <Capability Name="privateNetworkClientServer"/>
+    <rescap:Capability Name="runFullTrust"/>
+    <DeviceCapability Name="microphone"/>
+  </Capabilities>
+
+  <Extensions>
+    <desktop2:Extension Category="windows.firewallRules">
+      <desktop2:FirewallRules Executable="siple.exe">
+        <desktop2:Rule Direction="in" IPProtocol="UDP" Profile="all"/>
+        <desktop2:Rule Direction="in" IPProtocol="TCP" Profile="all"/>
+      </desktop2:FirewallRules>
+    </desktop2:Extension>
+    <desktop2:Extension Category="windows.firewallRules">
+      <desktop2:FirewallRules Executable="siple-cli.exe">
+        <desktop2:Rule Direction="in" IPProtocol="UDP" Profile="all"/>
+        <desktop2:Rule Direction="in" IPProtocol="TCP" Profile="all"/>
+      </desktop2:FirewallRules>
+    </desktop2:Extension>
+  </Extensions>
+</Package>

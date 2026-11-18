@@ -700,6 +700,7 @@ fn check_hello(
         "current_seq": ctx.events.current_seq(),
         "instance_id": ctx.events.instance_id(),
         "started_at": ctx.events.started_at().to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
+        "build": ctx.build,
     }))
 }
 

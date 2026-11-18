@@ -180,12 +180,14 @@ impl Notifier {
         let r = std::thread::Builder::new()
             .name("siple-notify".into())
             .spawn(move || {
-                match Notification::new()
-                    .appname("Siple")
-                    .summary(&title)
-                    .body(&body)
-                    .show()
-                {
+                let mut n = Notification::new();
+                n.appname("Siple").summary(&title).body(&body);
+                // A packaged app's toasts must carry the package identity, otherwise Windows
+                // attributes them to PowerShell.
+                if let Some(aumid) = siple_core::config::channel::current().aumid {
+                    n.app_id(aumid);
+                }
+                match n.show() {
                     Ok(_) => {
                         if let Some(f) = on_posted {
                             f();

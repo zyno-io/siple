@@ -23,6 +23,9 @@
   zip must contain the signed exes:  -StageOnly  (build + stage, no zip)  ->  sign the exes in the
   stage directory  ->  -ZipOnly -RequireSigned  (verify Authenticode signatures, then zip).
 
+.PARAMETER Store
+  Microsoft Store / MSIX build: passes `--features store` (no update check) and names the stage
+  directory (and zip) `...-windows-<arch>-store`. scripts\package-msix.ps1 consumes that stage.
 .PARAMETER Arch
   x64 (default) or arm64.
 .PARAMETER SkipBuild
@@ -37,7 +40,7 @@
 #>
 param(
     [ValidateSet('x64', 'arm64')][string]$Arch = 'x64',
-    [switch]$SkipBuild, [switch]$StageOnly, [switch]$ZipOnly, [switch]$RequireSigned
+    [switch]$SkipBuild, [switch]$StageOnly, [switch]$ZipOnly, [switch]$RequireSigned, [switch]$Store
 )
 
 $ErrorActionPreference = 'Stop'
@@ -53,7 +56,8 @@ if ($cargoToml -notmatch '(?ms)\[workspace\.package\].*?^version\s*=\s*"([^"]+)"
 $Version = $Matches[1]
 Write-Host "==> Siple $Version ($Target)"
 $Dist = Join-Path $Root 'dist'
-$Stage = Join-Path $Dist "Siple-$Version-windows-$Arch"
+$Suffix = if ($Store) { '-store' } else { '' }
+$Stage = Join-Path $Dist "Siple-$Version-windows-$Arch$Suffix"
 if ($StageOnly -and $ZipOnly) { throw '-StageOnly and -ZipOnly are mutually exclusive' }
 if ($ZipOnly) { $SkipBuild = $true }
 
@@ -105,10 +109,12 @@ if (-not $ZipOnly) {
             [Environment]::SetEnvironmentVariable($toolchainVar, $tc)
             Write-Host "==> $toolchainVar = $tc"
         }
-        Write-Host '==> cargo build --release'
+        $features = @()
+        if ($Store) { $features = @('--features', 'store') }
+        Write-Host "==> cargo build --release $($features -join ' ')"
         # Explicit --target so the target-specific rustflags (crt-static) from .cargo\config.toml apply
         # and the output lands in target\<triple>\release.
-        & cargo build --release --locked --target $Target -p siple -p siple-cli
+        & cargo build --release --locked --target $Target -p siple -p siple-cli @features
         if ($LASTEXITCODE -ne 0) { throw "cargo build failed ($LASTEXITCODE)" }
     }
     $Gui = Join-Path $Bin 'siple.exe'
@@ -158,8 +164,16 @@ if (-not $ZipOnly) {
     Copy-Item (Join-Path $Root 'crates\siple-config\config.example.toml') $Stage
     Copy-Item (Join-Path $Root 'LICENSE') $Stage
     # Third-party notices: skipped with a warning in dev builds, fatal when SIPLE_RELEASE=1.
-    $null = & cargo about --version 2>&1
-    if ($LASTEXITCODE -eq 0) {
+    # try/catch: with $ErrorActionPreference = Stop, a missing cargo-about surfaces as a terminating
+    # error (cargo's "no such command" stderr under 5.1), not just a non-zero exit code.
+    $haveAbout = $false
+    try {
+        $null = & cargo about --version 2>&1
+        $haveAbout = ($LASTEXITCODE -eq 0)
+    } catch {
+        $haveAbout = $false
+    }
+    if ($haveAbout) {
         $notices = Join-Path $Stage 'THIRD-PARTY-NOTICES.html'
         # -o, not a pipe: cargo-about refuses PowerShell redirection (encoding issues).
         & cargo about generate --locked -c (Join-Path $Root 'about.toml') -o $notices (Join-Path $Root 'about.hbs')
@@ -194,7 +208,7 @@ if ($RequireSigned) {
     }
 }
 
-$Zip = Join-Path $Dist "Siple-$Version-windows-$Arch.zip"
+$Zip = Join-Path $Dist "Siple-$Version-windows-$Arch$Suffix.zip"
 if (Test-Path $Zip) { Remove-Item $Zip -Force }
 # Not Compress-Archive: under Windows PowerShell 5.1 it writes `\` into entry names (`docs\API.md`),
 # which the zip spec forbids and unzip on macOS/Linux flattens. Name every entry with `/` ourselves.

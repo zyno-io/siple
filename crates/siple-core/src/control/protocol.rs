@@ -32,6 +32,9 @@ pub enum ErrorKind {
     MethodNotFound,
     /// Unparseable JSON (the server closes the connection instead of replying).
     ParseError,
+    /// The feature is not available in this edition (e.g. `[speech]` hooks in the Mac App Store
+    /// build).
+    Unsupported,
 }
 
 impl ErrorKind {
@@ -48,6 +51,7 @@ impl ErrorKind {
             Self::Unauthorized => -32003,
             Self::SipError => -32004,
             Self::Timeout => -32005,
+            Self::Unsupported => -32006,
         }
     }
 
@@ -64,6 +68,7 @@ impl ErrorKind {
             Self::InvalidRequest => "invalid_request",
             Self::MethodNotFound => "method_not_found",
             Self::ParseError => "parse_error",
+            Self::Unsupported => "unsupported",
         }
     }
 }
@@ -318,6 +323,16 @@ pub fn decode_incoming(line: &str) -> Result<Incoming, ApiError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn unsupported_round_trips_through_the_wire() {
+        let e = ApiError::new(ErrorKind::Unsupported, "not in this edition");
+        let w = e.to_wire();
+        assert_eq!(w["code"], -32006);
+        assert_eq!(w["data"]["kind"], "unsupported");
+        assert_eq!(ErrorKind::Unsupported.as_str(), "unsupported");
+        assert_eq!(ApiError::from_wire(&w), e);
+    }
 
     #[test]
     fn request_parsing() {

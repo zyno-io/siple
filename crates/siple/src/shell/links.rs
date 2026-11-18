@@ -71,8 +71,22 @@ pub fn windows_keys_to_remove() -> Vec<String> {
     ]
 }
 
-/// Registers (`enabled`) or unregisters the handler. A no-op outside Windows.
+/// Registers (`enabled`) or unregisters the handler. A no-op outside Windows, and in packaged
+/// editions (MSIX declares the protocols in its manifest; an HKCU entry would point at the
+/// versioned package path and break on update).
 pub fn apply(enabled: bool) -> std::io::Result<()> {
+    apply_for(siple_core::config::channel::current(), enabled)
+}
+
+fn apply_for(channel: &siple_core::config::channel::Channel, enabled: bool) -> std::io::Result<()> {
+    if channel.is_packaged() {
+        tracing::info!(
+            channel = channel.kind.as_str(),
+            enabled,
+            "link handler registration is managed by the package; nothing to do"
+        );
+        return Ok(());
+    }
     #[cfg(target_os = "windows")]
     {
         use winreg::RegKey;
@@ -111,6 +125,14 @@ pub fn apply(enabled: bool) -> std::io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn packaged_editions_skip_registration() {
+        use siple_core::config::channel::Channel;
+        // Returns before touching the registry (a Windows run would otherwise write HKCU).
+        assert!(apply_for(&Channel::msix("a_b", None), true).is_ok());
+        assert!(apply_for(&Channel::MAC_APP_STORE, true).is_ok());
+    }
 
     #[test]
     fn registry_entries_cover_every_scheme_and_quote_the_path() {

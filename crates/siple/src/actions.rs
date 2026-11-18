@@ -417,16 +417,57 @@ pub fn open_url(url: &str) -> std::io::Result<()> {
     open_path(Path::new(url), false)
 }
 
+/// macOS: LaunchServices through `NSWorkspace` (works the same inside the App Sandbox, unlike
+/// spawning `/usr/bin/open`). `as_text` opens a file in the default text editor: `open -t` outside
+/// the sandbox; in the Mac App Store build, TextEdit (falling back to the file's default
+/// application when TextEdit is missing). Folders and URLs go to their default handler.
+#[cfg(target_os = "macos")]
+fn macos_open(path: &Path, as_text: bool) -> std::io::Result<()> {
+    use objc2_app_kit::{NSWorkspace, NSWorkspaceOpenConfiguration};
+    use objc2_foundation::{NSArray, NSString, NSURL};
+
+    const TEXT_EDIT: &str = "/System/Applications/TextEdit.app";
+    if as_text
+        && siple_core::config::channel::current().kind
+            != siple_core::config::channel::ChannelKind::MacAppStore
+    {
+        return std::process::Command::new("open")
+            .arg("-t")
+            .arg(path)
+            .spawn()
+            .map(|_| ());
+    }
+    let text = path.to_string_lossy();
+    let url = if text.starts_with("https://") || text.starts_with("http://") {
+        NSURL::URLWithString(&NSString::from_str(&text))
+    } else {
+        Some(NSURL::fileURLWithPath(&NSString::from_str(&text)))
+    }
+    .ok_or_else(|| {
+        std::io::Error::new(std::io::ErrorKind::InvalidInput, "not a valid path or URL")
+    })?;
+    let ws = NSWorkspace::sharedWorkspace();
+    if as_text && Path::new(TEXT_EDIT).is_dir() {
+        let app = NSURL::fileURLWithPath(&NSString::from_str(TEXT_EDIT));
+        let urls = NSArray::from_retained_slice(&[url]);
+        let cfg = NSWorkspaceOpenConfiguration::configuration();
+        ws.openURLs_withApplicationAtURL_configuration_completionHandler(&urls, &app, &cfg, None);
+        return Ok(());
+    }
+    if ws.openURL(&url) {
+        Ok(())
+    } else {
+        Err(std::io::Error::other(format!("cannot open {text}")))
+    }
+}
+
 /// Opens a file (in the default text editor) or a folder with the platform opener.
 pub fn open_path(path: &Path, as_text: bool) -> std::io::Result<()> {
+    #[cfg(not(target_os = "macos"))]
     use std::process::Command;
     #[cfg(target_os = "macos")]
     {
-        let mut c = Command::new("open");
-        if as_text {
-            c.arg("-t");
-        }
-        c.arg(path).spawn().map(|_| ())
+        macos_open(path, as_text)
     }
     #[cfg(windows)]
     {

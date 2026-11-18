@@ -186,7 +186,27 @@ fn remove_if_present(path: &Path) -> std::io::Result<()> {
 /// `--config` path of a non-default profile: that profile gets its own entry (see
 /// [`entry_name`]) which starts it, and disabling removes exactly that entry, wherever the
 /// executable was when it was written.
+///
+/// A no-op in packaged editions: a LaunchAgent cannot work in the Mac App Store sandbox, and an
+/// MSIX run key would persist the versioned `WindowsApps` path (MSIX users enable the declared
+/// startup task in Windows Settings instead).
 pub fn apply(enabled: bool, config: Option<&Path>) -> std::io::Result<()> {
+    apply_for(siple_core::config::channel::current(), enabled, config)
+}
+
+fn apply_for(
+    channel: &siple_core::config::channel::Channel,
+    enabled: bool,
+    config: Option<&Path>,
+) -> std::io::Result<()> {
+    if channel.is_packaged() {
+        tracing::info!(
+            channel = channel.kind.as_str(),
+            enabled,
+            "launch at login is managed by the OS for this edition; nothing to do"
+        );
+        return Ok(());
+    }
     let exe = std::env::current_exe()?;
     let extra = profile_args(config);
     let name = entry_name(config);
@@ -233,6 +253,26 @@ pub fn apply(enabled: bool, config: Option<&Path>) -> std::io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn packaged_editions_write_no_login_entry() {
+        use siple_core::config::channel::Channel;
+        #[cfg(not(target_os = "windows"))]
+        let entry = entry_path(
+            dirs::home_dir().as_deref(),
+            dirs::config_dir().as_deref(),
+            cfg!(target_os = "macos"),
+            &entry_name(None),
+        );
+        #[cfg(not(target_os = "windows"))]
+        let before = entry.as_ref().map(|p| p.exists());
+        for ch in [Channel::MAC_APP_STORE, Channel::msix("a_b", None)] {
+            assert!(apply_for(&ch, true, None).is_ok());
+            assert!(apply_for(&ch, false, None).is_ok());
+        }
+        #[cfg(not(target_os = "windows"))]
+        assert_eq!(entry.as_ref().map(|p| p.exists()), before);
+    }
 
     #[test]
     fn plist_is_well_formed_and_escaped() {

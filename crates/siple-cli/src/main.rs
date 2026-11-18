@@ -645,7 +645,22 @@ async fn events(args: EventsArgs) -> std::result::Result<(), ClientError> {
     }
 }
 
+/// Why `run` must not start an engine in `channel`: the Mac App Store sandbox only allows this
+/// CLI to talk to the app (a headless engine there is broken: no external commands, no
+/// reachable audio or sockets for other tools).
+fn run_refusal(channel: &config::channel::Channel) -> Option<&'static str> {
+    (channel.kind == config::channel::ChannelKind::MacAppStore).then_some(
+        "siple-cli run is not available in the Mac App Store edition: this copy only controls the \
+         running Siple app (ctl, mcp, stream). For a headless engine install the Developer ID \
+         build (also on Homebrew) and run its siple-cli.",
+    )
+}
+
 async fn run(args: RunArgs) -> Result<ExitCode> {
+    if let Some(msg) = run_refusal(config::channel::current()) {
+        eprintln!("{msg}");
+        return Ok(ExitCode::from(2));
+    }
     if !args.headless {
         eprintln!("siple-cli run requires --headless; the GUI is the `siple` binary");
         return Ok(ExitCode::from(2));
@@ -788,6 +803,15 @@ mod tests {
     }
 
     use super::*;
+
+    #[test]
+    fn run_is_refused_only_in_the_mac_app_store_edition() {
+        use siple_core::config::channel::Channel;
+        let msg = run_refusal(&Channel::MAC_APP_STORE).expect("refused");
+        assert!(msg.contains("Developer ID") && msg.contains("Homebrew"));
+        assert!(run_refusal(&Channel::DIRECT).is_none());
+        assert!(run_refusal(&Channel::msix("a_b", None)).is_none());
+    }
     use clap::CommandFactory;
 
     #[test]

@@ -259,6 +259,12 @@ fn io_err(e: tokio::task::JoinError) -> ApiError {
 }
 
 impl AppBackend {
+    /// `unsupported` when this edition cannot run `[speech]` hooks (checked before anything else
+    /// so the answer does not depend on configuration or call state).
+    fn require_speech(&self) -> Result<(), ApiError> {
+        speech::check_supported(&self.inner.channel).map_err(ApiError::from)
+    }
+
     fn speech_snapshot(&self) -> SpeechConfig {
         self.inner.config.load().speech.clone()
     }
@@ -669,6 +675,7 @@ impl AppBackend {
     // ---- call.say -------------------------------------------------------------------------
 
     async fn call_say(&self, p: SayParam) -> Result<Value, ApiError> {
+        self.require_speech()?;
         check_text(&p.text)?;
         let gain_db = check_range("gain_db", p.gain_db.unwrap_or(0.0), -40.0, 20.0)?;
         if let Some(t) = p.timeout_ms {
@@ -729,6 +736,9 @@ impl AppBackend {
         }
         let rate = check_rate(p.sample_rate)?;
         let transcribe = p.transcribe.unwrap_or(false);
+        if transcribe {
+            self.require_speech()?;
+        }
         let out = self
             .parse_audio_out(p.audio.as_deref(), p.path.as_deref(), transcribe)
             .await?;
@@ -863,6 +873,9 @@ impl AppBackend {
     async fn call_rx_audio(&self, p: RxAudioParam) -> Result<Value, ApiError> {
         let rate = check_rate(p.sample_rate)?;
         let transcribe = p.transcribe.unwrap_or(false);
+        if transcribe {
+            self.require_speech()?;
+        }
         let out = self
             .parse_audio_out(p.audio.as_deref(), p.path.as_deref(), transcribe)
             .await?;
@@ -932,6 +945,7 @@ impl AppBackend {
     // ---- speech.* -------------------------------------------------------------------------
 
     async fn speech_transcribe(&self, mut p: TranscribeParam) -> Result<Value, ApiError> {
+        self.require_speech()?;
         if p.path.is_some() == p.wav_base64.is_some() {
             return Err(ApiError::invalid_params(
                 "give exactly one of `path` and `wav_base64`",
@@ -993,6 +1007,7 @@ impl AppBackend {
     }
 
     async fn speech_synthesize(&self, p: SynthesizeParam) -> Result<Value, ApiError> {
+        self.require_speech()?;
         check_text(&p.text)?;
         let out = self
             .parse_audio_out(
