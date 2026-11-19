@@ -1,3 +1,12 @@
 {
-   "signedContributors": []
+  "signedContributors": [
+    {
+      "name": "fergusean",
+      "id": 1029297,
+      "comment_id": 7000237615,
+      "created_at": "2026-11-19T05:02:44Z",
+      "repoId": 1459522338,
+      "pullRequestNo": 1
+    }
+  ]
 }
