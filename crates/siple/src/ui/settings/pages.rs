@@ -610,6 +610,8 @@ fn updates_group(ui: &mut egui::Ui, cx: &Cx, st: &mut UiState, out: &mut Vec<UiA
                         // The pill has every step; here only the start (and Cancel while it runs).
                         use siple_core::update::InstallPhase as P;
                         let version = offer.version.unwrap_or_default();
+                        // Drawing a button inside a match guard would hide the side effect.
+                        #[allow(clippy::collapsible_match)]
                         match offer.install.map_or(P::Idle, |i| i.state) {
                             P::Idle | P::Failed => {
                                 let (label, restart) = if snap.call_active() {

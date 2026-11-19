@@ -418,6 +418,8 @@ fn update_pill(ui: &mut egui::Ui, cx: &Cx, st: &mut UiState, out: &mut Vec<UiAct
                 }
             }
             if matches!(stage, Stage::Offer | Stage::Failed) {
+                // Drawing a button inside a match guard would hide the side effect.
+                #[allow(clippy::collapsible_match)]
                 match offer.version {
                     Some(v) => {
                         if ui.button("Skip this version").clicked() {
