@@ -105,12 +105,14 @@ stt_timeout_ms = 60000                # 1000..120000
 stt_language = "en"                   # value for {lang}; same charset as tts_voice
 
 [updates]
-# Tell me when a newer Siple release exists (a pill in the header; nothing is downloaded or
-# installed). What is sent: one anonymous HTTPS GET to api.github.com about once a day (and when
-# you press "Check for updates"), with the header `User-Agent: Siple/<version>`. Nothing else: no
-# identifier, no account, no usage data. Hot reloadable. Ignored by Mac App Store / Microsoft
-# Store builds, which update through the store.
+# Tell me when a newer Siple release exists (a pill in the header). What is sent: one anonymous
+# HTTPS GET to api.github.com about once a day (and when you press "Check for updates"), with the
+# header `User-Agent: Siple/<version>`. Nothing else: no identifier, no account, no usage data.
+# Hot reloadable. The Mac App Store and Microsoft Store editions check through their store.
 check = true
+# Let the pill (or `app.install_update`) download, verify and install the new version in place when
+# you choose to. Direct downloads only; false = the pill opens the release page instead.
+install = true
 # channel = "stable"                  # stable | prerelease. Unset: prerelease while you run a release
                                       # candidate, else stable.
 

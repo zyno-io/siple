@@ -430,6 +430,7 @@ const SECTIONS: &[(&str, &[(&str, Kind)])] = &[
         "updates",
         &[
             ("check", Kind::Bool),
+            ("install", Kind::Bool),
             ("channel", Kind::Enum(UPDATE_CHANNEL)),
         ],
     ),

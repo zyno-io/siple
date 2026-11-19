@@ -29,8 +29,11 @@ pub enum RpcTag {
     /// `audio.echo_test`.
     Echo,
     /// `app.check_updates` ("Check for updates" in Settings).
-    #[cfg(not(feature = "store"))]
     CheckUpdates,
+    /// `app.install_update` (the update pill, Settings).
+    InstallUpdate,
+    /// `app.cancel_update`.
+    CancelUpdate,
 }
 
 /// A call to a control-API method.
@@ -139,11 +142,28 @@ pub fn set_section(section: &str, key: &str, value: EditValue) -> UiAction {
 }
 
 /// `app.check_updates`.
-#[cfg(not(feature = "store"))]
 pub fn check_updates() -> UiAction {
     UiAction::Rpc(RpcRequest {
         tag: RpcTag::CheckUpdates,
         method: "app.check_updates",
+        params: json!({}),
+    })
+}
+
+/// `app.install_update`: `restart` is `when_idle`, `now` or `manual`.
+pub fn install_update(version: &str, restart: &'static str) -> UiAction {
+    UiAction::Rpc(RpcRequest {
+        tag: RpcTag::InstallUpdate,
+        method: "app.install_update",
+        params: json!({"version": version, "restart": restart}),
+    })
+}
+
+/// `app.cancel_update`.
+pub fn cancel_update() -> UiAction {
+    UiAction::Rpc(RpcRequest {
+        tag: RpcTag::CancelUpdate,
+        method: "app.cancel_update",
         params: json!({}),
     })
 }

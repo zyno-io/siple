@@ -40,7 +40,8 @@ connection is closed. A connection that does not complete `hello` within 10 s (3
 - `token` is optional on the Unix socket / named pipe (the OS already restricts access) but
   mandatory on TCP. If sent it must be correct.
 - `build` says which edition answers: `channel` is `direct`, `mas` (Mac App Store, sandboxed) or
-  `msix` (Microsoft Store package); `store` is true for builds compiled without the update check.
+  `msix` (Microsoft Store package); `store` is true for store editions, which are compiled without the GitHub update source (they
+  check their own store instead: see `app.update_status` `source`).
   `status` carries the same object. Some features are unavailable in some editions (see `unsupported`).
 - `instance_id` is random per process run. **If it differs from the one you saw before, the
   application restarted**: event sequence numbers and call ids (`c1`, `c2`, ...) start over, so
@@ -101,7 +102,9 @@ Two ways to consume them:
 | `account.mwi` | account | `{waiting, account_uri, voice:{new,old,urgent_new,urgent_old}, other:{class:counts}, updated_at}` |
 | `account.dnd` | account | `{enabled}` |
 | `account.reconnecting` | account | `{reason}`: the account is re-probing and re-registering (`network_changed`/`os:*`/`wake`/`route_changed`/`manual`, `send_error`, `keepalive_timeout`) |
-| `app.update_available` | - | `{version, url}`: the update check found a release newer than the running one (once per version, remembered across restarts; `version` is e.g. `0.2.0` or `0.2.0-rc.1`, `url` its release page). Not sent while `[updates] check = false` or in a store build |
+| `app.update_available` | - | `{version, url, action}`: the update check found a release newer than the running one (once per version, remembered across restarts; `version` is e.g. `0.2.0` or `0.2.0-rc.1`, `null` for the Microsoft Store, which does not name one, then once per process; `url` the release page, or the store page; `action` is `install`, `open_release_page` or `open_store`: what the GUI offers). Not sent while `[updates] check = false` or when the installation has no update source |
+| `app.update_progress` | - | `{version, state, bytes?, total?, error?, reason?}`: an in-place install (`app.install_update`) changed step (`downloading`, `verifying`, `ready`, `waiting`, `committing`, `installed`, `restarting`, `failed`, or `idle` after a cancel); `bytes` / `total` while downloading, at most twice a second; `error` and `reason` (`cancelled`, `network`, `untrusted`, `io`, `unsupported`) when it failed. Direct builds only |
+| `app.updated` | - | `{from, to}`: the first start after an in-place update; emitted once by the new version. Direct builds only |
 | `network.changed` | - | `{generation, reasons:[...], old_local_ip, new_local_ip}`: debounced network change (OS event, wake from sleep, different route, `network.refresh`); `old_local_ip`/`new_local_ip` are the default-route IPv4 source addresses (`null` = no route) |
 | `blf.state` | account | `{uri, label, state: idle\|ringing\|dialing\|busy\|held\|unknown\|failed, dialogs:[...]}` |
 | `subscription.state` | account | `{sub_id, uri, event, kind: blf\|mwi\|generic, state: pending\|active\|terminated\|failed, code?, reason?}` |

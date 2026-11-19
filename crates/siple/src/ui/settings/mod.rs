@@ -468,7 +468,6 @@ impl SettingsState {
                 }
             }
             (RpcTag::Echo, Err(e)) => self.notice = Some(e.message),
-            #[cfg(not(feature = "store"))]
             (RpcTag::CheckUpdates, _) => self.update_checking = false,
             _ => {}
         }

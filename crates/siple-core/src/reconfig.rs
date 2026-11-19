@@ -676,9 +676,10 @@ impl Inner {
         let old = self.config.load_full();
         let (effective, changes) = self.apply_config(&old, loaded.config).await;
         self.config.store(Arc::new(effective));
-        #[cfg(not(feature = "store"))]
         if changes.iter().any(|c| matches!(c, Change::Updates)) {
             self.updater.config_changed();
+            #[cfg(not(feature = "store"))]
+            self.installer.config_changed();
         }
         // After the config: a reader that sees the new hash also sees the new config (the other
         // way round it only sees a stale hash, which makes an edit fail safe with a conflict).

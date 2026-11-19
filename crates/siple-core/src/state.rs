@@ -110,6 +110,25 @@ struct StateFile {
     /// The release version `app.update_available` was last emitted for.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     announced_update: Option<String>,
+    /// An in-place update was installed and its restart is (or was) pending: the new process
+    /// reads this to confirm the version, announce it and remove what the swap left behind.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    update_installed: Option<InstalledUpdate>,
+}
+
+/// The record of an installed update (`[update_installed]` in `state.toml`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct InstalledUpdate {
+    /// The version that was running when the update was installed.
+    pub from: String,
+    /// The version that was installed.
+    pub to: String,
+    /// When the swap finished.
+    pub at: DateTime<Utc>,
+    /// Paths the swap left behind (the replaced copy, the staging directory); the new version
+    /// removes them after it started, each only if the platform's rules accept the path.
+    #[serde(default)]
+    pub cleanup: Vec<String>,
 }
 
 /// Panel choices the GUI remembers across launches. `None` = never chosen (the GUI's default).
@@ -430,6 +449,16 @@ impl StateStore {
         self.update(|d| d.announced_update = Some(version.to_string()))
     }
 
+    /// The installed-update record, if one is pending.
+    pub fn installed_update(&self) -> Option<InstalledUpdate> {
+        self.lock().update_installed.clone()
+    }
+
+    /// Records (or clears) [`StateStore::installed_update`].
+    pub fn set_installed_update(&self, rec: Option<InstalledUpdate>) -> io::Result<()> {
+        self.update(|d| d.update_installed = rec)
+    }
+
     /// Changes the state and rewrites the file when something differs.
     fn update(&self, f: impl FnOnce(&mut StateFile)) -> io::Result<()> {
         let snapshot = {
@@ -523,6 +552,27 @@ mod tests {
         );
         s.set_skipped_update(None).unwrap();
         assert_eq!(StateStore::open(dir.path()).skipped_update(), None);
+    }
+
+    #[test]
+    fn installed_update_record_round_trips() {
+        let dir = tempfile::tempdir().unwrap();
+        let s = StateStore::open(dir.path());
+        assert_eq!(s.installed_update(), None);
+        let rec = InstalledUpdate {
+            from: "0.1.0".into(),
+            to: "0.2.0".into(),
+            at: Utc::now(),
+            cleanup: vec!["/a/b".into()],
+        };
+        s.set_installed_update(Some(rec.clone())).unwrap();
+        let again = StateStore::open(dir.path()).installed_update().unwrap();
+        assert_eq!(
+            (again.from, again.to, again.cleanup),
+            ("0.1.0".into(), "0.2.0".into(), rec.cleanup)
+        );
+        s.set_installed_update(None).unwrap();
+        assert_eq!(StateStore::open(dir.path()).installed_update(), None);
     }
 
     #[test]

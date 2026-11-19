@@ -526,7 +526,7 @@ pub fn backend_methods() -> Vec<MethodInfo> {
     vec![
             MethodInfo::new(
                 "status",
-                "Overall state: instance_id and started_at (a changed instance_id means a restart: event seqs and call ids reset), accounts (registration, dnd, mwi summary, blf list, pending_rebuild), calls, active_line (id of the un-held device-bound call that owns the microphone and speaker, or null), network {generation: count of network changes seen}, audio (effective devices from [audio] with source config|default, active devices, mic_permission), build {channel: direct|mas|msix, sandboxed, store: compiled without the update check, version}, speech {tts, stt: whether [speech] tts_command / stt_command are set}, config (path, applied_at, last_error), update {enabled, current, available, latest, release_url: the update check's summary, see app.update_status}, event_seq.",
+                "Overall state: instance_id and started_at (a changed instance_id means a restart: event seqs and call ids reset), accounts (registration, dnd, mwi summary, blf list, pending_rebuild), calls, active_line (id of the un-held device-bound call that owns the microphone and speaker, or null), network {generation: count of network changes seen}, audio (effective devices from [audio] with source config|default, active devices, mic_permission), build {channel: direct|mas|msix, sandboxed, store: a store edition (compiled without the GitHub update source), version}, speech {tts, stt: whether [speech] tts_command / stt_command are set}, config (path, applied_at, last_error), update {enabled, current, available, latest, release_url, source, action, store_url, install_state: the update check's summary, see app.update_status}, event_seq.",
                 none(),
             ),
             MethodInfo::new("account.list", "Status of all accounts.", none()),
@@ -717,10 +717,7 @@ impl ControlBackend for AppBackend {
             m if SUBSCRIPTION_METHODS.contains(&m) => self.subscription_method(m, params).await,
             m if AGENT_METHODS.contains(&m) => self.agent_method(m, params).await,
             m if UI_METHODS.contains(&m) => self.ui_method(m, params).await,
-            m if UPDATE_METHODS.contains(&m) => {
-                let _: Value = params;
-                self.update_method(m).await
-            }
+            m if UPDATE_METHODS.contains(&m) => self.update_method(m, params).await,
             // Needs a connection upgrade, which only the control server can do.
             "call.stream" => Err(ApiError::invalid_state(
                 "`call.stream` upgrades the connection to binary; use `siple-cli stream` \

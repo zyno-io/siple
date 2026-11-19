@@ -30,7 +30,7 @@ redact_credentials = true   # digest responses, the control token and passwords
 redact_srtp_keys = true     # SRTP master keys
 ```
 
-Siple never writes plaintext passwords to a log itself, and there is no telemetry (the only request Siple makes on its own is the optional [update check](/guide/updates)). A per-account `sip_trace = false` switches
+Siple never writes plaintext passwords to a log itself, and there is no telemetry (the only network activity Siple starts on its own is the optional [update check](/guide/updates)). A per-account `sip_trace = false` switches
 that account's wire trace off. See [Logs and secrets](/reference/configuration#logs-and-secrets).
 
 ## Common problems

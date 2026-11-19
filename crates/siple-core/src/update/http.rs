@@ -11,13 +11,12 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use async_trait::async_trait;
 use rustls::ClientConfig;
 use rustls::pki_types::ServerName;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio_rustls::TlsConnector;
 
-use super::checker::{FetchError, FetchOutcome, ReleaseFetcher};
+use super::checker::{FetchError, FetchOutcome};
 
 /// Largest response accepted (20 releases with notes are well under 1 MiB).
 const MAX_BODY: usize = 4 * 1024 * 1024;
@@ -25,9 +24,6 @@ const MAX_BODY: usize = 4 * 1024 * 1024;
 const MAX_HEAD: usize = 64 * 1024;
 /// Time limit of a whole request (connect, TLS, send, receive).
 pub const REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
-
-const HOST: &str = "api.github.com";
-const PATH: &str = "/repos/zyno-io/siple/releases?per_page=20";
 
 /// What a response said, before it is interpreted.
 #[derive(Debug, Default, PartialEq, Eq)]
@@ -41,23 +37,6 @@ pub(crate) struct Response {
     /// `X-RateLimit-Reset` (epoch seconds).
     pub ratelimit_reset: Option<u64>,
     pub body: Vec<u8>,
-}
-
-/// Fetches the releases of this project from GitHub over HTTPS.
-pub struct GithubFetcher;
-
-#[async_trait]
-impl ReleaseFetcher for GithubFetcher {
-    async fn fetch(
-        &self,
-        etag: Option<&str>,
-        user_agent: &str,
-    ) -> Result<FetchOutcome, FetchError> {
-        let resp = tokio::time::timeout(REQUEST_TIMEOUT, get(HOST, PATH, etag, user_agent))
-            .await
-            .map_err(|_| FetchError::Timeout)??;
-        interpret(resp, chrono::Utc::now().timestamp().max(0) as u64)
-    }
 }
 
 /// Maps a response to the outcome the checker acts on. `now` is epoch seconds.
@@ -87,10 +66,12 @@ fn wait(r: &Response, now: u64) -> Option<Duration> {
         .map(Duration::from_secs)
 }
 
-async fn get(
+/// One GET of `https://{host}{path}`. `extra` are the request headers besides `Host`,
+/// `User-Agent`, `Accept-Encoding` and `Connection`, which every request carries.
+pub(crate) async fn get(
     host: &str,
     path: &str,
-    etag: Option<&str>,
+    extra: &[(&str, &str)],
     user_agent: &str,
 ) -> Result<Response, FetchError> {
     let tcp = tokio::net::TcpStream::connect((host, 443))
@@ -102,10 +83,10 @@ async fn get(
         .connect(server_name, tcp)
         .await
         .map_err(|e| FetchError::Network(format!("TLS handshake with {host} failed: {e}")))?;
-    get_over(&mut tls, host, path, etag, user_agent).await
+    get_over(&mut tls, host, path, extra, user_agent).await
 }
 
-fn tls_config() -> Result<Arc<ClientConfig>, FetchError> {
+pub(crate) fn tls_config() -> Result<Arc<ClientConfig>, FetchError> {
     let err = |e: &dyn std::fmt::Display| FetchError::Network(format!("TLS setup failed: {e}"));
     let provider = Arc::new(rustls::crypto::ring::default_provider());
     let verifier =
@@ -124,7 +105,7 @@ pub(crate) async fn get_over<S>(
     stream: &mut S,
     host: &str,
     path: &str,
-    etag: Option<&str>,
+    extra: &[(&str, &str)],
     user_agent: &str,
 ) -> Result<Response, FetchError>
 where
@@ -132,11 +113,13 @@ where
 {
     let mut req = format!(
         "GET {path} HTTP/1.1\r\nHost: {host}\r\nUser-Agent: {user_agent}\r\n\
-         Accept: application/vnd.github+json\r\nAccept-Encoding: identity\r\n\
-         X-GitHub-Api-Version: 2022-11-28\r\nConnection: close\r\n"
+         Accept-Encoding: identity\r\nConnection: close\r\n"
     );
-    if let Some(t) = etag.filter(|t| !t.contains(['\r', '\n'])) {
-        req.push_str(&format!("If-None-Match: {t}\r\n"));
+    for (k, v) in extra {
+        // A value that could split the header block is dropped, never sent.
+        if !k.contains(['\r', '\n', ':']) && !v.contains(['\r', '\n']) {
+            req.push_str(&format!("{k}: {v}\r\n"));
+        }
     }
     req.push_str("\r\n");
     let net = |what: &str, e: std::io::Error| FetchError::Network(format!("{what}: {e}"));
@@ -267,7 +250,11 @@ mod tests {
             &mut client,
             "h.test",
             "/x?y=1",
-            Some("\"abc\""),
+            &[
+                ("Accept", "application/vnd.github+json"),
+                ("If-None-Match", "\"abc\""),
+                ("Bad", "x\r\nInjected: 1"),
+            ],
             "Siple/9.9.9",
         )
         .await
@@ -292,10 +279,45 @@ mod tests {
             assert!(req.contains(h), "{h} in {req}");
         }
         assert!(!req.to_ascii_lowercase().contains("cookie"));
+        assert!(!req.contains("Injected") && !req.contains("Bad:"), "{req}");
         assert_eq!(r.status, 200);
         assert_eq!(r.etag.as_deref(), Some("W/\"e1\""));
         assert_eq!(r.ratelimit_remaining, Some(59));
         assert_eq!(r.body, b"[1,2");
+    }
+
+    #[tokio::test]
+    async fn a_request_without_extra_headers_carries_only_the_base_four() {
+        let (mut client, mut server) = duplex(64 * 1024);
+        let srv = tokio::spawn(async move {
+            let mut got = vec![0u8; 4096];
+            let n = server.read(&mut got).await.unwrap();
+            server
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n{}")
+                .await
+                .unwrap();
+            String::from_utf8_lossy(&got[..n]).to_string()
+        });
+        get_over(
+            &mut client,
+            "itunes.apple.com",
+            "/lookup?id=1",
+            &[],
+            "Siple/1.2.3",
+        )
+        .await
+        .unwrap();
+        let req = srv.await.unwrap();
+        let mut names: Vec<_> = req
+            .split("\r\n")
+            .skip(1)
+            .filter_map(|l| l.split_once(':').map(|(k, _)| k.to_ascii_lowercase()))
+            .collect();
+        names.sort();
+        assert_eq!(
+            names,
+            ["accept-encoding", "connection", "host", "user-agent"]
+        );
     }
 
     #[tokio::test]

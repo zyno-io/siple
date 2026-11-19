@@ -1,6 +1,28 @@
 <!-- siple-rename: keep (this file documents the legacy ZynoPhone names on purpose) -->
 # Changelog
 
+## 0.1.2 (2026-11-19)
+
+- Store editions now tell you about updates. The Mac App Store edition asks Apple's public lookup of Siple's listing about
+  once a day (one anonymous request carrying only `User-Agent: Siple/<version>`); the Microsoft Store edition asks Windows' Store
+  service, which contacts Microsoft (Siple sends nothing itself). The header pill then reads "Open App Store" or "Open Microsoft
+  Store". Direct builds are unchanged: GitHub, as before. `[updates] check = false` turns every edition's check off.
+- API: `app.update_status` and `status.update` report `source` (`github`, `app_store`, `microsoft_store`, `none`), `action`,
+  `store_url`, `disabled_reason` and `mandatory`; `app.update_available` carries `action` and a `null` version for the
+  Microsoft Store. Store editions report `enabled: true`.
+- Release assets: `SHA256SUMS.minisig`, a minisign signature of `SHA256SUMS` (public key in `packaging/minisign.pub`).
+- The `siple` binary accepts a hidden `--wait-pid <pid>` option (waits for that process to exit before starting).
+- Direct downloads on macOS, Windows and Linux can now install an update in place: the update pill's **Install and restart**
+  (or `app.install_update`) downloads the new version from GitHub, checks the minisign signature of `SHA256SUMS`, the file's SHA-256
+  and your system's publisher check (macOS Developer ID and notarization; Windows Authenticode with a pinned publisher), replaces
+  Siple and restarts it, never during a call. An in-place install needs a release that carries `SHA256SUMS.minisig` (0.1.2 and later),
+  so updating from 0.1.1 still goes through the release page once. A copy installed with a package manager, in a folder you cannot write, from a disk image, in a container or
+  headless still opens the release page, with the reason. Siple never asks for administrator rights. New `[updates] install`
+  (default `true`) turns it off. The Mac App Store and Microsoft Store editions contain no downloader or installer.
+- API: `app.install_update`, `app.cancel_update`, the events `app.update_progress` and `app.updated`, the `install` object of
+  `app.update_status` and `install_state` in `status.update`; `action` can now be `install`. See `docs/CONFIG.md`, "In-place install".
+- Privacy: the direct downloads download the new version from GitHub when you, or a script or agent you run, chooses to install it.
+
 ## 0.1.1 (2026-11-18)
 
 First release for the Mac App Store and the Microsoft Store. The direct downloads behave as before.

@@ -8,9 +8,11 @@ license.workspace = true
 publish.workspace = true
 
 [features]
-# Mac App Store / Microsoft Store builds: compiles the update check out entirely (no network code,
-# no `app.check_updates` activity; `[updates]` is accepted and ignored). See docs/RELEASING.md.
-store = []
+# Mac App Store / Microsoft Store builds: compiles out only the GitHub update source (its API
+# request and releases parser) and, later, any downloader or installer. The store update checks
+# stay: the App Store lookup, and the Microsoft Store query (`windows`, Windows only). See
+# docs/RELEASING.md.
+store = ["dep:windows"]
 
 [dependencies]
 siple-config = { path = "../siple-config" }
@@ -51,6 +53,10 @@ rustls-platform-verifier = "0.6"
 tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12"] }
 notify = "8"
 notify-debouncer-full = "0.6"
+minisign-verify = { version = "0.3", default-features = false }
+tar = { version = "0.4", default-features = false }
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
+zip = { version = "9", default-features = false, features = ["deflate-flate2"] }
 
 # Real-time promotion of the media thread; Linux uses libc SCHED_RR instead
 # (the crate's default dbus feature would hard-link libdbus-1).
@@ -64,7 +70,9 @@ libc = "0.2"
 alsa = "0.11"
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.61", features = ["Win32_Networking_WinSock", "Win32_Foundation", "Win32_Security", "Win32_Security_Authorization", "Win32_System_Threading"] }
+# The Microsoft Store update query (src/update/msstore.rs), store builds only.
+windows = { version = "0.62", optional = true, features = ["ApplicationModel", "Services_Store", "Foundation_Collections"] }
+windows-sys = { version = "0.61", features = ["Win32_Networking_WinSock", "Win32_Foundation", "Win32_Security", "Win32_Security_Authorization", "Win32_Security_Cryptography", "Win32_Security_Cryptography_Catalog", "Win32_Security_Cryptography_Sip", "Win32_Security_WinTrust", "Win32_Storage_FileSystem", "Win32_System_Threading"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 block2 = "0.6"

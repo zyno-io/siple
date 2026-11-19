@@ -342,7 +342,6 @@ impl Actions {
     }
 
     /// Records that the user skipped release `version` in the update pill.
-    #[cfg(not(feature = "store"))]
     pub fn skip_update(&self, version: &str) {
         if let Some(app) = self.app()
             && let Err(e) = app.skip_update(version)
@@ -389,32 +388,49 @@ impl Actions {
     }
 }
 
-/// Whether `url` is exactly `https://github.com/zyno-io/siple/releases/tag/v<version>` with a
-/// version made of `[0-9A-Za-z.-]`, no empty or dot-leading segment (so no `..`, `/.` or other path
-/// trickery) and nothing after it.
-#[cfg(not(feature = "store"))]
-pub(crate) fn is_release_url(url: &str) -> bool {
-    let Some(rest) = url.strip_prefix("https://github.com/zyno-io/siple/releases/tag/v") else {
-        return false;
-    };
-    !rest.is_empty()
-        && rest
-            .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'.')
-        && rest.split('.').all(|seg| !seg.is_empty())
-}
-
-/// Opens a release page of this project in the default browser. Only [`is_release_url`] links are
+/// Opens a release page of this project in the default browser. Only [`siple_core::update::links::is_release_url`] links are
 /// opened (the link comes from a network response and is handed to the platform opener).
-#[cfg(not(feature = "store"))]
 pub fn open_url(url: &str) -> std::io::Result<()> {
-    if !is_release_url(url) {
+    if !siple_core::update::links::is_release_url(url) {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
             "not a link to a Siple release",
         ));
     }
     open_path(Path::new(url), false)
+}
+
+/// Opens the store page of Siple: the Mac App Store app on macOS, the Microsoft Store app on
+/// Windows. The link is the fixed constant of [`siple_core::update::links`], never a value from a
+/// network response; nothing else is opened here.
+pub fn open_store_page() -> std::io::Result<()> {
+    #[cfg(target_os = "macos")]
+    {
+        use objc2_app_kit::NSWorkspace;
+        use objc2_foundation::{NSString, NSURL};
+
+        let link = siple_core::update::links::MAS_STORE_URL;
+        let url = NSURL::URLWithString(&NSString::from_str(link)).ok_or_else(|| {
+            std::io::Error::new(std::io::ErrorKind::InvalidInput, "not a valid link")
+        })?;
+        if NSWorkspace::sharedWorkspace().openURL(&url) {
+            Ok(())
+        } else {
+            Err(std::io::Error::other("the App Store did not open"))
+        }
+    }
+    #[cfg(windows)]
+    {
+        // Handed to `start` as one argument without `&` or spaces: no shell metacharacters.
+        open_path(Path::new(siple_core::update::links::MS_STORE_URL), false)
+    }
+    #[cfg(not(any(target_os = "macos", windows)))]
+    {
+        Err(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "this platform has no store page for Siple",
+        ))
+    }
 }
 
 /// macOS: LaunchServices through `NSWorkspace` (works the same inside the App Sandbox, unlike
@@ -484,41 +500,5 @@ pub fn open_path(path: &Path, as_text: bool) -> std::io::Result<()> {
     {
         let _ = as_text;
         Command::new("xdg-open").arg(path).spawn().map(|_| ())
-    }
-}
-
-#[cfg(all(test, not(feature = "store")))]
-mod url_tests {
-    use super::is_release_url;
-
-    #[test]
-    fn only_release_tag_pages_are_openable() {
-        for ok in [
-            "https://github.com/zyno-io/siple/releases/tag/v0.2.0",
-            "https://github.com/zyno-io/siple/releases/tag/v0.2.0-rc.1",
-        ] {
-            assert!(is_release_url(ok), "{ok}");
-        }
-        for bad in [
-            "https://github.com/zyno-io/siple/../../evil/repo/releases",
-            "https://github.com/zyno-io/siple/releases/tag/v../../../evil",
-            "https://github.com/zyno-io/siple/releases/tag/v0.2.0/../x",
-            "https://github.com/zyno-io/siple/releases/tag/v0.2.0/",
-            "https://github.com/zyno-io/siple/releases/tag/v..",
-            "https://github.com/zyno-io/siple/releases/tag/v0..2",
-            "https://github.com/zyno-io/siple/releases/tag/v",
-            "https://github.com/zyno-io/siple/releases/tag/v0.2.0?x=1",
-            "https://github.com/zyno-io/siple/releases/tag/v0.2.0#a",
-            "https://github.com/zyno-io/siple/releases/tag/v0.2.0%2e%2e",
-            "https://github.com/zyno-io/siple/releases/tag/v0.2.0 &calc",
-            "https://github.com/zyno-io/siple/releases",
-            "https://github.com/zyno-io/siple-evil/releases/tag/v1.0.0",
-            "http://github.com/zyno-io/siple/releases/tag/v1.0.0",
-            "https://example.com/zyno-io/siple/releases/tag/v1.0.0",
-            "file:///etc/passwd",
-            "",
-        ] {
-            assert!(!is_release_url(bad), "{bad}");
-        }
     }
 }

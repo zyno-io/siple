@@ -5,6 +5,8 @@
 //! engine ([`siple_core::App`]), a snapshot poller and an event-log watcher.
 
 mod actions;
+#[cfg(not(feature = "store"))]
+mod relaunch;
 mod shell;
 mod snapshot;
 mod theme;
@@ -13,6 +15,7 @@ mod ui;
 mod ui_tests;
 #[cfg(test)]
 mod visual_tests;
+mod wait_pid;
 mod widgets;
 
 use std::path::PathBuf;
@@ -38,6 +41,10 @@ struct Cli {
     /// Never open sound devices (same as `[audio] backend = "none"`).
     #[arg(long)]
     no_audio: bool,
+    /// Wait for this process to exit before starting (at most 30 s), so a restarted instance finds
+    /// the instance lock and control socket free. A permanent part of the command line.
+    #[arg(long, hide = true, value_name = "PID")]
+    wait_pid: Option<u32>,
     /// A `sip:`, `sips:`, `tel:` or `callto:` link passed by the OS URL handler. Validated, then
     /// put into the dial field of the running (or this) instance; it never dials by itself.
     #[arg(hide = true)]
@@ -58,6 +65,11 @@ fn missing_display(
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
+    if let Some(pid) = cli.wait_pid
+        && !wait_pid::wait_for_exit(pid, wait_pid::WAIT_LIMIT)
+    {
+        eprintln!("process {pid} is still running after 30 s; starting anyway");
+    }
     let Some(resolved) = config::resolve_config_path(cli.config) else {
         eprintln!("cannot determine the default config directory; pass --config");
         return ExitCode::from(2);
@@ -121,11 +133,15 @@ fn main() -> ExitCode {
         return ExitCode::SUCCESS;
     }
     let config_path_for_login = siple_core::config::absolute_path(&config_path);
+    #[cfg(not(feature = "store"))]
+    relaunch::set_carried(
+        (!is_default_path).then(|| config_path_for_login.clone()),
+        cli.no_audio,
+    );
     #[cfg(target_os = "macos")]
     shell::early_init();
     let mut opts = AppOptions::new(config_path);
-    #[cfg(not(feature = "store"))]
-    opts.use_github_updates();
+    opts.use_network_updates();
     opts.migrate_legacy_config = is_default_path;
     opts.startup_warnings = startup_warnings;
     opts.headless = false;
@@ -441,6 +457,10 @@ fn run_shutdown_hook() {
     if !matches!(r, Ok(Ok(()))) {
         eprintln!("shutdown thread failed");
     }
+    // An installed update: start the new version now that the engine has let go of the instance
+    // lock and the control socket (it waits for this pid anyway).
+    #[cfg(not(feature = "store"))]
+    relaunch::spawn_pending();
 }
 
 /// `App::shutdown` consumes the app, so wait briefly for the last clones (aborted tasks, queued
@@ -502,8 +522,7 @@ async fn headless(
     no_audio: bool,
 ) -> ExitCode {
     let mut opts = AppOptions::new(config_path);
-    #[cfg(not(feature = "store"))]
-    opts.use_github_updates();
+    opts.use_network_updates();
     opts.migrate_legacy_config = is_default_path;
     opts.startup_warnings = startup_warnings;
     opts.headless = true;

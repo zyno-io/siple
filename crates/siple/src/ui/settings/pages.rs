@@ -440,12 +440,30 @@ pub(super) fn advanced(ui: &mut egui::Ui, cx: &Cx, st: &mut UiState, out: &mut V
     group(ui, p, "About", |ui| {
         info_row(ui, p, "Version", &snap.update.current);
     });
-    #[cfg(not(feature = "store"))]
     updates_group(ui, cx, st, out);
 }
 
-/// `[updates]`: the switch, the channel and the last result of the check.
-#[cfg(not(feature = "store"))]
+/// What the check does in this installation, for the switch's help text.
+fn updates_help(u: &siple_core::update::UpdateStatus) -> &'static str {
+    use siple_core::update::{DisabledReason, SourceName};
+    match (u.source, u.disabled_reason) {
+        (SourceName::Github, _) => {
+            "Once a day Siple asks GitHub whether a newer release exists (one anonymous request that carries only the version). A new version is downloaded only when you choose to install it."
+        }
+        (SourceName::AppStore, _) => {
+            "Once a day Siple asks the App Store whether a newer version exists (one anonymous request to Apple that carries only the version). The App Store installs updates."
+        }
+        (SourceName::MicrosoftStore, _) => {
+            "Once a day Siple asks Windows' Store service whether an update is waiting; Windows contacts Microsoft, Siple sends nothing itself. The Microsoft Store installs updates."
+        }
+        (SourceName::None, Some(DisabledReason::Sideloaded)) => {
+            "This copy was not installed from the Microsoft Store, so there is nothing to check; update it the way you installed it."
+        }
+        (SourceName::None, _) => "Update checks are not available in this installation.",
+    }
+}
+
+/// `[updates]`: the switch, the channel (GitHub builds only) and the last result of the check.
 fn updates_group(ui: &mut egui::Ui, cx: &Cx, st: &mut UiState, out: &mut Vec<UiAction>) {
     let p = cx.p;
     let snap = cx.vm.snap;
@@ -458,10 +476,34 @@ fn updates_group(ui: &mut egui::Ui, cx: &Cx, st: &mut UiState, out: &mut Vec<UiA
             "updates",
             "check",
             "Check for updates",
-            "Once a day Siple asks GitHub whether a newer release exists (one anonymous request that carries only the version). Nothing is downloaded or installed.",
+            updates_help(&snap.update),
             &v,
         );
         let u = &snap.update;
+        if u.source == siple_core::update::SourceName::Github {
+            sec_toggle(
+                ui,
+                p,
+                out,
+                "updates",
+                "install",
+                "Install updates in the app",
+                "When you choose to, Siple downloads the new version from GitHub, checks its signature and your system's code-signing check, replaces itself and restarts, never during a call. Off: the update pill opens the release page.",
+                &v,
+            );
+            if let Some(i) = &u.install
+                && !i.possible
+                && let Some(r) = i.reason.as_deref()
+                && r != "disabled"
+            {
+                info_row(
+                    ui,
+                    p,
+                    "In-app install",
+                    crate::snapshot::install_reason_text(r),
+                );
+            }
+        }
         let automatic = snap.cfg.updates.channel.is_none();
         let cur = if automatic {
             format!("auto_{}", u.channel)
@@ -469,18 +511,21 @@ fn updates_group(ui: &mut egui::Ui, cx: &Cx, st: &mut UiState, out: &mut Vec<UiA
             u.channel.clone()
         };
         let auto_label = format!("Automatic ({})", u.channel);
-        if let Some(new) = choice_row(
-            ui,
-            p,
-            "Channel",
-            &cur,
-            &[
-                (&format!("auto_{}", u.channel), &auto_label),
-                ("stable", "Stable releases"),
-                ("prerelease", "Stable and release candidates"),
-            ],
-            None,
-        ) {
+        let github = u.source == siple_core::update::SourceName::Github;
+        if github
+            && let Some(new) = choice_row(
+                ui,
+                p,
+                "Channel",
+                &cur,
+                &[
+                    (&format!("auto_{}", u.channel), &auto_label),
+                    ("stable", "Stable releases"),
+                    ("prerelease", "Stable and release candidates"),
+                ],
+                None,
+            )
+        {
             if new.starts_with("auto_") {
                 out.push(rpc::config_edit(
                     RpcTag::Instant,
@@ -496,17 +541,45 @@ fn updates_group(ui: &mut egui::Ui, cx: &Cx, st: &mut UiState, out: &mut Vec<UiA
         }
         let result = if st.settings.update_checking {
             "Checking...".to_string()
+        } else if u.source == siple_core::update::SourceName::None {
+            "Not available".to_string()
         } else if !u.enabled {
             "Off".to_string()
         } else if let Some(e) = &u.error {
             format!("Last check failed: {e}")
         } else if u.checked_at.is_none() {
             "Not checked yet".to_string()
+        } else if let Some(i) = u
+            .install
+            .as_ref()
+            .filter(|i| i.state != siple_core::update::InstallPhase::Idle)
+        {
+            use siple_core::update::InstallPhase as P;
+            let v = i.version.as_deref().unwrap_or("the update");
+            match i.state {
+                P::Downloading => match (i.bytes, i.total) {
+                    (Some(b), Some(t)) if t > 0 => {
+                        format!("Downloading {v}: {}%", b.min(t) * 100 / t)
+                    }
+                    _ => format!("Downloading {v}"),
+                },
+                P::Verifying => format!("Checking {v}"),
+                P::Ready => format!("{v} is ready: restart to update"),
+                P::Waiting => format!("{v} is ready: restarting when the call is over"),
+                P::Committing | P::Installed | P::Restarting => {
+                    format!("{v} is installed: restarting")
+                }
+                P::Failed => format!(
+                    "Update failed: {}",
+                    i.error.as_deref().unwrap_or("unknown error")
+                ),
+                P::Idle => String::new(),
+            }
         } else if u.available {
-            format!(
-                "Siple {} is available",
-                u.latest.as_deref().unwrap_or_default()
-            )
+            match u.latest.as_deref() {
+                Some(v) => format!("Siple {v} is available"),
+                None => "A Siple update is available".to_string(),
+            }
         } else {
             "You have the latest version".to_string()
         };
@@ -526,10 +599,47 @@ fn updates_group(ui: &mut egui::Ui, cx: &Cx, st: &mut UiState, out: &mut Vec<UiA
                 st.settings.update_checking = true;
                 out.push(rpc::check_updates());
             }
-            if let Some((_, url)) = snap.update_offer()
-                && small_button(ui, p, "Download", true).clicked()
-            {
-                out.push(UiAction::OpenUrl(url.to_string()));
+            if let Some(offer) = snap.update_offer() {
+                match offer.action {
+                    siple_core::update::UpdateAction::OpenStore => {
+                        if small_button(ui, p, offer.store_button(), true).clicked() {
+                            out.push(UiAction::OpenStorePage);
+                        }
+                    }
+                    siple_core::update::UpdateAction::Install => {
+                        // The pill has every step; here only the start (and Cancel while it runs).
+                        use siple_core::update::InstallPhase as P;
+                        let version = offer.version.unwrap_or_default();
+                        // Drawing a button inside a match guard would hide the side effect.
+                        #[allow(clippy::collapsible_match)]
+                        match offer.install.map_or(P::Idle, |i| i.state) {
+                            P::Idle | P::Failed => {
+                                let (label, restart) = if snap.call_active() {
+                                    ("Install, restart after the call", "manual")
+                                } else {
+                                    ("Install and restart", "when_idle")
+                                };
+                                if small_button(ui, p, label, true).clicked() {
+                                    st.update_initiated = Some(version.to_string());
+                                    out.push(rpc::install_update(version, restart));
+                                }
+                            }
+                            P::Downloading | P::Verifying | P::Ready | P::Waiting => {
+                                if small_button(ui, p, "Cancel update", true).clicked() {
+                                    out.push(rpc::cancel_update());
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                    _ => {
+                        if let Some(url) = offer.release_url
+                            && small_button(ui, p, "Download", true).clicked()
+                        {
+                            out.push(UiAction::OpenUrl(url.to_string()));
+                        }
+                    }
+                }
             }
         });
     });

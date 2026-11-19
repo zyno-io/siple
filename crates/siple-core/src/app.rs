@@ -88,11 +88,11 @@ pub struct AppOptions {
     /// Test hook: fake network monitor / probe / clock for the SIP stack (default: the OS).
     #[doc(hidden)]
     pub net: Option<siple_sip::net::NetSetup>,
-    /// Where the update check gets the releases list. [`AppOptions::new`] starts with a fetcher
-    /// that never touches the network (tests and embedders stay offline); a real host calls
-    /// [`AppOptions::use_github_updates`].
-    #[cfg(not(feature = "store"))]
-    pub update_fetcher: Arc<dyn crate::update::ReleaseFetcher>,
+    /// Where the update check gets its answers. [`AppOptions::new`] starts with providers that
+    /// never touch the network (tests and embedders stay offline); a real host calls
+    /// [`AppOptions::use_network_updates`]. The distribution channel picks which one is used.
+    #[doc(hidden)]
+    pub update_providers: crate::update::source::Providers,
 }
 
 impl AppOptions {
@@ -112,18 +112,26 @@ impl AppOptions {
             watch_debounce: config_watch::DEBOUNCE,
             shutdown_timeout: Duration::from_secs(8),
             net: None,
-            #[cfg(not(feature = "store"))]
-            update_fetcher: Arc::new(crate::update::OfflineFetcher),
+            update_providers: crate::update::source::Providers::offline(),
         }
     }
-}
 
-#[cfg(not(feature = "store"))]
-impl AppOptions {
-    /// Lets the update check ask GitHub (`[updates] check` still decides whether it runs). The
-    /// `siple` and `siple-cli` binaries call this; nothing else does.
-    pub fn use_github_updates(&mut self) {
-        self.update_fetcher = Arc::new(crate::update::GithubFetcher);
+    /// Lets the update check use the network (`[updates] check` still decides whether it runs):
+    /// GitHub for direct builds, Apple's lookup on the Mac App Store, Windows' Store service in
+    /// the Microsoft Store edition. The `siple` and `siple-cli` binaries call this; nothing else
+    /// does.
+    pub fn use_network_updates(&mut self) {
+        #[cfg(not(feature = "store"))]
+        {
+            self.update_providers.github = Arc::new(crate::update::GithubFetcher);
+            self.update_providers.install =
+                crate::update::install::InstallProviders::native(crate::update::full_version());
+        }
+        self.update_providers.lookup = Arc::new(crate::update::appstore::ItunesFetcher::new());
+        #[cfg(all(windows, feature = "store"))]
+        {
+            self.update_providers.store_query = Arc::new(crate::update::msstore::WinStoreQuery);
+        }
     }
 }
 
@@ -295,10 +303,12 @@ pub(crate) struct Inner {
     /// The distribution channel gating reads (detected, or injected by tests).
     pub channel: config::channel::Channel,
     /// The GUI, when there is one (`ui.*` methods).
-    pub ui_host: crate::ui_host::UiHostSlot,
-    /// The update checker (absent from store builds).
-    #[cfg(not(feature = "store"))]
+    pub ui_host: Arc<crate::ui_host::UiHostSlot>,
+    /// The update checker.
     pub updater: Arc<crate::update::Updater>,
+    /// Downloads, verifies and installs a release in place (absent from store builds).
+    #[cfg(not(feature = "store"))]
+    pub installer: Arc<crate::update::install::Installer>,
 }
 
 /// Accounts of the applied config (for the redactor at startup).
@@ -694,13 +704,13 @@ impl App {
         );
         let (reload_tx, reload_rx) = unbounded_channel::<ReloadRequest>();
         let cancel = CancellationToken::new();
-        #[cfg(not(feature = "store"))]
         let updater = {
             let cell = config_cell.clone();
             let u = crate::update::Updater::new(crate::update::UpdaterOptions {
                 current: crate::update::current_version(),
                 current_text: crate::update::full_version().to_string(),
-                fetcher: opts.update_fetcher.clone(),
+                source: opts.update_providers.source(&channel),
+                package_family: channel.package_family.map(str::to_string),
                 events: events.clone(),
                 settings: Arc::new(move || cell.load().updates.clone()),
                 clock: Arc::new(Utc::now),
@@ -712,8 +722,34 @@ impl App {
             u.set_skipped(state.skipped_update());
             u
         };
-        #[cfg(feature = "store")]
-        tracing::debug!("update check not included in this build; [updates] is ignored");
+        let ui_host: Arc<crate::ui_host::UiHostSlot> = Arc::new(Mutex::new(None));
+        #[cfg(not(feature = "store"))]
+        let installer = {
+            use crate::update::install::{AppIdle, Installer, InstallerOptions, UiRelauncher};
+            let cell = config_cell.clone();
+            let p = &opts.update_providers.install;
+            let mut io = InstallerOptions::new(
+                updater.clone(),
+                p.platform.clone(),
+                p.assets.clone(),
+                Arc::new(AppIdle {
+                    stack: stack.clone(),
+                    media: media.clone(),
+                }),
+                Arc::new(UiRelauncher(ui_host.clone())),
+                events.clone(),
+                Arc::new(move || cell.load().updates.clone()),
+                crate::update::full_version().to_string(),
+                Some(config_dir.clone()),
+                cancel.clone(),
+            );
+            io.lock_dir = dirs::cache_dir().map(|d| d.join("Siple"));
+            io.keys = p.keys.clone();
+            io.quiet = p.quiet;
+            io.poll = p.poll;
+            io.cleanup_delay = p.cleanup_delay;
+            Installer::new(io)
+        };
         let inner = Arc::new(Inner {
             config_path: config_path.clone(),
             config_dir: config_dir.clone(),
@@ -750,9 +786,10 @@ impl App {
             started_at: events.started_at(),
             headless: opts.headless,
             channel,
-            ui_host: Mutex::new(None),
-            #[cfg(not(feature = "store"))]
+            ui_host,
             updater,
+            #[cfg(not(feature = "store"))]
+            installer,
         });
         if !loaded.secret_failures.is_empty() {
             // Accounts whose keyring password could not be read start disabled; say so loudly.
@@ -787,8 +824,9 @@ impl App {
         if inner.audio.is_some() {
             tasks.push(tokio::spawn(audio_poll(inner.clone())));
         }
-        // Last in the list: `shutdown` removes the reload task by index.
         #[cfg(not(feature = "store"))]
+        inner.installer.startup();
+        // Last in the list: `shutdown` removes the reload task by index.
         tasks.push(crate::update::spawn_updater(
             inner.updater.clone(),
             inner.cancel.clone(),
@@ -1004,21 +1042,13 @@ impl App {
 
     /// The release version the user chose to skip (`state.toml`), if any.
     pub fn skipped_update(&self) -> Option<String> {
-        #[cfg(not(feature = "store"))]
-        {
-            self.inner.updater.skipped()
-        }
-        #[cfg(feature = "store")]
-        {
-            None
-        }
+        self.inner.updater.skipped()
     }
 
     /// Records that the user skipped release `version` (`state.toml`): the GUI stops offering that
     /// one, and offers the next newer one again. Not part of the control API: agents see
     /// `app.update_status` unfiltered.
     pub fn skip_update(&self, version: &str) -> std::io::Result<()> {
-        #[cfg(not(feature = "store"))]
         self.inner.updater.set_skipped(Some(version.to_string()));
         StateStore::open(&self.inner.config_dir).set_skipped_update(Some(version))
     }

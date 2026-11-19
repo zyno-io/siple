@@ -56,9 +56,13 @@ jobs:
       - name: clippy
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
-      # Store builds (Mac App Store, Microsoft Store) compile the update check out.
+      # Store builds (Mac App Store, Microsoft Store) compile out the GitHub update source (and, later, the
+      # installer); the store update checks stay.
       - name: clippy (store feature)
         run: cargo clippy -p siple -p siple-core -p siple-cli --features store --all-targets --locked -- -D warnings
+
+      - name: test siple-core (store feature)
+        run: cargo test -p siple-core --features store --locked
 
       # The visual snapshot tests are skipped everywhere here; the macOS job below runs them, because the
       # reference images were rendered on Metal.

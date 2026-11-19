@@ -958,6 +958,9 @@ impl Default for SpeechConfig {
 pub struct UpdatesConfig {
     /// Look for a newer release on GitHub (about once a day).
     pub check: bool,
+    /// Let Siple download, verify and install an offered release in place (direct downloads
+    /// only; the stores update their own apps). Off: the offer opens the release page.
+    pub install: bool,
     /// Which releases to offer. Unset (`None`) = automatic: `prerelease` while the running build
     /// is itself a prerelease, else `stable`.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -968,6 +971,7 @@ impl Default for UpdatesConfig {
     fn default() -> Self {
         Self {
             check: true,
+            install: true,
             channel: None,
         }
     }

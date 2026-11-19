@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
+#[cfg(not(feature = "store"))]
 use async_trait::async_trait;
 use chrono::{DateTime, SecondsFormat, Utc};
 use serde_json::json;
@@ -11,9 +12,16 @@ use siple_config::UpdatesConfig;
 use tokio::sync::Notify;
 use tokio_util::sync::CancellationToken;
 
-use super::UpdateStatus;
+use super::appstore::StoreListing;
+use super::links::{MAS_STORE_URL, MS_STORE_URL};
+use super::msstore::{SignatureKind, StoreUpdates};
+#[cfg(not(feature = "store"))]
 use super::releases::{Release, parse_releases, pick};
-use super::version::{Version, effective_channel};
+use super::source::{DisabledReason, UpdateSource};
+use super::version::Version;
+#[cfg(not(feature = "store"))]
+use super::version::effective_channel;
+use super::{UpdateAction, UpdateStatus};
 use crate::events::EventLog;
 use crate::state::StateStore;
 
@@ -30,7 +38,7 @@ const MAX_SLEEP: Duration = Duration::from_secs(3600);
 const FETCH_LIMIT: Duration = Duration::from_secs(20);
 /// First retry after a failed check; doubles per failure up to [`CHECK_INTERVAL`].
 const RETRY_BASE: Duration = Duration::from_secs(3600);
-/// Back-off when GitHub limits us without saying for how long.
+/// Back-off when the source limits us without saying for how long.
 const DEFAULT_BACKOFF: Duration = Duration::from_secs(3600);
 const MIN_BACKOFF: Duration = Duration::from_secs(60);
 
@@ -67,6 +75,8 @@ pub enum FetchError {
     Status(u16),
     /// DNS, connect, TLS, protocol.
     Network(String),
+    /// The answer is not what the source should send.
+    Unreadable(String),
     /// The request exceeded its time limit.
     Timeout,
 }
@@ -74,15 +84,17 @@ pub enum FetchError {
 impl std::fmt::Display for FetchError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            FetchError::RateLimited { .. } => write!(f, "rate limited by GitHub"),
-            FetchError::Status(s) => write!(f, "GitHub answered HTTP {s}"),
+            FetchError::RateLimited { .. } => write!(f, "rate limited"),
+            FetchError::Status(s) => write!(f, "answered HTTP {s}"),
             FetchError::Network(m) => f.write_str(m),
+            FetchError::Unreadable(m) => write!(f, "unreadable response: {m}"),
             FetchError::Timeout => write!(f, "timed out"),
         }
     }
 }
 
-/// The network side of a check; replaced in tests so they never touch the network.
+/// The network side of the GitHub source; replaced in tests so they never touch the network.
+#[cfg(not(feature = "store"))]
 #[async_trait]
 pub trait ReleaseFetcher: Send + Sync {
     /// Fetches the releases list, with `If-None-Match: etag` when given.
@@ -92,8 +104,10 @@ pub trait ReleaseFetcher: Send + Sync {
 
 /// The fetcher of an app whose host did not opt in to the network check (tests, embedders): it
 /// never touches the network.
+#[cfg(not(feature = "store"))]
 pub struct OfflineFetcher;
 
+#[cfg(not(feature = "store"))]
 #[async_trait]
 impl ReleaseFetcher for OfflineFetcher {
     async fn fetch(&self, _etag: Option<&str>, _ua: &str) -> Result<FetchOutcome, FetchError> {
@@ -109,8 +123,10 @@ pub struct UpdaterOptions {
     pub current: Version,
     /// Same, as shown and sent (`Siple/<this>`).
     pub current_text: String,
-    /// The HTTP side.
-    pub fetcher: Arc<dyn ReleaseFetcher>,
+    /// Where the answer comes from.
+    pub source: UpdateSource,
+    /// The MSIX package family name (Microsoft Store source).
+    pub package_family: Option<String>,
     /// Receives `app.update_available`.
     pub events: Arc<EventLog>,
     /// The `[updates]` section in effect right now.
@@ -128,9 +144,85 @@ pub struct UpdaterOptions {
     pub min_manual_interval: Duration,
 }
 
+/// What the last successful check learned.
+#[derive(Default)]
+enum SourceData {
+    /// Nothing known, or nothing to offer.
+    #[default]
+    Nothing,
+    /// The GitHub releases list.
+    #[cfg(not(feature = "store"))]
+    Releases(Vec<Release>),
+    /// The App Store listing.
+    Listing(StoreListing),
+    /// What the Microsoft Store reported.
+    StoreUpdates(StoreUpdates),
+}
+
+impl SourceData {
+    /// A conditional request only makes sense while the list it names is still held.
+    fn has_releases(&self) -> bool {
+        #[cfg(not(feature = "store"))]
+        if let Self::Releases(r) = self {
+            return !r.is_empty();
+        }
+        false
+    }
+
+    fn is_empty(&self) -> bool {
+        match self {
+            Self::Nothing => true,
+            #[cfg(not(feature = "store"))]
+            Self::Releases(r) => r.is_empty(),
+            _ => false,
+        }
+    }
+}
+
+/// What one fetch returned, per source.
+enum Fetched {
+    #[cfg(not(feature = "store"))]
+    Github(FetchOutcome),
+    Listing(Option<StoreListing>),
+    Updates(StoreUpdates),
+}
+
+async fn fetch_source(
+    source: UpdateSource,
+    etag: Option<String>,
+    user_agent: String,
+    package_family: Option<String>,
+) -> Result<Fetched, FetchError> {
+    let _ = &etag;
+    match source {
+        #[cfg(not(feature = "store"))]
+        UpdateSource::Github(f) => f
+            .fetch(etag.as_deref(), &user_agent)
+            .await
+            .map(Fetched::Github),
+        UpdateSource::AppStore(l) => l.lookup(&user_agent).await.map(Fetched::Listing),
+        UpdateSource::MsStore(q) => match package_family {
+            Some(pfn) => q.updates(&pfn).await.map(Fetched::Updates),
+            None => Err(FetchError::Network(
+                "Microsoft Store: the package identity is unknown".into(),
+            )),
+        },
+        UpdateSource::None(_) => Err(FetchError::Network("there is no update source".into())),
+    }
+}
+
+/// An error as shown, naming the source.
+fn describe(label: &str, e: &FetchError) -> String {
+    match e {
+        FetchError::RateLimited { .. } => format!("rate limited by {label}"),
+        FetchError::Status(s) => format!("{label} answered HTTP {s}"),
+        other => other.to_string(),
+    }
+}
+
 #[derive(Default)]
 struct State {
-    releases: Vec<Release>,
+    data: SourceData,
     etag: Option<String>,
     /// Last successful check (wall clock).
     checked_at: Option<DateTime<Utc>>,
@@ -140,14 +232,23 @@ struct State {
     failures: u32,
     /// The version `app.update_available` was last emitted for.
     announced: Option<Version>,
+    /// `app.update_available` was emitted for a version-less update (Microsoft Store) in this
+    /// process.
+    announced_versionless: bool,
     next_due: Option<DateTime<Utc>>,
     /// Version the user chose to skip (GUI); remembered here so status readers see it.
     skipped: Option<String>,
 }
 
+/// Adds what the installer knows to a status (`install`, and the `install` action).
+#[cfg(not(feature = "store"))]
+pub type StatusOverlay = Arc<dyn Fn(&mut UpdateStatus) + Send + Sync>;
+
 /// The update checker. See the module docs of [`crate::update`].
 pub struct Updater {
     o: UpdaterOptions,
+    #[cfg(not(feature = "store"))]
+    overlay: std::sync::OnceLock<StatusOverlay>,
     state: Mutex<State>,
     /// One check at a time.
     busy: tokio::sync::Mutex<()>,
@@ -158,7 +259,14 @@ pub struct Updater {
 impl Updater {
     /// A checker that has not checked yet (the persisted last check and announced version, if
     /// any, are loaded).
-    pub fn new(o: UpdaterOptions) -> Arc<Self> {
+    pub fn new(mut o: UpdaterOptions) -> Arc<Self> {
+        // Only a package the Store signed has updates in the Store; the Store is never asked
+        // about a sideload.
+        if let UpdateSource::MsStore(q) = &o.source
+            && q.signature_kind() != SignatureKind::Store
+        {
+            o.source = UpdateSource::None(DisabledReason::Sideloaded);
+        }
         let mut st = State::default();
         if let Some(dir) = &o.state_dir {
             let store = StateStore::open(dir);
@@ -168,6 +276,8 @@ impl Updater {
         }
         Arc::new(Self {
             o,
+            #[cfg(not(feature = "store"))]
+            overlay: std::sync::OnceLock::new(),
             state: Mutex::new(st),
             busy: tokio::sync::Mutex::new(()),
             wake: Notify::new(),
@@ -182,13 +292,23 @@ impl Updater {
         (self.o.clock)()
     }
 
-    /// The current result, computed from the last fetched list and the config in effect (a
+    /// The current result, computed from the last fetched data and the config in effect (a
     /// channel change applies at once, without a new fetch).
     pub fn status(&self) -> UpdateStatus {
         let cfg = (self.o.settings)();
-        let channel = effective_channel(cfg.channel, &self.o.current);
+        // The stores have one track: the channel setting applies to GitHub only.
+        let channel = match &self.o.source {
+            #[cfg(not(feature = "store"))]
+            UpdateSource::Github(_) => effective_channel(cfg.channel, &self.o.current),
+            _ => siple_config::UpdateChannel::Stable,
+        };
         let mut s = UpdateStatus::disabled(channel.as_str());
         s.current = self.o.current_text.clone();
+        s.source = self.o.source.name();
+        if let UpdateSource::None(why) = &self.o.source {
+            s.disabled_reason = Some(*why);
+            return s;
+        }
         if !cfg.check {
             return s;
         }
@@ -198,13 +318,59 @@ impl Updater {
             .checked_at
             .map(|t| t.to_rfc3339_opts(SecondsFormat::Secs, true));
         s.error = st.error.clone();
-        if let Some(r) = pick(&st.releases, channel) {
-            s.latest = Some(r.name.clone());
-            s.available = r.version > self.o.current;
-            s.release_url = Some(r.url.clone());
-            s.published_at = r.published_at.clone();
+        match &st.data {
+            SourceData::Nothing => {}
+            #[cfg(not(feature = "store"))]
+            SourceData::Releases(list) => {
+                if let Some(r) = pick(list, channel) {
+                    s.latest = Some(r.name.clone());
+                    s.available = r.version > self.o.current;
+                    s.release_url = Some(r.url.clone());
+                    s.published_at = r.published_at.clone();
+                    if s.available {
+                        s.action = UpdateAction::OpenReleasePage;
+                    }
+                }
+            }
+            SourceData::Listing(l) => {
+                s.latest = Some(l.version.to_string());
+                s.available = l.version > self.o.current;
+                s.published_at = l.released_at.clone();
+                if s.available {
+                    s.action = UpdateAction::OpenStore;
+                    s.store_url = Some(MAS_STORE_URL.to_string());
+                }
+            }
+            SourceData::StoreUpdates(u) => {
+                s.available = u.available;
+                if u.available {
+                    s.mandatory = Some(u.mandatory);
+                    s.action = UpdateAction::OpenStore;
+                    s.store_url = Some(MS_STORE_URL.to_string());
+                }
+            }
+        }
+        drop(st);
+        #[cfg(not(feature = "store"))]
+        if let Some(overlay) = self.overlay.get() {
+            overlay(&mut s);
         }
         s
+    }
+
+    /// Lets the installer add its part to every status (once; later calls are ignored).
+    #[cfg(not(feature = "store"))]
+    pub fn set_overlay(&self, overlay: StatusOverlay) {
+        let _ = self.overlay.set(overlay);
+    }
+
+    /// The release `version` (as in `status.latest`) of the last list the GitHub source fetched.
+    #[cfg(not(feature = "store"))]
+    pub fn release(&self, version: &str) -> Option<Release> {
+        match &self.st().data {
+            SourceData::Releases(list) => list.iter().find(|r| r.name == version).cloned(),
+            _ => None,
+        }
     }
 
     /// The version the user skipped, if any.
@@ -232,9 +398,10 @@ impl Updater {
     }
 
     async fn check(&self, manual: bool) {
-        if !(self.o.settings)().check {
+        if !(self.o.settings)().check || matches!(self.o.source, UpdateSource::None(_)) {
             return;
         }
+        let label = self.o.source.label();
         let _one_at_a_time = self.busy.lock().await;
         let (etag, have_cache) = {
             let mut st = self.st();
@@ -244,7 +411,7 @@ impl Updater {
             {
                 let mins = ((until - now).num_seconds().max(0) as u64).div_ceil(60);
                 st.error = Some(format!(
-                    "rate limited by GitHub; the next check is in {mins} min"
+                    "rate limited by {label}; the next check is in {mins} min"
                 ));
                 return;
             }
@@ -256,18 +423,21 @@ impl Updater {
                 return;
             }
             st.last_attempt = Some(now);
-            (st.etag.clone(), !st.releases.is_empty())
+            (st.etag.clone(), st.data.has_releases())
         };
-        // A conditional request only makes sense while the list it names is still held.
         let etag = etag.filter(|_| have_cache);
         let user_agent = format!("Siple/{}", self.o.current_text);
         // Own task: a panic or a hang in the fetcher becomes an error status, never a stuck
         // caller.
-        let fetcher = self.o.fetcher.clone();
+        let source = self.o.source.clone();
+        let package_family = self.o.package_family.clone();
         // Aborted if this future is dropped (shutdown, a cancelled `check_now`).
-        let mut task = AbortOnDrop(tokio::spawn(async move {
-            fetcher.fetch(etag.as_deref(), &user_agent).await
-        }));
+        let mut task = AbortOnDrop(tokio::spawn(fetch_source(
+            source,
+            etag,
+            user_agent,
+            package_family,
+        )));
         let result = match tokio::time::timeout(FETCH_LIMIT, &mut task.0).await {
             Ok(Ok(r)) => r,
             Ok(Err(e)) => Err(FetchError::Network(if e.is_panic() {
@@ -285,19 +455,33 @@ impl Updater {
         {
             let mut st = self.st();
             match result {
-                Ok(FetchOutcome::NotModified) => {
+                #[cfg(not(feature = "store"))]
+                Ok(Fetched::Github(FetchOutcome::NotModified)) => {
                     self.succeeded(&mut st, now);
                     persist = Some(());
                 }
-                Ok(FetchOutcome::Body { etag, body }) => match parse_releases(&body) {
-                    Ok(list) => {
-                        st.releases = list;
-                        st.etag = etag;
-                        self.succeeded(&mut st, now);
-                        persist = Some(());
+                #[cfg(not(feature = "store"))]
+                Ok(Fetched::Github(FetchOutcome::Body { etag, body })) => {
+                    match parse_releases(&body) {
+                        Ok(list) => {
+                            st.data = SourceData::Releases(list);
+                            st.etag = etag;
+                            self.succeeded(&mut st, now);
+                            persist = Some(());
+                        }
+                        Err(e) => self.failed(&mut st, now, &format!("unreadable response: {e}")),
                     }
-                    Err(e) => self.failed(&mut st, now, &format!("unreadable response: {e}")),
-                },
+                }
+                Ok(Fetched::Listing(l)) => {
+                    st.data = l.map_or(SourceData::Nothing, SourceData::Listing);
+                    self.succeeded(&mut st, now);
+                    persist = Some(());
+                }
+                Ok(Fetched::Updates(u)) => {
+                    st.data = SourceData::StoreUpdates(u);
+                    self.succeeded(&mut st, now);
+                    persist = Some(());
+                }
                 Err(FetchError::RateLimited { retry_after }) => {
                     let wait = retry_after
                         .unwrap_or(DEFAULT_BACKOFF)
@@ -305,12 +489,12 @@ impl Updater {
                     st.backoff_until = Some(now + delta(wait));
                     st.next_due = Some(now + delta(wait));
                     st.error = Some(format!(
-                        "rate limited by GitHub; the next check is in {} min",
+                        "rate limited by {label}; the next check is in {} min",
                         wait.as_secs().div_ceil(60)
                     ));
                     tracing::info!(wait_secs = wait.as_secs(), "update check rate limited");
                 }
-                Err(e) => self.failed(&mut st, now, &e.to_string()),
+                Err(e) => self.failed(&mut st, now, &describe(label, &e)),
             }
         }
         if persist.is_some() {
@@ -354,30 +538,49 @@ impl Updater {
     }
 
     /// Emits `app.update_available` once per newly found version (remembered across restarts).
+    /// An update without a version (Microsoft Store) is announced once per process.
     fn announce(&self) {
         let s = self.status();
-        let (true, true, Some(v), Some(url)) = (s.enabled, s.available, &s.latest, &s.release_url)
-        else {
+        if !(s.enabled && s.available) {
             return;
-        };
-        let Some(version) = Version::parse(v) else {
-            return;
-        };
-        {
-            let mut st = self.st();
-            // Newer only: switching channels back and forth must not re-announce an older one.
-            if st.announced.as_ref().is_some_and(|a| *a >= version) {
-                return;
-            }
-            st.announced = Some(version);
         }
-        self.persist(|s| s.set_announced_update(v));
-        tracing::info!(version = %v, "a newer Siple is available");
+        let url = match s.action {
+            UpdateAction::OpenReleasePage => s.release_url.clone(),
+            UpdateAction::OpenStore => s.store_url.clone(),
+            UpdateAction::Install => s.release_url.clone(),
+            UpdateAction::None => None,
+        };
+        let Some(url) = url else { return };
+        let version = match &s.latest {
+            Some(v) => {
+                let Some(parsed) = Version::parse(v) else {
+                    return;
+                };
+                let mut st = self.st();
+                // Newer only: switching channels back and forth must not re-announce an older one.
+                if st.announced.as_ref().is_some_and(|a| *a >= parsed) {
+                    return;
+                }
+                st.announced = Some(parsed);
+                Some(v.clone())
+            }
+            None => {
+                let mut st = self.st();
+                if std::mem::replace(&mut st.announced_versionless, true) {
+                    return;
+                }
+                None
+            }
+        };
+        if let Some(v) = &version {
+            self.persist(|s| s.set_announced_update(v));
+        }
+        tracing::info!(version = ?version, "a newer Siple is available");
         self.o.events.emit(
             "app.update_available",
             None,
             None,
-            json!({"version": v, "url": url}),
+            json!({"version": version, "url": url, "action": s.action}),
         );
     }
 
@@ -443,7 +646,7 @@ impl Updater {
                         let stale = st
                             .checked_at
                             .is_none_or(|t| now - t >= delta(self.o.interval));
-                        if (!was_enabled && stale) || (st.releases.is_empty() && st.last_attempt.is_none()) {
+                        if (!was_enabled && stale) || (st.data.is_empty() && st.last_attempt.is_none()) {
                             let soon = (now + delta(Duration::from_secs(5)))
                                 .max(st.backoff_until.unwrap_or(now));
                             st.next_due = Some(st.next_due.map_or(soon, |d| d.min(soon)));
@@ -473,7 +676,7 @@ impl<T> Drop for AbortOnDrop<T> {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "store")))]
 mod tests {
     use std::collections::VecDeque;
 
@@ -545,7 +748,8 @@ mod tests {
         let u = Updater::new(UpdaterOptions {
             current: Version::parse(current).unwrap(),
             current_text: current.into(),
-            fetcher: fake.clone(),
+            source: UpdateSource::Github(fake.clone()),
+            package_family: None,
             events: events.clone(),
             settings: Arc::new(move || c.lock().unwrap().clone()),
             clock: Arc::new(move || {
@@ -831,7 +1035,8 @@ mod tests {
         Updater::new(UpdaterOptions {
             current: Version::parse("0.1.0").unwrap(),
             current_text: "0.1.0".into(),
-            fetcher: f,
+            source: UpdateSource::Github(f),
+            package_family: None,
             events: r.events.clone(),
             settings: Arc::new(UpdatesConfig::default),
             clock: Arc::new(Utc::now),

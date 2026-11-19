@@ -1,3 +1,5 @@
 # Markdown is embedded into binaries (include_str!, e.g. skills/siple/SKILL.md) and compared in tests:
 # keep LF on every platform, including Windows checkouts with core.autocrlf=true.
 *.md text eol=lf
+# Signed update fixtures: the signatures cover the exact bytes, so no line-ending conversion.
+crates/siple-core/tests/fixtures/update/** -text

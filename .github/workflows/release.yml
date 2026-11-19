@@ -343,6 +343,14 @@ jobs:
       id-token: write # keyless signing of attestations (Sigstore)
       attestations: write
     steps:
+      # First, and sparse: a checkout cleans untracked files, so it must run before dist/ exists. Only the
+      # committed public key is needed (to verify the signature right after signing).
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: packaging/minisign.pub
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           pattern: release-*
@@ -357,6 +365,34 @@ jobs:
           mv "$RUNNER_TEMP/SHA256SUMS" SHA256SUMS
           cat SHA256SUMS
 
+      # SHA256SUMS.minisig: a minisign signature over SHA256SUMS, made with the release key (the secret
+      # MINISIGN_SECRET_KEY of the `release` environment: the full secret key file, no password). The
+      # trusted comment names the tag, so an older release's signed list cannot be replayed under a
+      # newer tag. The public key is committed at packaging/minisign.pub; the signature is verified
+      # with it right after signing, and the job fails if anything is off. The key file exists only
+      # for the duration of this step (umask 077, removed on exit) and is never printed.
+      - name: Sign SHA256SUMS (minisign)
+        env:
+          MINISIGN_SECRET_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${MINISIGN_SECRET_KEY:-}" ]; then
+            echo "::error::the secret MINISIGN_SECRET_KEY is not set in the release environment"
+            exit 1
+          fi
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq minisign
+          umask 077
+          key="$(mktemp "$RUNNER_TEMP/minisign.XXXXXX")"
+          trap 'rm -f "$key"' EXIT
+          printf '%s\n' "$MINISIGN_SECRET_KEY" > "$key"
+          comment="siple ${GITHUB_REF_NAME} SHA256SUMS"
+          minisign -S -W -s "$key" -m dist/SHA256SUMS -x dist/SHA256SUMS.minisig -t "$comment" < /dev/null
+          rm -f "$key"
+          out="$(minisign -V -p packaging/minisign.pub -m dist/SHA256SUMS -x dist/SHA256SUMS.minisig)"
+          echo "$out"
+          grep -qxF "Trusted comment: $comment" <<< "$out"
+
       # Keyless: the attestation binds each file's digest to this workflow run and tag.
       # GitHub stores attestations for public repos on every plan, for private ones only on paid
       # plans; while the repo is private (pre-launch) the step is skipped.
@@ -370,6 +406,7 @@ jobs:
             dist/*.dmg
             dist/THIRD-PARTY-NOTICES.html
             dist/SHA256SUMS
+            dist/SHA256SUMS.minisig
 
       - name: Create draft release
         env:

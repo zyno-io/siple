@@ -41,9 +41,7 @@ use siple_core::state::PartialSelection;
 use siple_sip::{AccountStatus, AnswerMode, CallDirection, CallInfo, CallState, CompleteMode};
 use siple_sip::{RegState, TransferSession};
 
-#[cfg(not(feature = "store"))]
-use crate::actions::open_url;
-use crate::actions::{Actions, open_path};
+use crate::actions::{Actions, open_path, open_store_page, open_url};
 use crate::snapshot::{RegClass, Shared, Snapshot, reg_class, visible_calls};
 use crate::theme::{
     self, FS_BODY, FS_TITLE, NARROW_BREAKPOINT, Palette, R_MD, SP_L, SP_S, Tone, WIDE_BREAKPOINT,
@@ -111,6 +109,13 @@ pub enum BlfSort {
 /// UI-only state that survives between frames.
 #[derive(Debug, Default)]
 pub struct UiState {
+    /// "Not now" of a version-less update offer (Microsoft Store): lasts this session.
+    pub update_not_now: bool,
+    /// The version this window asked to install. An install under way for another one was
+    /// started by something else (an agent): the pill says so and offers Cancel.
+    pub update_initiated: Option<String>,
+    /// Why the last install request was refused (shown in the pill's menu).
+    pub update_error: Option<String>,
     pub dial_account: Option<String>,
     pub dial_target: String,
     /// Focus the dial field on the next frame (set when a link prefills it).
@@ -230,10 +235,11 @@ pub enum UiAction {
     /// Ask the OS for microphone access (macOS prompt; elsewhere a no-op).
     RequestMicAccess,
     /// Open a release page in the browser (the update pill).
-    #[cfg(not(feature = "store"))]
     OpenUrl(String),
+    /// Open the store page of Siple (the update pill of a store edition). The link is the fixed
+    /// one of the platform, never taken from a network response.
+    OpenStorePage,
     /// "Skip this version" of the update pill: remembered in `state.toml`.
-    #[cfg(not(feature = "store"))]
     SkipUpdate(String),
 }
 
@@ -410,6 +416,16 @@ impl UiState {
             T::TestDraft | T::WizardAdd => self.wizard.on_reply(reply),
             T::Echo if self.wizard.on_audio_step() => self.wizard.on_reply(reply),
             T::SetPassword(_) if self.wizard.adding() => self.wizard.on_reply(reply),
+            T::InstallUpdate | T::CancelUpdate => {
+                self.update_error = reply.result.err().map(|e| match e.reason() {
+                    Some("install_not_possible") => crate::snapshot::install_reason_text(
+                        e.data["why"].as_str().unwrap_or_default(),
+                    )
+                    .to_string(),
+                    Some("call_active") => "A call is active; the restart waits for it".into(),
+                    _ => e.message,
+                });
+            }
             _ => self.settings.on_reply(reply, snap),
         }
     }
@@ -873,13 +889,17 @@ impl PhoneUi {
             UiAction::Rpc(req) => act.rpc(req),
             UiAction::FirstRunDone => act.set_first_run_completed(),
             UiAction::RequestMicAccess => act.request_mic_access(),
-            #[cfg(not(feature = "store"))]
             UiAction::OpenUrl(url) => {
                 if let Err(e) = open_url(&url) {
                     self.shared.set_notice(format!("Cannot open the link: {e}"));
                 }
             }
-            #[cfg(not(feature = "store"))]
+            UiAction::OpenStorePage => {
+                if let Err(e) = open_store_page() {
+                    self.shared
+                        .set_notice(format!("Cannot open the store page: {e}"));
+                }
+            }
             UiAction::SkipUpdate(v) => act.skip_update(&v),
             UiAction::LogsVisible(open) => {
                 self.shared.want_logs.store(open, Ordering::Relaxed);

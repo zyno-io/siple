@@ -669,8 +669,7 @@ async fn run(args: RunArgs) -> Result<ExitCode> {
     let resolved = config::resolve_config_path(args.config)
         .context("cannot determine the default config directory")?;
     let mut opts = AppOptions::new(resolved.path);
-    #[cfg(not(feature = "store"))]
-    opts.use_github_updates();
+    opts.use_network_updates();
     opts.migrate_legacy_config = resolved.is_default;
     opts.startup_warnings = resolved.warnings;
     opts.headless = true;
