@@ -17,7 +17,12 @@ export const shots = {
   'transfer-consult': 'transfer_consult',
   'blf-keys': 'blf_keys',
   'settings-accounts': 'settings_accounts',
-  'wizard-account': 'wizard_account'
+  'wizard-account': 'wizard_account',
+  'config-error': 'config_error',
+  'wizard-audio': 'wizard_audio',
+  incoming: 'incoming',
+  'transfer-composer': 'transfer_composer',
+  'blf-list': 'blf_list'
 }
 
 mkdirSync(dst, { recursive: true })

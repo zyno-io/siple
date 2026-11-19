@@ -1,11 +1,13 @@
 # AI agents
 
+Let an AI agent place, answer and manage calls in Siple, using the same engine and state as the app.
+
 Siple is built to be driven by AI agents as much as by hand. Whatever the GUI can do, an agent can do, through the same
 engine and the same state.
 
 <div class="tip custom-block" style="padding-top: 8px">
 
-Everything below works against a running Siple, either the GUI or `siple-cli run --headless` (no window, for servers, CI
+Everything below works against a running Siple: either the app, or `siple-cli run --headless` (no window, for servers, CI
 and SSH sessions).
 
 </div>

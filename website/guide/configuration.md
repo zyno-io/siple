@@ -1,6 +1,22 @@
-# Configuration overview
+# Settings and config.toml
 
-Siple is configured **only** by one TOML file, `config.toml`. The GUI and the control API are just writers of that file.
+Understand how the Settings window and the `config.toml` file relate, and where to find and edit the file.
+
+## Settings and config.toml are the same thing
+
+Everything you change in **Settings** is saved to one text file called `config.toml`. Siple is configured by that file, and
+the Settings window and the control API are writers of it. A few things live elsewhere: passwords you keep in the system
+keychain, runtime state such as the setup having run (`state.toml`), and the **Do not disturb** switch, which lasts until
+Siple restarts or the account's `dnd` value in the file changes.
+
+So you can change a setting in the window, or edit the file, or both. Most people never need the file. You need it for a few
+advanced options that have no switch in the window. **Settings › Advanced** lists these under **Set in the config file only**
+and has an **Open config** button.
+
+## Where the file is
+
+Select **Open config** (at the bottom of the window, or in **Settings › Advanced**) to open it. Hover over the button at the
+bottom of the window to see the full path. By default it lives here:
 
 | OS | Default location |
 |---|---|
@@ -8,27 +24,34 @@ Siple is configured **only** by one TOML file, `config.toml`. The GUI and the co
 | Windows | `%APPDATA%\Siple\config.toml` |
 | Linux | `$XDG_CONFIG_HOME/siple/config.toml` |
 
-Override with `--config PATH` or the `SIPLE_CONFIG` environment variable. `siple-cli config-example` prints a commented example.
+To use a different file, start Siple with `--config PATH` or set the `SIPLE_CONFIG` environment variable.
+`siple-cli config-example` prints a commented example.
 
-## Hot reload
+## Edit the file while Siple runs
 
-Edit the file while Siple runs. The directory is watched and a change is applied after a short debounce.
+You do not need to restart. Siple watches the folder, and a change applies after a short pause.
 
-- An **invalid file never replaces the last good config**. The GUI shows a banner and a `config.error` event is emitted.
-- Accounts are matched by `id`: a new id starts an account, a removed id (or `enabled = false`) unregisters it.
-- Each key has a reload class: hot, next call, re-register, rebuild, rebind or restart. Changes that rebuild a transport wait
-  until the account has no calls. The table is in [Reload classes](/reference/configuration#reload-classes).
-- Unknown keys are rejected, so typos are caught.
+- **A mistake never breaks Siple.** An invalid file never replaces the last good config. The window shows a **Config not
+  applied** banner and Siple keeps using your previous settings. See [Troubleshooting](/guide/troubleshooting#your-changes-to-configtoml-dont-take-effect).
+- **Typos are caught.** Unknown keys are rejected.
+- **Accounts are matched by `id`.** A new id starts an account. A removed id, or `enabled = false`, unregisters it.
+- **Some changes wait.** Changes that rebuild a transport wait until the account has no calls.
+
+::: tip Edits from the window keep your file tidy
+Settings changes only the keys involved and preserves your comments, order and quoting. Writes are atomic and validated
+before the file is replaced.
+:::
+
+## Details
+
+::: details Reload classes
+Each key has a reload class: hot, next call, re-register, rebuild, rebind or restart. The table is in
+[Reload classes](/reference/configuration#reload-classes).
 
 Force a reload with `siple-cli ctl config.reload`.
+:::
 
-## Editing from the GUI and the API
-
-Settings and `config.edit` change exactly the keys involved and preserve your comments, order and quoting. Writes are atomic
-and validated before the file is replaced.
-
-## A minimal account
-
+::: details A minimal account
 ```toml
 [[account]]
 id = "desk"
@@ -38,5 +61,11 @@ domain = "pbx.example.test"
 transport = "tls"
 srtp = "optional"
 ```
+:::
+
+::: details Editing from the API
+`config.edit` changes exactly the keys involved, the same way Settings does. It preserves your comments, order and quoting,
+and validates before the file is replaced.
+:::
 
 The complete list of keys, defaults and reload classes is the [Configuration reference](/reference/configuration).

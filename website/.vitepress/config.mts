@@ -48,7 +48,7 @@ function rewriteRepoLinks(md: any) {
 // The generated API reference (and a few docs) mention placeholders such as <target>@<domain> in
 // running text. GitHub hides unknown tags; Vue would fail the build on them. Show them as text.
 const HTML_TAGS = new Set(
-  'a abbr b blockquote br code del details div em h1 h2 h3 h4 h5 h6 hr i img kbd li ol p pre s span strong sub summary sup table tbody td th thead tr u ul Shot'.split(
+  'a abbr b blockquote br code del details div em h1 h2 h3 h4 h5 h6 hr i img kbd li ol p pre s span strong sub summary sup table tbody td th thead tr u ul Shot Keys OsTabs StartPaths template'.split(
     ' '
   )
 )
@@ -100,36 +100,46 @@ export default defineConfig({
     logo: '/mark.png',
     siteTitle: 'Siple',
     nav: [
-      { text: 'Guide', link: '/guide/install', activeMatch: '^/guide/' },
+      { text: 'Guide', link: '/guide/quick-start', activeMatch: '^/guide/' },
       { text: 'AI agents', link: '/agents/', activeMatch: '^/agents/' },
       { text: 'Reference', link: '/reference/configuration', activeMatch: '^/reference/' },
       { text: 'Project', link: '/project/contributing', activeMatch: '^/project/' },
-      { text: 'Download', link: `${REPO}/releases` }
+      { text: 'Download', link: 'https://siple.app/#download' }
     ],
     sidebar: {
       '/guide/': [
         {
           text: 'Get started',
           items: [
+            { text: 'Quick start', link: '/guide/quick-start' },
             { text: 'Install', link: '/guide/install' },
-            { text: 'First run and accounts', link: '/guide/first-run' },
-            { text: 'Configuration overview', link: '/guide/configuration' }
+            { text: 'Set up your account', link: '/guide/first-run' },
+            { text: 'Questions and answers', link: '/guide/faq' }
           ]
         },
         {
-          text: 'Using Siple',
+          text: 'Everyday use',
           items: [
-            { text: 'Making and taking calls', link: '/guide/calls' },
-            { text: 'Transfers', link: '/guide/transfers' },
-            { text: 'Extensions and BLF', link: '/guide/extensions' },
+            { text: 'Make and answer calls', link: '/guide/calls' },
+            { text: 'Transfer a call', link: '/guide/transfers' },
+            { text: 'See who is free', link: '/guide/extensions' },
             { text: 'Keyboard shortcuts', link: '/guide/shortcuts' },
-            { text: 'Tray and notifications', link: '/guide/tray' },
-            { text: 'sip: and tel: links', link: '/guide/links' },
-            { text: 'Network changes', link: '/guide/network' },
+            { text: 'Tray, notifications, startup', link: '/guide/tray' },
+            { text: 'Phone links in your browser', link: '/guide/links' },
             { text: 'Updates', link: '/guide/updates' }
           ]
         },
-        { text: 'Troubleshooting', link: '/guide/troubleshooting' }
+        {
+          text: 'When something is wrong',
+          items: [{ text: 'Troubleshooting', link: '/guide/troubleshooting' }]
+        },
+        {
+          text: 'Under the hood',
+          items: [
+            { text: 'Settings and config.toml', link: '/guide/configuration' },
+            { text: 'Network changes', link: '/guide/network' }
+          ]
+        }
       ],
       '/agents/': [
         {
@@ -157,6 +167,7 @@ export default defineConfig({
         {
           text: 'Project',
           items: [
+            { text: 'Build from source', link: '/project/build' },
             { text: 'Contributing', link: '/project/contributing' },
             { text: 'Security', link: '/project/security' },
             { text: 'Licence', link: '/project/licence' },
@@ -168,6 +179,7 @@ export default defineConfig({
     socialLinks: [{ icon: 'github', link: REPO }],
     search: { provider: 'local' },
     outline: { level: [2, 3], label: 'On this page' },
+    docFooter: { prev: 'Previous', next: 'Next' },
     editLink: {
       // Serialized into the client bundle: must not reference module-level values.
       pattern: ({ filePath }) => {

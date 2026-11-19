@@ -1,5 +1,187 @@
-/* Large included reference pages: keep wide tables readable. */
+/*
+ * Siple docs theme: the siple.app design system (cool grey desk, white hairline cards, one
+ * teal-blue accent, Inter) on VitePress's default theme. Tokens mirror siple-web/DESIGN.md.
+ */
+
+:root {
+  --siple-accent: #17769a;
+  --siple-accent-hover: #136583;
+  --siple-accent-soft: rgba(23, 118, 154, 0.1);
+  --siple-lamp-ok: #22a05a;
+  --siple-lamp-warn: #e0a100;
+  --siple-lamp-err: #dc3b30;
+
+  --vp-c-brand-1: #136583;
+  --vp-c-brand-2: #17769a;
+  --vp-c-brand-3: #17769a;
+  --vp-c-brand-soft: var(--siple-accent-soft);
+
+  --vp-c-bg: #ffffff;
+  --vp-c-bg-alt: #f6f7f9;
+  --vp-c-bg-elv: #ffffff;
+  --vp-c-bg-soft: #f3f4f6;
+  --vp-c-divider: #e3e5ea;
+  --vp-c-border: #cfd3db;
+  --vp-c-gutter: #e3e5ea;
+  --vp-c-text-1: #15171c;
+  --vp-c-text-2: #4f5562;
+  --vp-c-text-3: #646a78;
+
+  --vp-c-tip-1: var(--vp-c-brand-1);
+  --vp-c-tip-2: var(--vp-c-brand-2);
+  --vp-c-tip-3: var(--vp-c-brand-3);
+  --vp-c-tip-soft: var(--siple-accent-soft);
+
+  --vp-font-family-base: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto,
+    'Helvetica Neue', sans-serif;
+  --vp-font-family-mono: ui-monospace, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace;
+
+  --vp-button-brand-bg: var(--siple-accent);
+  --vp-button-brand-hover-bg: var(--siple-accent-hover);
+  --vp-button-brand-active-bg: var(--siple-accent-hover);
+  --vp-button-brand-border: transparent;
+  --vp-button-brand-hover-border: transparent;
+
+  --vp-home-hero-name-color: var(--vp-c-text-1);
+  --vp-home-hero-image-background-image: radial-gradient(
+    closest-side,
+    rgba(23, 118, 154, 0.22),
+    rgba(46, 205, 182, 0.12) 55%,
+    transparent
+  );
+  --vp-home-hero-image-filter: blur(56px);
+
+  --vp-custom-block-tip-bg: var(--siple-accent-soft);
+  --vp-code-font-size: 0.875em;
+}
+
+.dark {
+  --siple-accent: #3fb2d4;
+  --siple-accent-hover: #5cc0de;
+  --siple-accent-soft: rgba(63, 178, 212, 0.14);
+  --siple-lamp-ok: #3dd68c;
+  --siple-lamp-warn: #f2c14e;
+  --siple-lamp-err: #ff6b5e;
+
+  --vp-c-brand-1: #6cc8e3;
+  --vp-c-brand-2: #5cc0de;
+  --vp-c-brand-3: #3fb2d4;
+
+  --vp-c-bg: #0c0d10;
+  --vp-c-bg-alt: #131418;
+  --vp-c-bg-elv: #191b20;
+  --vp-c-bg-soft: #191b20;
+  --vp-c-divider: #24272e;
+  --vp-c-border: #333741;
+  --vp-c-gutter: #24272e;
+  --vp-c-text-1: #ececf0;
+  --vp-c-text-2: #aeb2bd;
+  --vp-c-text-3: #8b909c;
+
+  --vp-button-brand-text: #062029;
+  --vp-button-brand-hover-text: #062029;
+  --vp-button-brand-active-text: #062029;
+  --vp-home-hero-image-background-image: radial-gradient(
+    closest-side,
+    rgba(63, 178, 212, 0.22),
+    rgba(46, 205, 182, 0.08) 55%,
+    transparent
+  );
+}
+
+body {
+  font-feature-settings: 'cv11' 1, 'ss01' 1;
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: var(--siple-accent-soft);
+}
+
+/* ---- reading ------------------------------------------------------------------------------ */
+
+.vp-doc h1 {
+  font-weight: 700;
+  letter-spacing: -0.03em;
+}
+.vp-doc h2 {
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  margin-top: 56px;
+}
+.vp-doc h3 {
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+/* The sentence right under a page title: what this page is for, in one line. */
+.vp-doc h1 + p {
+  font-size: 1.1875rem;
+  line-height: 1.55;
+  color: var(--vp-c-text-2);
+}
+.vp-doc a {
+  text-underline-offset: 3px;
+}
+.vp-doc ol > li::marker {
+  font-weight: 600;
+  color: var(--vp-c-text-2);
+}
+.vp-doc li + li {
+  margin-top: 6px;
+}
+
+/* Keys: <kbd> and the <Keys> component. */
+.vp-doc kbd,
+.siple-keys kbd {
+  display: inline-block;
+  min-width: 1.6em;
+  padding: 1px 6px;
+  border: 1px solid var(--vp-c-border);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  background: var(--vp-c-bg);
+  color: var(--vp-c-text-1);
+  font-family: var(--vp-font-family-base);
+  font-size: 0.8125em;
+  font-weight: 500;
+  line-height: 1.5;
+  text-align: center;
+  white-space: nowrap;
+}
+
+/* Tables: wide ones scroll instead of squeezing. */
 .vp-doc table {
   display: block;
   overflow-x: auto;
+}
+.vp-doc th {
+  font-weight: 600;
+}
+
+/* "For the config file" and other <details> blocks read as a quiet aside. */
+.vp-doc .details.custom-block {
+  border: 1px solid var(--vp-c-divider);
+  background: var(--vp-c-bg-alt);
+}
+.vp-doc .details.custom-block summary {
+  font-weight: 600;
+  color: var(--vp-c-text-2);
+}
+
+/* ---- chrome ------------------------------------------------------------------------------- */
+
+.VPNavBarTitle .title {
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+.VPSidebarItem.level-0 > .item > .text {
+  font-weight: 600;
+}
+.VPHero .name,
+.VPHero .text {
+  letter-spacing: -0.04em;
+  font-weight: 700;
+}
+.VPHero .tagline {
+  color: var(--vp-c-text-2);
 }

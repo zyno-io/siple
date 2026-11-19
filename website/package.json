@@ -13,6 +13,7 @@
     "preview": "vitepress preview"
   },
   "devDependencies": {
+    "@fontsource/inter": "5.2.8",
     "vitepress": "1.6.4"
   },
   "engines": {

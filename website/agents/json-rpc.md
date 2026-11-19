@@ -1,5 +1,7 @@
 # JSON-RPC basics
 
+Connect to Siple's control API, say hello, call methods and wait for events without missing any.
+
 The control API is JSON-RPC 2.0, one JSON object per line (UTF-8, no batches), over a local socket. This page is the short
 version; the [API reference](/agents/api-reference) has everything.
 

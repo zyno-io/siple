@@ -1,42 +1,78 @@
 # Updates
 
-Siple tells you when a newer version is available. A small **Update 0.2.0** pill appears in the header. What it does depends on
-how you installed Siple:
+See when a new version of Siple is available, install it, and control what Siple checks.
 
-- **Direct download** (zip, dmg, tarball): **Install and restart** downloads the new version, checks it and installs it in place
-  (see below). Where that is not possible, **Download** and **Release notes** open the release page in your browser.
-- **Mac App Store**: **Open App Store** opens Siple's page there; the App Store installs the update.
-- **Microsoft Store**: **Open Microsoft Store** opens Siple's page there. The Store does not tell a version number, so the pill just
-  reads **Update**; the Store installs the update.
+## When an update is available
 
-**Skip this version** hides that version (a newer one shows again); on the Microsoft Store **Not now** hides the pill for this
-session (not when the Store marks the update mandatory). Settings, Advanced shows the version you run, the result of the last
-check, an **Install updates in the app** switch (direct downloads) and a **Check now** button.
+A small pill appears in the header, for example **Update 0.2.0**. Select it to see what you can do. What it offers depends on
+how you installed Siple.
 
-## Installing in place (direct downloads)
+| Your edition | What the pill offers |
+|---|---|
+| Direct download (zip, dmg, tarball) | **Install and restart** downloads the new version, checks it and installs it in place. If that is not possible, **Download** and **Release notes** open the release page in your browser. |
+| Mac App Store | **Open App Store** opens Siple's page there. The App Store installs the update. |
+| Microsoft Store | **Open Microsoft Store** opens Siple's page there. The Store does not tell a version number, so the pill reads **Update**. The Store installs the update. |
 
-Nothing is downloaded until you choose **Install and restart** (or a script or agent you run calls `app.install_update`). Then Siple
-downloads the new version from GitHub, checks it, replaces itself and restarts:
+To hide an update you do not want yet:
 
-1. It downloads `SHA256SUMS`, `SHA256SUMS.minisig` and the archive for your system from the project's GitHub release (HTTPS, only
-   `User-Agent: Siple/<version>` is sent).
-2. It checks the minisign signature of Siple's release key on the checksum list, the archive's SHA-256, and your system's check of
-   the publisher: on macOS the Developer ID signature and Apple's notarization; on Windows the Authenticode signature of Signal24 LLC.
-   On Linux the signed list is the check. If anything is wrong, nothing is changed and the pill offers the release page.
-3. It replaces the app as late as possible and restarts, **never during a call**: with a call going on the pill reads
-   "Install, restart after the call" and then "Restart to update"; otherwise Siple waits for five quiet seconds first. Your accounts,
-   settings and passwords are not touched, and the app stays where it is (login item and `sip:` links keep working).
+- **Skip this version** hides that version. A newer version shows again.
+- On the Microsoft Store, **Not now** hides the pill for this session. It does not appear when the Store marks the update
+  mandatory.
 
-If Siple cannot replace itself, the pill opens the release page and says why: installed with a package manager (Homebrew, winget,
-Scoop, ...), in a folder you cannot write to (Program Files, `/usr`), run from a disk image or a quarantined download, in a container,
-Flatpak or Snap, or without a window. Siple never asks for administrator rights. Turn the feature off with
-`[updates] install = false`. The Mac App Store and Microsoft Store editions never install anything themselves.
+## Install an update
+
+1. Select the **Update** pill in the header.
+2. Choose **Install and restart**. During a call the button reads **Install, restart after the call**.
+3. Siple downloads the new version, checks it, replaces itself and restarts. Your accounts, settings and passwords are not
+   touched.
+
+Nothing is downloaded until you choose **Install and restart** (or a script or agent you run calls `app.install_update`). Siple never restarts during a call. With a call going on, the pill reads
+**Install, restart after the call** and then **Restart to update**. Otherwise Siple waits for five quiet seconds first. The app
+stays where it is, so your login item and `sip:` links keep working.
+
+If you change your mind while it downloads, choose **Cancel**. If an install fails, the pill says **Update failed** and
+offers **Try again** and **Download from GitHub**.
+
+### When Siple cannot update itself
+
+The pill opens the release page and says why. The reasons are:
+
+- Siple was installed with a package manager (Homebrew, winget, Scoop and so on).
+- It is in a folder you cannot write to (Program Files, `/usr`).
+- It runs from a disk image or a quarantined download.
+- It runs in a container, Flatpak or Snap, or without a window.
+
+Siple never asks for administrator rights. The Mac App Store and Microsoft Store editions never install anything themselves.
+
+## See your version and check now
+
+Open **Settings › Advanced**. Under **About** you see the **Version** you run. Under **Updates** you see:
+
+- **Check for updates**, a switch that turns the check on or off.
+- **Install updates in the app**, a switch for direct downloads.
+- **Channel**, for direct downloads: **Automatic**, **Stable releases** or **Stable and release candidates**.
+- **Status** and **Last checked**, which show the result of the last check.
+- A **Check now** button.
+
+## Turn update checks off
+
+Open **Settings › Advanced** and turn off **Check for updates**. This works on every edition. Siple then makes no request to
+GitHub or Apple and asks the Store nothing.
+
+To stop only the in-app install on a direct download, turn off **Install updates in the app**. The pill then opens the
+release page.
+
+## Which releases are offered
+
+Direct builds: Siple offers the highest version that is newer than the one you run. By default only final releases (`0.2.0`)
+count. If you run a release candidate (`0.2.0-rc.1`), release candidates count too, so you are moved on to `rc.2` and then to
+`0.2.0`. Set **Channel** to choose explicitly. The stores offer what they publish; the channel does not apply there.
 
 ## What is checked, and what is sent
 
-About 30 seconds after Siple starts, and then every 24 hours, Siple makes one check. Where it looks depends on the edition:
+About 30 seconds after Siple starts, and then every 24 hours, Siple makes one check. Where it looks depends on the edition.
 
-**Direct download**: one HTTPS request to GitHub (the check; the files above are downloaded only when you install).
+**Direct download**: one HTTPS request to GitHub (the check; the files described below are downloaded only when you install).
 
 ```
 GET https://api.github.com/repos/zyno-io/siple/releases?per_page=20
@@ -68,15 +104,21 @@ a dialog.
 
 This is the only network activity Siple starts on its own. Siple has no telemetry.
 
-## Which releases are offered
+### What an in-place install downloads
 
-Direct builds: Siple offers the highest version that is newer than the one you run. By default only final releases (`0.2.0`)
-count. If you run a release candidate (`0.2.0-rc.1`), release candidates count too, so you are moved on to `rc.2` and then to
-`0.2.0`. Set `channel` to choose explicitly. The stores offer what they publish; `channel` does not apply there.
+When you choose **Install and restart**, Siple does this:
 
-## Turn it off or change it
+1. It downloads `SHA256SUMS`, `SHA256SUMS.minisig` and the archive for your system from the project's GitHub release (HTTPS, only
+   `User-Agent: Siple/<version>` is sent).
+2. It checks the minisign signature of Siple's release key on the checksum list, the archive's SHA-256, and your system's check of
+   the publisher: on macOS the Developer ID signature and Apple's notarization; on Windows the Authenticode signature of Signal24 LLC.
+   On Linux the signed list is the check. If anything is wrong, nothing is changed and the pill offers the release page.
+3. It replaces the app as late as possible and restarts, never during a call.
 
-Settings, Advanced, "Check for updates", or in `config.toml` (hot reloadable), on every edition:
+## Details
+
+::: details In config.toml
+The same settings live under `[updates]`. They are hot reloadable, which means they apply without a restart, on every edition.
 
 ```toml
 [updates]
@@ -85,8 +127,12 @@ check = false            # never check: no request to GitHub or Apple, no questi
 # channel = "prerelease" # direct builds only: stable | prerelease; unset follows the build you run
 ```
 
-Agents: `app.update_status` (with `source`, `action`, `store_url` and `install`), `app.check_updates`, `app.install_update`,
-`app.cancel_update` and the events `app.update_available`, `app.update_progress` and `app.updated`; an install that an agent starts
-is shown in the window, with a Cancel;
-see the [API reference](/agents/api-reference). Opening a store page is something only the GUI does; agents read `action` and
-`store_url`.
+Turn off in-place installs with `[updates] install = false`.
+:::
+
+::: details For agents and scripts
+Agents can use `app.update_status` (with `source`, `action`, `store_url` and `install`), `app.check_updates`,
+`app.install_update`, `app.cancel_update` and the events `app.update_available`, `app.update_progress` and `app.updated`. An
+install that an agent starts is shown in the window, with a **Cancel**. See the [API reference](/agents/api-reference).
+Opening a store page is something only the GUI does; agents read `action` and `store_url`.
+:::

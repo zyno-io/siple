@@ -1,5 +1,7 @@
 # Quick start with MCP
 
+Connect an MCP client such as Claude Code or Claude Desktop to a running Siple in a few minutes.
+
 `siple-cli mcp` is a stdio MCP server. It does not run the phone itself: it connects to a running Siple (the GUI or
 `siple-cli run --headless`) and exposes its control API as tools. Start Siple first.
 

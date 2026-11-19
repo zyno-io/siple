@@ -1,8 +1,10 @@
 # Agent skill (CLI)
 
+Give an AI agent control of Siple with a skill that needs no helper process.
+
 The simplest way to give an agent Siple: a **skill** that teaches it to run `siple-cli`. Each action is one command that
 connects to the running Siple, does one thing and exits. There is no MCP server or other helper process to keep running;
-only Siple itself runs (it has to, to stay registered and receive calls).
+only Siple itself runs, because it has to stay registered to receive calls.
 
 ## Install
 
