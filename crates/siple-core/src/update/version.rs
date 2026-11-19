@@ -96,6 +96,12 @@ impl Version {
     pub fn is_prerelease(&self) -> bool {
         !self.pre.is_empty()
     }
+
+    /// The numeric core without the pre-release part (`0.2.0` for `0.2.0-rc.4`): what the
+    /// packaged binaries (Info.plist, VERSIONINFO, the Linux directory name) carry.
+    pub fn core(&self) -> String {
+        format!("{}.{}.{}", self.major, self.minor, self.patch)
+    }
 }
 
 /// A numeric component: digits only, no leading zeros.
@@ -185,6 +191,13 @@ pub fn full_version() -> &'static str {
 }
 
 /// [`full_version`] as a [`Version`] (the Cargo version if the string somehow does not parse).
+/// Whether this binary was built by the release workflow for a tag (`SIPLE_BUILD_TAG` set).
+/// Only such builds are signed releases, so only they can replace themselves.
+pub fn is_release_build() -> bool {
+    option_env!("SIPLE_BUILD_TAG").is_some_and(|t| !t.is_empty())
+}
+
+/// The version of this build as a [`Version`].
 pub fn current_version() -> Version {
     Version::parse(full_version())
         .or_else(|| Version::parse(env!("CARGO_PKG_VERSION")))

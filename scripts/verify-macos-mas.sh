@@ -79,16 +79,26 @@ for bin in "$GUI" "$CLI"; do
 done
 
 echo "== build: store feature =="
-if [ -f "$GUI" ]; then
-  # The update checker's GitHub API path (crates/siple-core/src/update/http.rs) is present in direct builds and
-  # compiled out by --features store. (Not the bare host: the config example text mentions it.)
-  if grep -aq 'zyno-io/siple/releases' "$GUI"; then fail "siple contains the update-check API path: built without --features store?"
-  else pass "siple has no update-check code (--features store)"; fi
-fi
-if [ -f "$CLI" ]; then
-  if grep -aq 'zyno-io/siple/releases' "$CLI"; then fail "siple-cli contains the update-check API path: built without --features store?"
-  else pass "siple-cli has no update-check code"; fi
-fi
+# A store binary checks for updates against the App Store only. Markers (all in crates/siple-core/src/update/):
+#   absent:  the GitHub releases API path (github.rs), any release asset download URL, the minisign signature
+#            name (the in-app installer, phase 2) - compiled out by --features store.
+#   present: the App Store lookup (appstore.rs: HOST and PATH are separate constants).
+# (Not the bare github.com host: the config example text and the release page link mention it.)
+check_store_markers() {
+  local bin="$1" n="$2"
+  [ -f "$bin" ] || return 0
+  local m
+  for m in '/repos/zyno-io/siple/releases' 'releases/download/' 'SHA256SUMS.minisig'; do
+    if grep -aq -- "$m" "$bin"; then fail "$n contains '$m': built without --features store?"
+    else pass "$n has no '$m'"; fi
+  done
+  for m in 'itunes.apple.com' '/lookup?id=6836164262'; do
+    if grep -aq -- "$m" "$bin"; then pass "$n has the App Store lookup marker '$m'"
+    else fail "$n lacks '$m': the App Store update check is missing"; fi
+  done
+}
+check_store_markers "$GUI" siple
+check_store_markers "$CLI" siple-cli
 
 echo "== build: siple-cli embedded Info.plist (needed by the sandbox; crates/siple-cli/build.rs, task T5) =="
 if [ -f "$CLI" ]; then

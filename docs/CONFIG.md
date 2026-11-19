@@ -116,7 +116,7 @@ log_level = "info"          # trace/debug show more; log_dir and log_retention_d
 
 Plaintext passwords are never written to a log or trace by Siple itself, whatever these options say (a digest `response` is a hash, not the
 password); the options only mask what already reached a line. A password shorter than 4 characters is not searched for literally. There
-is no telemetry; the only request Siple makes on its own is the optional update check ([`[updates]`](#updates)).
+is no telemetry; the only network activity Siple starts on its own is the optional update check ([`[updates]`](#updates)).
 
 ## `[control]`
 
@@ -269,21 +269,75 @@ never in argv.
 
 ## `[updates]`
 
-The update check: Siple tells you when a newer release exists. **Hot.** Detection only: nothing is downloaded or installed; a
-pill in the header (and Settings > Advanced) links to the release page. Mac App Store and Microsoft Store builds do not contain
-the check at all (they update through the store); there `[updates]` is accepted and ignored.
+The update check: Siple tells you when a newer release exists. **Hot.** A pill in the header (and Settings > Advanced) offers it.
+Direct downloads (zip, dmg, tarball) can also **install it in place**, when you or a script or agent you run chooses to (see
+"In-place install" below); otherwise the pill links to the release page. The Mac App Store and Microsoft Store editions open their
+store page and never install anything themselves. Where the check looks depends on how Siple was installed. `check = false` turns
+all of it off, on every edition.
 
 | Option | Type | Default | Description |
 |---|---|---|---|
 | `check` | bool | `true` | Look for a newer release about 30 seconds after start (not when a check found nothing newer less than 24 hours ago), then every 24 hours of wall-clock time, so time spent asleep counts (and on `app.check_updates` or "Check now"; a manual check restarts the 24 hours). |
-| `channel` | `stable\|prerelease` | unset | `stable` offers final releases only; `prerelease` also offers release candidates (`-rc.N`). Unset = automatic: `prerelease` while the running build is itself a release candidate, otherwise `stable`. `reset_section updates channel` returns to automatic. |
+| `install` | bool | `true` | Direct downloads only. Allow the in-place install: the offer then downloads, verifies and installs the new version when you choose it (the pill, or `app.install_update`). `false`: the offer opens the release page. Hot: turning it off stops an install that has not replaced any file yet. Ignored by the store editions, which have no installer. `check = false` also stops installs. |
+| `channel` | `stable\|prerelease` | unset | GitHub (direct) builds only; the stores always follow their single published track. `stable` offers final releases only; `prerelease` also offers release candidates (`-rc.N`). Unset = automatic: `prerelease` while the running build is itself a release candidate, otherwise `stable`. `reset_section updates channel` returns to automatic. |
 
-What is sent: one anonymous HTTPS `GET https://api.github.com/repos/zyno-io/siple/releases?per_page=20` with the headers
-`User-Agent: Siple/<version>` and `Accept: application/vnd.github+json` (plus `If-None-Match` with the ETag of the previous answer,
-so an unchanged list costs almost nothing). Nothing else: no identifier, account, install ID or usage data, and the request carries
-no cookies. GitHub sees your IP address, as any web server does. Failures (offline, rate limited, odd answer) are logged and shown in
-Settings; they never raise a dialog. API: `app.update_status`, `app.check_updates`, the event `app.update_available` and the `update`
-summary of `status`. The user guide has a page, "Updates".
+What is sent, by edition:
+
+- **Direct download** (zip, dmg, tarball, package manager): one anonymous HTTPS `GET https://api.github.com/repos/zyno-io/siple/releases?per_page=20`
+  with the headers `User-Agent: Siple/<version>` and `Accept: application/vnd.github+json` (plus `If-None-Match` with the ETag of the
+  previous answer, so an unchanged list costs almost nothing). GitHub sees your IP address, as any web server does.
+- **Mac App Store**: one anonymous HTTPS `GET https://itunes.apple.com/lookup?id=6836164262` (Apple's public lookup of Siple's own
+  listing), about once a day, with only the header `User-Agent: Siple/<version>`. Apple sees your IP address. The answer is used only
+  when it is Siple's listing (id and bundle id match) and its minimum macOS is at most yours; links in it are never followed. A
+  TestFlight build makes no request. Apple's listing can lag a release by up to a day.
+- **Microsoft Store**: Siple asks Windows' Store service whether an update of its own package is waiting. Windows contacts Microsoft as
+  it does for the Store's own updates; Siple adds nothing and sends no request of its own. The Store does not name a version, so the
+  pill reads "Update". A copy that was not installed from the Store (sideloaded) does not check.
+
+Nothing else is sent: no identifier, account, install ID or usage data, and no cookies. Failures (offline, rate limited, odd
+answer) are logged and shown in Settings; they never raise a dialog. API: `app.update_status` (with `source`, `action`, `store_url`,
+`disabled_reason`, `install`), `app.check_updates`, `app.install_update`, `app.cancel_update`, the events `app.update_available`,
+`app.update_progress` and `app.updated`, and the `update` summary of `status`. The user guide has a page, "Updates".
+
+### In-place install (direct downloads)
+
+Only when you choose it (the pill's **Install and restart**, or an agent calling `app.install_update`), and only with `check` and
+`install` on, Siple downloads the new version from the project's GitHub release, over HTTPS, each request with only
+`User-Agent: Siple/<version>`: `SHA256SUMS`, `SHA256SUMS.minisig` and the one archive for your system
+(`Siple-<version>-macos.zip`, `-windows-x64.zip` / `-windows-arm64.zip`, `-linux-x86_64.tar.gz`) from
+`https://github.com/zyno-io/siple/releases/download/v<version>/<file>`. That URL is built from the version and file names the
+release list reported, never taken from the list; GitHub redirects once to its asset hosts (at most three redirects, HTTPS only,
+GitHub hosts only). Nothing is sent that identifies you beyond the IP address any download shows.
+
+Before anything is replaced, all of this must hold, otherwise nothing changes and the pill offers the release page:
+
+1. `SHA256SUMS` carries a valid [minisign](https://jedisct1.github.io/minisign/) signature (`SHA256SUMS.minisig`) of Siple's release
+   key (compiled into the app, also `packaging/minisign.pub`), and its signed comment names this release (an old release's list
+   cannot be replayed). A release without `SHA256SUMS.minisig` is not installed in place, on any system.
+2. The archive's SHA-256 equals its entry in that list, and its size equals what the release lists.
+3. The new app passes your system's check of Siple's publisher: macOS, the Developer ID code signature of the app and of
+   `siple-cli` (our team) plus Apple's notarization; Windows, Authenticode with a valid timestamp from the pinned publisher
+   (Signal24 LLC through Microsoft Artifact Signing); Linux, the signed list only (the files are not otherwise signed), plus a test
+   run of the new `siple` and `siple-cli` (`--version`), which must print the expected version.
+4. The archive layout is exactly what a release contains (no extra files, no paths outside the install folder, no links).
+
+The running copy must pass the same publisher check, so a development build or an unsigned copy never replaces itself.
+
+Siple restarts into the new version only when no call, transfer or echo test is active, and has been quiet for 5 seconds
+(`restart: when_idle`, the default); the files are replaced as late as possible, just before the restart, so the running copy is
+never modified during a call. The GUI quits as the tray's Quit does and starts the new version, which waits for the old process
+to end (`--wait-pid`). Your config, accounts, logs and keychain entries are never touched; the app keeps its path, so the login
+item, the `sip:` handler and firewall rules keep working. Replaced files stay (macOS: the old app in a hidden temporary folder;
+Windows and Linux: `*.old-<number>` files) until the new version has run for a minute, then they are removed; if the new version
+does not start, the previous copy is still there. Linux keeps the folder name `siple-<old version>`.
+
+In-place install is **not possible**, and the offer opens the release page with a reason (`install.reason` of
+`app.update_status`, shown in the pill), when Siple would need more rights than yours or is not in a place it can replace:
+installed with a package manager (Homebrew, winget, Scoop, Chocolatey, Nix), in Program Files or `/usr` or another folder your
+user cannot write, owned by another user, run as root, run from a disk image or a quarantined download (macOS), in a container,
+Flatpak, Snap or AppImage, headless (no window to restart into), a development build, or `install = false`. Siple never asks for
+administrator rights. The Mac App Store and Microsoft Store editions contain no downloader or installer: `app.install_update`
+answers `unsupported` there.
 
 ## `[[account]]`
 

@@ -8,7 +8,8 @@ license.workspace = true
 publish.workspace = true
 
 [features]
-# Store builds (Mac App Store, Microsoft Store): no update check, no update UI. See docs/RELEASING.md.
+# Store builds (Mac App Store, Microsoft Store): no GitHub update source (the store check and its
+# store-link offer stay). See docs/RELEASING.md.
 store = ["siple-core/store"]
 
 [dependencies]
@@ -41,6 +42,9 @@ notify-rust = { version = "4", default-features = false, features = ["z"] }
 [target.'cfg(any(target_os = "macos", target_os = "windows"))'.dependencies]
 tray-icon = { version = "0.26", default-features = false }
 
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
 objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSObject", "NSString", "NSAppleEventDescriptor", "NSAppleEventManager", "NSNotification", "NSOperation", "NSError", "NSArray", "NSDictionary", "NSValue", "objc2-core-services"] }
@@ -49,6 +53,7 @@ objc2-user-notifications = { version = "0.3", default-features = false, features
 block2 = "0.6"
 
 [target.'cfg(target_os = "windows")'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Threading"] }
 winreg = "0.55"
 notify-rust = { version = "4", default-features = false }
 

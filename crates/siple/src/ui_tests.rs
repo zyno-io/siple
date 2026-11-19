@@ -7,6 +7,7 @@ use egui_kittest::kittest::{NodeT, Queryable};
 use siple_core::config::{
     BlfClick, BlfClickInCall, BlfClickRinging, BlfGroupBy, BlfView, TransferEnter,
 };
+use siple_core::update::{SourceName, UpdateAction};
 use siple_sip::{BlfState, CallDirection, CallState, CompleteMode, PickupMode, TransferPhase};
 
 use crate::snapshot::Snapshot;
@@ -148,14 +149,23 @@ fn update_status(latest: &str, available: bool) -> siple_core::update::UpdateSta
         current: "0.1.0".into(),
         latest: Some(latest.into()),
         available,
+        source: SourceName::Github,
+        action: if available {
+            UpdateAction::OpenReleasePage
+        } else {
+            UpdateAction::None
+        },
         release_url: Some(RELEASE_URL.into()),
+        store_url: None,
+        disabled_reason: None,
+        mandatory: None,
         published_at: Some("2026-11-01T10:00:00Z".into()),
         checked_at: Some("2026-11-17T09:00:00Z".into()),
         error: None,
+        install: None,
     }
 }
 
-#[cfg(not(feature = "store"))]
 #[test]
 fn update_pill_opens_the_release_and_skip_hides_that_version() {
     let mut snap = base_snapshot();
@@ -190,6 +200,135 @@ fn update_pill_opens_the_release_and_skip_hides_that_version() {
     assert!(h.query_by_label("Siple 0.3.0 is available").is_some());
 }
 
+/// The App Store listing says `latest`; the pill opens the store page, never a URL.
+fn app_store_status(latest: &str) -> siple_core::update::UpdateStatus {
+    siple_core::update::UpdateStatus {
+        source: SourceName::AppStore,
+        action: UpdateAction::OpenStore,
+        release_url: None,
+        store_url: Some(siple_core::update::links::MAS_STORE_URL.into()),
+        ..update_status(latest, true)
+    }
+}
+
+/// The Microsoft Store says only that an update is waiting.
+fn ms_store_status(mandatory: bool) -> siple_core::update::UpdateStatus {
+    siple_core::update::UpdateStatus {
+        source: SourceName::MicrosoftStore,
+        action: UpdateAction::OpenStore,
+        latest: None,
+        release_url: None,
+        published_at: None,
+        store_url: Some(siple_core::update::links::MS_STORE_URL.into()),
+        mandatory: Some(mandatory),
+        ..update_status("", true)
+    }
+}
+
+#[test]
+fn app_store_pill_opens_the_store_page_and_can_skip() {
+    let mut snap = base_snapshot();
+    snap.update = app_store_status("0.2.0");
+    let mut h = harness(snap, WIDE);
+    h.run();
+    h.get_by_label("Siple 0.2.0 is available").click_accesskit();
+    h.run();
+    assert!(h.query_by_label("Download").is_none());
+    h.get_by_label("Open App Store").click_accesskit();
+    h.run();
+    assert_eq!(take(&mut h), [UiAction::OpenStorePage]);
+    h.get_by_label("Siple 0.2.0 is available").click_accesskit();
+    h.run();
+    h.get_by_label("Skip this version").click_accesskit();
+    h.run();
+    assert_eq!(take(&mut h), [UiAction::SkipUpdate("0.2.0".into())]);
+}
+
+#[test]
+fn microsoft_store_pill_has_no_version_and_not_now_lasts_the_session() {
+    let mut snap = base_snapshot();
+    snap.update = ms_store_status(false);
+    let mut h = harness(snap, WIDE);
+    h.run();
+    h.get_by_label("A Siple update is available")
+        .click_accesskit();
+    h.run();
+    assert!(h.query_by_label("Skip this version").is_none());
+    h.get_by_label("Open Microsoft Store").click_accesskit();
+    h.run();
+    assert_eq!(take(&mut h), [UiAction::OpenStorePage]);
+    h.get_by_label("A Siple update is available")
+        .click_accesskit();
+    h.run();
+    h.get_by_label("Not now").click_accesskit();
+    h.run();
+    assert!(take(&mut h).is_empty());
+    assert!(h.query_by_label_contains("update is available").is_none());
+}
+
+#[test]
+fn a_mandatory_microsoft_store_update_cannot_be_dismissed() {
+    let mut snap = base_snapshot();
+    snap.update = ms_store_status(true);
+    let mut h = harness(snap, WIDE);
+    h.state_mut().ui.update_not_now = true;
+    h.run();
+    h.get_by_label("A Siple update is available")
+        .click_accesskit();
+    h.run();
+    assert!(h.query_by_label("Not now").is_none());
+    assert!(h.query_by_label("Open Microsoft Store").is_some());
+}
+
+#[test]
+fn an_install_action_is_not_offered_yet() {
+    let mut snap = base_snapshot();
+    snap.update = siple_core::update::UpdateStatus {
+        action: UpdateAction::Install,
+        ..update_status("0.2.0", true)
+    };
+    assert_eq!(snap.update_offer(), None);
+}
+
+#[test]
+fn settings_of_a_store_edition_name_the_store_and_hide_the_channel() {
+    for (status, button) in [
+        (app_store_status("0.2.0"), "Open App Store"),
+        (ms_store_status(false), "Open Microsoft Store"),
+    ] {
+        let mut snap = base_snapshot();
+        snap.update = status;
+        let mut h = harness(snap, WIDE);
+        h.state_mut().ui.settings.open = true;
+        h.state_mut().ui.settings.section = crate::ui::settings::Section::Advanced;
+        h.run();
+        assert!(h.query_by_label("Channel").is_none());
+        h.get_by_label(button).click_accesskit();
+        h.run();
+        assert_eq!(take(&mut h), [UiAction::OpenStorePage], "{button}");
+    }
+}
+
+#[test]
+fn settings_without_a_source_say_so() {
+    let mut snap = base_snapshot();
+    snap.update = siple_core::update::UpdateStatus {
+        source: SourceName::None,
+        disabled_reason: Some(siple_core::update::DisabledReason::Sideloaded),
+        enabled: false,
+        ..update_status("", false)
+    };
+    let mut h = harness(snap, WIDE);
+    h.state_mut().ui.settings.open = true;
+    h.state_mut().ui.settings.section = crate::ui::settings::Section::Advanced;
+    h.run();
+    assert!(
+        h.query_by_label("Not available").is_some()
+            || h.query_by_label_contains("Not available").is_some()
+    );
+    assert!(h.query_by_label("Channel").is_none());
+}
+
 #[test]
 fn no_update_pill_when_up_to_date_disabled_or_not_checked() {
     let mut up_to_date = base_snapshot();
@@ -205,7 +344,6 @@ fn no_update_pill_when_up_to_date_disabled_or_not_checked() {
     }
 }
 
-#[cfg(not(feature = "store"))]
 #[test]
 fn settings_show_version_and_check_for_updates() {
     let mut snap = base_snapshot();
@@ -226,6 +364,267 @@ fn settings_show_version_and_check_for_updates() {
             .any(|a| matches!(a, UiAction::Rpc(r) if r.method == "app.check_updates")),
         "{acts:?}"
     );
+}
+
+// ---- in-place install states --------------------------------------------------------------
+
+fn install_status(state: siple_core::update::InstallPhase) -> siple_core::update::UpdateStatus {
+    siple_core::update::UpdateStatus {
+        action: UpdateAction::Install,
+        install: Some(siple_core::update::InstallStatus {
+            possible: true,
+            reason: None,
+            detail: None,
+            state,
+            version: Some("0.2.0".into()),
+            bytes: None,
+            total: None,
+            restart: None,
+            error: None,
+            error_kind: None,
+        }),
+        ..update_status("0.2.0", true)
+    }
+}
+
+fn install_calls(h: &mut Harness<'_, State>) -> Vec<(String, serde_json::Value)> {
+    take(h)
+        .into_iter()
+        .filter_map(|a| match a {
+            UiAction::Rpc(r) => Some((r.method.to_string(), r.params)),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn the_pill_starts_an_install_and_asks_to_restart_when_idle() {
+    use siple_core::update::InstallPhase as P;
+    let mut snap = base_snapshot();
+    snap.update = install_status(P::Idle);
+    let mut h = harness(snap, WIDE);
+    h.run();
+    h.get_by_label("Siple 0.2.0 is available").click_accesskit();
+    h.run();
+    assert!(h.query_by_label("Release notes").is_some());
+    h.get_by_label("Install and restart").click_accesskit();
+    h.run();
+    assert_eq!(
+        install_calls(&mut h),
+        [(
+            "app.install_update".to_string(),
+            serde_json::json!({"version": "0.2.0", "restart": "when_idle"})
+        )]
+    );
+    assert_eq!(h.state().ui.update_initiated.as_deref(), Some("0.2.0"));
+}
+
+#[test]
+fn during_a_call_the_install_waits_for_a_manual_restart() {
+    use siple_core::update::InstallPhase as P;
+    let mut snap = two_calls();
+    snap.update = install_status(P::Idle);
+    let mut h = harness(snap, WIDE);
+    h.run();
+    h.get_by_label("Siple 0.2.0 is available").click_accesskit();
+    h.run();
+    h.get_by_label("Install, restart after the call")
+        .click_accesskit();
+    h.run();
+    assert_eq!(
+        install_calls(&mut h),
+        [(
+            "app.install_update".to_string(),
+            serde_json::json!({"version": "0.2.0", "restart": "manual"})
+        )]
+    );
+}
+
+#[test]
+fn progress_shows_a_percentage_and_cancel() {
+    use siple_core::update::InstallPhase as P;
+    let mut snap = base_snapshot();
+    snap.update = install_status(P::Downloading);
+    let i = snap.update.install.as_mut().unwrap();
+    (i.bytes, i.total) = (Some(450), Some(1000));
+    let mut ui = UiState::default();
+    ui.wizard.dismissed = true;
+    ui.update_initiated = Some("0.2.0".into());
+    let mut h = harness_ui(snap, WIDE, ui);
+    h.run();
+    h.get_by_label("Updating 45%").click_accesskit();
+    h.run();
+    assert!(h.query_by_label_contains("An agent started").is_none());
+    h.get_by_label("Cancel").click_accesskit();
+    h.run();
+    assert_eq!(
+        install_calls(&mut h),
+        [("app.cancel_update".to_string(), serde_json::json!({}))]
+    );
+}
+
+#[test]
+fn ready_restarts_now_but_not_during_a_call() {
+    use siple_core::update::InstallPhase as P;
+    let mut snap = base_snapshot();
+    snap.update = install_status(P::Ready);
+    let mut ui = UiState::default();
+    ui.wizard.dismissed = true;
+    ui.update_initiated = Some("0.2.0".into());
+    let mut h = harness_ui(snap, WIDE, ui);
+    h.run();
+    h.get_by_label("Restart to update").click_accesskit();
+    h.run();
+    // The pill and the menu item carry the same text; the item is the second one.
+    let item = h.get_all_by_label("Restart to update").last().unwrap();
+    item.click_accesskit();
+    h.run();
+    assert_eq!(
+        install_calls(&mut h),
+        [(
+            "app.install_update".to_string(),
+            serde_json::json!({"version": "0.2.0", "restart": "now"})
+        )]
+    );
+    // A call: the item is disabled and nothing is sent.
+    let mut snap = two_calls();
+    snap.update = install_status(P::Ready);
+    let mut ui = UiState::default();
+    ui.wizard.dismissed = true;
+    ui.update_initiated = Some("0.2.0".into());
+    let mut h = harness_ui(snap, WIDE, ui);
+    h.run();
+    h.get_by_label("Restart to update").click_accesskit();
+    h.run();
+    assert!(
+        h.query_by_label_contains("restarts when the call is over")
+            .is_some()
+    );
+    let item = h.get_all_by_label("Restart to update").last().unwrap();
+    item.click_accesskit();
+    h.run();
+    assert!(install_calls(&mut h).is_empty());
+}
+
+#[test]
+fn an_install_started_by_an_agent_is_labelled_and_can_be_cancelled() {
+    use siple_core::update::InstallPhase as P;
+    let mut snap = base_snapshot();
+    snap.update = install_status(P::Ready);
+    let mut h = harness(snap, WIDE);
+    h.run();
+    h.get_by_label("Restart pending (agent)").click_accesskit();
+    h.run();
+    assert!(
+        h.query_by_label_contains("An agent started this update")
+            .is_some()
+    );
+    h.get_by_label("Cancel").click_accesskit();
+    h.run();
+    assert_eq!(
+        install_calls(&mut h),
+        [("app.cancel_update".to_string(), serde_json::json!({}))]
+    );
+}
+
+#[test]
+fn a_failed_install_offers_a_retry_and_the_download() {
+    use siple_core::update::InstallPhase as P;
+    let mut snap = base_snapshot();
+    snap.update = install_status(P::Failed);
+    snap.update.install.as_mut().unwrap().error =
+        Some("the download does not match its checksum".into());
+    let mut h = harness(snap, WIDE);
+    h.run();
+    h.get_by_label("Update failed").click_accesskit();
+    h.run();
+    assert!(
+        h.query_by_label_contains("does not match its checksum")
+            .is_some()
+    );
+    h.get_by_label("Download from GitHub").click_accesskit();
+    h.run();
+    assert_eq!(take(&mut h), [UiAction::OpenUrl(RELEASE_URL.into())]);
+    h.get_by_label("Update failed").click_accesskit();
+    h.run();
+    h.get_by_label("Try again").click_accesskit();
+    h.run();
+    assert_eq!(install_calls(&mut h).len(), 1);
+}
+
+#[test]
+fn restarting_has_no_buttons_and_a_failed_relaunch_says_to_restart_by_hand() {
+    use siple_core::update::InstallPhase as P;
+    let mut snap = base_snapshot();
+    snap.update = install_status(P::Restarting);
+    let mut ui = UiState::default();
+    ui.wizard.dismissed = true;
+    ui.update_initiated = Some("0.2.0".into());
+    let mut h = harness_ui(snap, WIDE, ui);
+    h.run();
+    h.get_by_label("Restarting").click_accesskit();
+    h.run();
+    assert!(
+        h.query_by_label("Cancel").is_none() && h.query_by_label("Skip this version").is_none()
+    );
+    let mut snap = base_snapshot();
+    snap.update = install_status(P::Installed);
+    snap.update.install.as_mut().unwrap().error =
+        Some("the new version is installed; restart Siple to use it".into());
+    let mut h = harness(snap, WIDE);
+    h.run();
+    h.get_by_label("Restart to finish").click_accesskit();
+    h.run();
+    assert!(
+        h.query_by_label_contains("restart Siple to use it")
+            .is_some()
+    );
+}
+
+#[test]
+fn without_an_install_the_pill_gives_the_reason_and_the_release_page() {
+    let mut snap = base_snapshot();
+    snap.update = update_status("0.2.0", true);
+    snap.update.install = Some(siple_core::update::InstallStatus {
+        possible: false,
+        reason: Some("package_manager".into()),
+        detail: None,
+        state: siple_core::update::InstallPhase::Idle,
+        version: None,
+        bytes: None,
+        total: None,
+        restart: None,
+        error: None,
+        error_kind: None,
+    });
+    let mut h = harness(snap, WIDE);
+    h.run();
+    h.get_by_label("Siple 0.2.0 is available").click_accesskit();
+    h.run();
+    assert!(h.query_by_label("Install and restart").is_none());
+    assert!(h.query_by_label_contains("package manager").is_some());
+    h.get_by_label("Download").click_accesskit();
+    h.run();
+    assert_eq!(take(&mut h), [UiAction::OpenUrl(RELEASE_URL.into())]);
+}
+
+#[test]
+fn settings_have_the_install_switch_and_start_the_install() {
+    use siple_core::update::InstallPhase as P;
+    let mut snap = base_snapshot();
+    snap.update = install_status(P::Idle);
+    let mut h = harness(snap, WIDE);
+    h.state_mut().ui.settings.open = true;
+    h.state_mut().ui.settings.section = crate::ui::settings::Section::Advanced;
+    h.run();
+    assert!(
+        h.query_all_by_label_contains("Install updates in the app")
+            .next()
+            .is_some()
+    );
+    h.get_by_label("Install and restart").click_accesskit();
+    h.run();
+    assert_eq!(install_calls(&mut h).len(), 1);
 }
 
 #[test]

@@ -3,9 +3,10 @@
 //! "config not applied" banner shown at the top of the stage.
 
 use eframe::egui::{self, Align, Color32, CornerRadius, Layout, Margin, RichText, Stroke};
+use siple_core::update::UpdateAction;
 use siple_sip::AccountStatus;
 
-use super::{Cx, LayoutMode, UiAction, UiState, reg_pill_label, reg_tone, short_time};
+use super::{Cx, LayoutMode, UiAction, UiState, reg_pill_label, reg_tone, rpc, short_time};
 use crate::snapshot::{ConfigErrorView, RegClass, mwi_label, reg_class, reg_label, reg_tooltip};
 use crate::theme::{
     self, FS_BODY, FS_MICRO, FS_SMALL, FS_TITLE, Palette, R_LG, R_MD, SP_XS, icon as ic,
@@ -45,8 +46,7 @@ pub(super) fn show(ui: &mut egui::Ui, cx: &Cx, st: &mut UiState, out: &mut Vec<U
             ext_toggle(ui, cx, st);
             settings_button(ui, cx, st);
             voicemail(ui, cx);
-            #[cfg(not(feature = "store"))]
-            update_pill(ui, cx, out);
+            update_pill(ui, cx, st, out);
         });
     });
 }
@@ -151,21 +151,97 @@ fn ext_toggle(ui: &mut egui::Ui, cx: &Cx, st: &mut UiState) {
     }
 }
 
+/// How the pill and its menu look for the offer's stage.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Stage {
+    /// A newer version exists; nothing started.
+    Offer,
+    /// Downloading or verifying (`percent` while the size is known).
+    Progress(Option<u32>),
+    /// Verified, waiting for a restart to be asked for.
+    Ready,
+    /// Verified, restarting when the calls are over.
+    WaitingForCall,
+    /// The new files are in place and the restart is under way.
+    Restarting,
+    /// The new files are in place; Siple could not restart itself.
+    RestartByHand,
+    /// The install failed; nothing was changed.
+    Failed,
+}
+
+fn stage_of(offer: &crate::snapshot::UpdateOffer<'_>) -> Stage {
+    use siple_core::update::InstallPhase as P;
+    let Some(i) = offer.install else {
+        return Stage::Offer;
+    };
+    match i.state {
+        P::Idle => Stage::Offer,
+        P::Downloading => Stage::Progress(
+            i.total
+                .filter(|t| *t > 0)
+                .map(|t| (i.bytes.unwrap_or(0).min(t) * 100 / t) as u32),
+        ),
+        P::Verifying => Stage::Progress(None),
+        P::Ready => Stage::Ready,
+        P::Waiting => Stage::WaitingForCall,
+        P::Committing | P::Restarting => Stage::Restarting,
+        P::Installed if i.error.is_some() => Stage::RestartByHand,
+        P::Installed => Stage::Restarting,
+        P::Failed => Stage::Failed,
+    }
+}
+
 /// "Update 0.2.0": a quiet pill, only while a newer release (not skipped) exists. Click opens a
-/// small menu: Download, Release notes, Skip this version.
-#[cfg(not(feature = "store"))]
-fn update_pill(ui: &mut egui::Ui, cx: &Cx, out: &mut Vec<UiAction>) {
-    let Some((version, url)) = cx.vm.snap.update_offer() else {
+/// small menu.
+///
+/// - Direct builds that can install: "Install and restart" ("Install, restart after the call" while
+///   a call is active), Release notes, Skip this version. While it runs the pill reads
+///   "Updating 45%" (Cancel), then "Restart to update" (disabled during a call), "Update failed"
+///   (Try again, Download from GitHub).
+/// - Direct builds that cannot (package manager, no write access, ...): Download, Release notes,
+///   Skip this version, with a line saying why.
+/// - Mac App Store: Open App Store, Skip this version. Microsoft Store (no version known): Open
+///   Microsoft Store, Not now (this session only; absent for a mandatory update).
+///
+/// An install that this window did not ask for (an agent called `app.install_update`) is labelled
+/// as such and can be cancelled from here.
+fn update_pill(ui: &mut egui::Ui, cx: &Cx, st: &mut UiState, out: &mut Vec<UiAction>) {
+    let Some(offer) = cx.vm.snap.update_offer() else {
         return;
     };
+    if offer.version.is_none() && st.update_not_now && !offer.mandatory {
+        return;
+    }
     let p = cx.p;
-    let text = if cx.mode == LayoutMode::Narrow {
-        "Update".to_string()
-    } else {
-        format!("Update {version}")
+    let stage = stage_of(&offer);
+    let by_agent = stage != Stage::Offer
+        && stage != Stage::Failed
+        && st.update_initiated.as_deref() != offer.version;
+    let in_call = cx.vm.snap.call_active();
+    let text = match (stage, offer.version) {
+        (Stage::Progress(pct), _) => {
+            let base = match pct {
+                Some(p) => format!("Updating {p}%"),
+                None => "Updating".to_string(),
+            };
+            if by_agent {
+                format!("{base} (agent)")
+            } else {
+                base
+            }
+        }
+        (Stage::Ready, _) if by_agent => "Restart pending (agent)".to_string(),
+        (Stage::Ready, _) => "Restart to update".to_string(),
+        (Stage::WaitingForCall, _) => "Restart after the call".to_string(),
+        (Stage::Restarting, _) => "Restarting".to_string(),
+        (Stage::RestartByHand, _) => "Restart to finish".to_string(),
+        (Stage::Failed, _) => "Update failed".to_string(),
+        (Stage::Offer, Some(v)) if cx.mode != LayoutMode::Narrow => format!("Update {v}"),
+        (Stage::Offer, _) => "Update".to_string(),
     };
     let galley = ui.painter().layout_no_wrap(
-        text,
+        text.clone(),
         egui::FontId::new(FS_SMALL, theme::semibold()),
         p.accent,
     );
@@ -194,7 +270,11 @@ fn update_pill(ui: &mut egui::Ui, cx: &Cx, out: &mut Vec<UiAction>) {
         p.accent,
     );
     paint_focus_ring(ui, p, &resp, rect);
-    let label = format!("Siple {version} is available");
+    let label = match (stage, offer.version) {
+        (Stage::Offer, Some(v)) => format!("Siple {v} is available"),
+        (Stage::Offer, None) => "A Siple update is available".to_string(),
+        _ => text,
+    };
     resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, label.clone()));
     let resp = resp
         .on_hover_cursor(egui::CursorIcon::PointingHand)
@@ -204,24 +284,155 @@ fn update_pill(ui: &mut egui::Ui, cx: &Cx, out: &mut Vec<UiAction>) {
         .show(|ui| {
             ui.set_min_width(240.0);
             ui.spacing_mut().item_spacing.y = SP_XS + 2.0;
-            ui.label(strong(format!("New version {version}"), FS_BODY).color(p.text));
+            let title = match offer.version {
+                Some(v) => format!("New version {v}"),
+                None => "An update is available".to_string(),
+            };
+            ui.label(strong(title, FS_BODY).color(p.text));
             ui.label(
                 RichText::new(format!("You are running {}.", cx.vm.snap.update.current))
                     .size(FS_SMALL)
                     .color(p.muted),
             );
+            if by_agent {
+                ui.label(
+                    RichText::new("An agent started this update.")
+                        .size(FS_SMALL)
+                        .color(p.warn.ink),
+                );
+            }
+            if let Some(e) = &st.update_error {
+                ui.label(RichText::new(e.as_str()).size(FS_SMALL).color(p.err.ink));
+            }
             hairline(ui, p);
-            if ui.button("Download").clicked() {
-                out.push(UiAction::OpenUrl(url.to_string()));
-                ui.close();
+            let version = offer.version.unwrap_or_default().to_string();
+            let url = offer.release_url.unwrap_or_default().to_string();
+            match (offer.action, stage) {
+                (UpdateAction::OpenStore, _) => {
+                    if ui.button(offer.store_button()).clicked() {
+                        out.push(UiAction::OpenStorePage);
+                        ui.close();
+                    }
+                }
+                (UpdateAction::Install, Stage::Offer | Stage::Failed) => {
+                    if stage == Stage::Failed {
+                        let why = offer
+                            .install
+                            .and_then(|i| i.error.as_deref())
+                            .unwrap_or("The update could not be installed.");
+                        ui.label(RichText::new(why).size(FS_SMALL).color(p.err.ink));
+                    }
+                    let (item, restart) = if in_call {
+                        ("Install, restart after the call", "manual")
+                    } else {
+                        ("Install and restart", "when_idle")
+                    };
+                    let item = if stage == Stage::Failed {
+                        "Try again"
+                    } else {
+                        item
+                    };
+                    if ui.button(item).clicked() {
+                        st.update_initiated = Some(version.clone());
+                        st.update_error = None;
+                        out.push(rpc::install_update(&version, restart));
+                        ui.close();
+                    }
+                    if stage == Stage::Failed && ui.button("Download from GitHub").clicked() {
+                        out.push(UiAction::OpenUrl(url.clone()));
+                        ui.close();
+                    }
+                    if stage == Stage::Offer && ui.button("Release notes").clicked() {
+                        out.push(UiAction::OpenUrl(url.clone()));
+                        ui.close();
+                    }
+                }
+                (UpdateAction::Install, Stage::Progress(_)) => {
+                    ui.label(
+                        RichText::new("Downloading and checking the new version.")
+                            .size(FS_SMALL)
+                            .color(p.muted),
+                    );
+                    if ui.button("Cancel").clicked() {
+                        out.push(rpc::cancel_update());
+                        ui.close();
+                    }
+                }
+                (UpdateAction::Install, Stage::Ready | Stage::WaitingForCall) => {
+                    let restart_now =
+                        ui.add_enabled(!in_call, egui::Button::new("Restart to update"));
+                    if in_call {
+                        ui.label(
+                            RichText::new("Siple restarts when the call is over.")
+                                .size(FS_SMALL)
+                                .color(p.muted),
+                        );
+                    }
+                    if restart_now.clicked() {
+                        st.update_initiated = Some(version.clone());
+                        st.update_error = None;
+                        out.push(rpc::install_update(&version, "now"));
+                        ui.close();
+                    }
+                    if stage == Stage::Ready && !in_call && ui.button("Restart when idle").clicked()
+                    {
+                        out.push(rpc::install_update(&version, "when_idle"));
+                        ui.close();
+                    }
+                    if ui.button("Cancel").clicked() {
+                        out.push(rpc::cancel_update());
+                        ui.close();
+                    }
+                }
+                (UpdateAction::Install, Stage::Restarting) => {
+                    ui.label(
+                        RichText::new("Siple is restarting into the new version.")
+                            .size(FS_SMALL)
+                            .color(p.muted),
+                    );
+                }
+                (UpdateAction::Install, Stage::RestartByHand) => {
+                    let why = offer
+                        .install
+                        .and_then(|i| i.error.as_deref())
+                        .unwrap_or("Restart Siple to use the new version.");
+                    ui.label(RichText::new(why).size(FS_SMALL).color(p.muted));
+                }
+                _ => {
+                    // `update_offer` only returns `OpenReleasePage` with a page to open.
+                    for item in ["Download", "Release notes"] {
+                        if ui.button(item).clicked() {
+                            out.push(UiAction::OpenUrl(url.clone()));
+                            ui.close();
+                        }
+                    }
+                    if let Some(i) = offer.install
+                        && let Some(r) = i.reason.as_deref()
+                    {
+                        ui.label(
+                            RichText::new(crate::snapshot::install_reason_text(r))
+                                .size(FS_SMALL)
+                                .color(p.muted),
+                        );
+                    }
+                }
             }
-            if ui.button("Release notes").clicked() {
-                out.push(UiAction::OpenUrl(url.to_string()));
-                ui.close();
-            }
-            if ui.button("Skip this version").clicked() {
-                out.push(UiAction::SkipUpdate(version.to_string()));
-                ui.close();
+            if matches!(stage, Stage::Offer | Stage::Failed) {
+                match offer.version {
+                    Some(v) => {
+                        if ui.button("Skip this version").clicked() {
+                            out.push(UiAction::SkipUpdate(v.to_string()));
+                            ui.close();
+                        }
+                    }
+                    None if !offer.mandatory => {
+                        if ui.button("Not now").clicked() {
+                            st.update_not_now = true;
+                            ui.close();
+                        }
+                    }
+                    None => {}
+                }
             }
         });
 }

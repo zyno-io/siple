@@ -42,6 +42,8 @@ pub struct SipStack {
     general: Arc<Mutex<GeneralConfig>>,
     /// Milliseconds past `expires_at` before a silent BLF subscription is stale.
     blf_stale_grace_ms: Arc<AtomicU64>,
+    /// Dials that have not reached the call table yet (DNS, connect, audio setup).
+    dialing: Arc<AtomicU64>,
 }
 
 impl SipStack {
@@ -96,6 +98,7 @@ impl SipStack {
             general: Arc::default(),
             order: Arc::new(Mutex::new(Vec::new())),
             blf_stale_grace_ms: Arc::new(AtomicU64::new(STALE_GRACE_SECS * 1000)),
+            dialing: Arc::new(AtomicU64::new(0)),
         };
         stack.spawn_net_forwarder();
         stack
@@ -198,7 +201,15 @@ impl SipStack {
     /// `sip:` / `sips:` URI. Returns once the INVITE is on its way; progress comes as events.
     pub async fn dial(&self, account: &str, target: &str, opts: DialOptions) -> Result<CallId> {
         let cell = self.call_cell(account)?;
-        self.shared.calls.dial(&cell, target, opts).await
+        self.dialing.fetch_add(1, Ordering::SeqCst);
+        let r = self.shared.calls.dial(&cell, target, opts).await;
+        self.dialing.fetch_sub(1, Ordering::SeqCst);
+        r
+    }
+
+    /// Number of dials still being set up (not yet in [`SipStack::calls`]).
+    pub fn dials_in_progress(&self) -> u64 {
+        self.dialing.load(Ordering::SeqCst)
     }
 
     /// Answers a ringing inbound call; `opts.mode` says what happens to the other lines.

@@ -182,6 +182,20 @@ impl UiHost for GuiHost {
                 self.tx.send(ShellMsg::Ui(UiRequest::Attention));
                 Ok(json!({"ok": true}))
             }
+            #[cfg(not(feature = "store"))]
+            UiRequest::RelaunchForUpdate(spec) => {
+                // The updater already waited for the calls to be over; this is the last guard.
+                if self.shared.snapshot().call_active() {
+                    return Err(ApiError::new(
+                        ErrorKind::InvalidState,
+                        "a call is active; Siple does not restart during a call",
+                    )
+                    .with_extra(json!({"reason": "call_active"})));
+                }
+                self.tx
+                    .send(ShellMsg::Ui(UiRequest::RelaunchForUpdate(spec)));
+                Ok(json!({"ok": true}))
+            }
             UiRequest::OpenLink(l) => {
                 if !lock(&self.limiter).allow(Instant::now()) {
                     return Err(ApiError::new(
@@ -692,6 +706,11 @@ impl Shell {
             ShellMsg::Ui(UiRequest::OpenLink(l)) => {
                 self.show_window(ctx);
                 links.push(l);
+            }
+            #[cfg(not(feature = "store"))]
+            ShellMsg::Ui(UiRequest::RelaunchForUpdate(spec)) => {
+                crate::relaunch::request(spec);
+                self.quit(ctx);
             }
             ShellMsg::Ui(UiRequest::State | UiRequest::SetPanels { .. }) => {}
             ShellMsg::Url(raw) if !lock(&self.limiter).allow(Instant::now()) => {

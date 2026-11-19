@@ -24,6 +24,16 @@ pub const UI_METHODS: &[&str] = &[
     "app.open_uri",
 ];
 
+/// What the GUI starts when it quits for an installed update.
+#[cfg(not(feature = "store"))]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RelaunchSpec {
+    /// macOS: open this `.app` bundle.
+    MacBundle(std::path::PathBuf),
+    /// Windows and Linux: run this executable.
+    Exe(std::path::PathBuf),
+}
+
 /// A request to the GUI.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum UiRequest {
@@ -44,6 +54,10 @@ pub enum UiRequest {
     Attention,
     /// Prefill the dial field with a validated link and raise the window. Never dials.
     OpenLink(LinkTarget),
+    /// Quit (as the tray's Quit does) and start the new version of the installed update. Only the
+    /// updater sends it, after the files were swapped and no call is active.
+    #[cfg(not(feature = "store"))]
+    RelaunchForUpdate(RelaunchSpec),
 }
 
 /// Parameters of `ui.set_panels`.

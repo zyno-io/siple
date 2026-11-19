@@ -23,6 +23,14 @@ method, prints the JSON result and exits. No MCP server or other long-running he
 3. **Check accounts.** `siple-cli ctl status` returns `accounts` (with `registration.state`),
    `calls`, `transfers`, `audio`, `instance_id` and `event_seq`.
 
+## Updating Siple
+
+`siple-cli ctl app.update_status` says whether a newer release exists and whether it can be installed in place
+(`install.possible`); `app.install_update {"version": "<latest>"}` downloads, verifies and installs it and restarts Siple
+(`restart`: `when_idle` default, `now`, or `manual`), never during a call. It restarts the app the user is using and the GUI shows
+that an agent started it, so only call it when the user asked for the update; `app.cancel_update` stops it before the files are
+replaced.
+
 ## Calling a method
 
 ```sh

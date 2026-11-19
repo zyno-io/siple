@@ -6,7 +6,7 @@ use siple_config::channel::Channel;
 /// `{channel, sandboxed, store, version}` for `channel`.
 ///
 /// `channel` is `direct`, `mas` or `msix`; `store` says whether the binary was compiled with the
-/// `store` feature (no update check); `version` is the Cargo package version.
+/// `store` feature (store edition: no GitHub update source, no installer); `version` is the Cargo package version.
 pub fn build_info(channel: &Channel) -> Value {
     json!({
         "channel": channel.kind.as_str(),

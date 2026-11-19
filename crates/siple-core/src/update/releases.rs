@@ -3,15 +3,8 @@
 use serde_json::Value;
 use siple_config::UpdateChannel;
 
+use super::links::release_url;
 use super::version::Version;
-
-/// Where releases live; used to build the page of a release.
-pub const RELEASES_URL_PREFIX: &str = "https://github.com/zyno-io/siple/";
-
-/// The release page of version `name` (`0.2.0`, `0.2.0-rc.1`).
-pub fn release_url(name: &str) -> String {
-    format!("{RELEASES_URL_PREFIX}releases/tag/v{name}")
-}
 
 /// One published release.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -26,6 +19,25 @@ pub struct Release {
     pub published_at: Option<String>,
     /// Marked as a pre-release on GitHub, or a pre-release version.
     pub prerelease: bool,
+    /// The uploaded assets, by name and size. Only the names and sizes are used: a download URL
+    /// is always built from the validated version and the asset name, never taken from here.
+    pub assets: Vec<Asset>,
+}
+
+/// One uploaded release asset as the API lists it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Asset {
+    /// File name (no path; see [`super::sums::valid_asset_name`]).
+    pub name: String,
+    /// Size in bytes, as the API reports it.
+    pub size: u64,
+}
+
+impl Release {
+    /// The asset called `name`, if the release has it.
+    pub fn asset(&self, name: &str) -> Option<&Asset> {
+        self.assets.iter().find(|a| a.name == name)
+    }
 }
 
 /// Parses the body of `GET /repos/{owner}/{repo}/releases`. Drafts, entries whose tag is not a
@@ -64,7 +76,31 @@ fn parse_one(v: &Value) -> Option<Release> {
         url,
         published_at,
         prerelease,
+        assets: parse_assets(v),
     })
+}
+
+/// The `assets[]` that are fully uploaded and have a plain file name.
+fn parse_assets(v: &Value) -> Vec<Asset> {
+    let Some(items) = v.get("assets").and_then(Value::as_array) else {
+        return Vec::new();
+    };
+    items
+        .iter()
+        .filter_map(|a| {
+            if a.get("state").and_then(Value::as_str) != Some("uploaded") {
+                return None;
+            }
+            let name = a.get("name")?.as_str()?;
+            if !super::sums::valid_asset_name(name) {
+                return None;
+            }
+            Some(Asset {
+                name: name.to_string(),
+                size: a.get("size")?.as_u64()?,
+            })
+        })
+        .collect()
 }
 
 /// The highest release the channel allows (stable: no pre-releases), whether or not it is newer
@@ -135,6 +171,31 @@ mod tests {
             "https://github.com/zyno-io/siple/releases/tag/v1.1.0-rc.1"
         );
         assert_eq!(r[0].published_at, None);
+    }
+
+    #[test]
+    fn assets_are_taken_by_name_and_size_only() {
+        let body = br#"[{"tag_name":"v1.0.0","assets":[
+          {"name":"SHA256SUMS","size":555,"state":"uploaded","browser_download_url":"https://evil.example/x"},
+          {"name":"Siple-1.0.0-macos.zip","size":9,"state":"starter"},
+          {"name":"../evil","size":1,"state":"uploaded"},
+          {"name":"a/b","size":1,"state":"uploaded"},
+          {"name":"nosize","state":"uploaded"},
+          {"name":"Siple-1.0.0-windows-x64.zip","size":42,"state":"uploaded"},
+          7
+        ]},{"tag_name":"v1.1.0"},{"tag_name":"v1.2.0","assets":"x"}]"#;
+        let r = parse_releases(body).unwrap();
+        let a: Vec<_> = r[0]
+            .assets
+            .iter()
+            .map(|a| (a.name.as_str(), a.size))
+            .collect();
+        assert_eq!(
+            a,
+            [("SHA256SUMS", 555), ("Siple-1.0.0-windows-x64.zip", 42)]
+        );
+        assert_eq!(r[0].asset("SHA256SUMS").unwrap().size, 555);
+        assert!(r[1].assets.is_empty() && r[2].assets.is_empty());
     }
 
     #[test]

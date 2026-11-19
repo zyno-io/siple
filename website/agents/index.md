@@ -43,7 +43,7 @@ audio content block, never as base64 text.
   profile emulation (Yealink, Polycom, Cisco, Grandstream).
 - **Same config file.** `config.edit` changes `config.toml` and keeps its comments; invalid edits never replace the last good
   config.
-- **Local and private.** The control endpoint is restricted to the current user. There is no telemetry; the only request Siple makes on its own is the optional, anonymous [update check](/guide/updates).
+- **Local and private.** The control endpoint is restricted to the current user. There is no telemetry; the only network activity Siple starts on its own is the optional, anonymous [update check](/guide/updates).
 
 ## Where next
 

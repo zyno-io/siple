@@ -25,8 +25,8 @@ Status: pre-1.0 (see [CHANGELOG.md](CHANGELOG.md)). Repository: `https://github.
   Transfer sessions live in the engine, so the GUI, the API and agents share one state machine.
 - **AI-agent control API and MCP.** Newline-delimited JSON-RPC 2.0 over a Unix socket / named pipe (optional loopback TCP
   with token), plus `siple-cli mcp`, an MCP server for Claude Code and other MCP clients. The method list, MCP tools and
-  [docs/API.md](docs/API.md) are generated from one catalog, so they cannot drift. No telemetry: the only request Siple makes on its own is an optional, anonymous version check against GitHub
-  (`[updates] check`, off with `check = false`; see [docs/CONFIG.md](docs/CONFIG.md#updates)).
+  [docs/API.md](docs/API.md) are generated from one catalog, so they cannot drift. No telemetry: the only network activity Siple starts on its own is an optional, anonymous version check (GitHub for direct
+  builds, Apple's lookup on the Mac App Store, Windows' Store service on the Microsoft Store; `[updates] check`, off with `check = false`; see [docs/CONFIG.md](docs/CONFIG.md#updates)). Direct downloads can install an update in place when you choose to: they then download it from GitHub and verify it first.
 - **Network-change resilience.** Accounts re-probe and re-register when the OS reports an address or route change, after
   sleep/wake, or when a periodic route probe sees a different path; they wait in a `WaitingForNetwork` state when offline.
 - **Live config.** Edit the TOML while Siple runs; accounts re-register or rebuild as needed and an invalid edit never

@@ -12,6 +12,7 @@ use chrono::{DateTime, Utc};
 use siple_core::App;
 use siple_core::audio::{AudioStatus, DeviceInfo, DeviceList, MicPermission, mic_permission};
 use siple_core::state::EffectiveDevices;
+use siple_core::update::{InstallStatus, SourceName, UpdateAction};
 use siple_sip::{AccountStatus, CallInfo, CallState, RegState};
 use tokio::sync::Notify;
 
@@ -59,16 +60,99 @@ pub struct Snapshot {
     pub update_skipped: Option<String>,
 }
 
+/// An update the header offers.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UpdateOffer<'a> {
+    /// The new version; `None` for the Microsoft Store, which does not tell one.
+    pub version: Option<&'a str>,
+    /// What the click does: install in place, open the release page or open the store page.
+    pub action: UpdateAction,
+    /// The in-place install (direct builds): whether it is possible and how far it is. Present
+    /// for `Install`, and for the release-page fallback it says why there is no install.
+    pub install: Option<&'a InstallStatus>,
+    /// Where the check looks: decides the wording of the store button.
+    pub source: SourceName,
+    /// The release page (`OpenReleasePage`). Store pages are never taken from here: the GUI opens
+    /// the fixed link of the platform.
+    pub release_url: Option<&'a str>,
+    /// The Microsoft Store marked the update mandatory (there is no "Not now").
+    pub mandatory: bool,
+}
+
+/// The sentence for an `install.reason` code (why this copy does not install in place).
+pub fn install_reason_text(reason: &str) -> &'static str {
+    match reason {
+        "disabled" => "Installing updates is turned off in Settings",
+        "headless" => "This instance has no window to restart into",
+        "release_not_signed" => "This release has no signed checksum list",
+        "no_asset" => "This release has no download for this system",
+        "unsupported_platform" => "In-app updates are not available on this system",
+        "unsigned_build" => "This is not an official release build",
+        "not_bundle" => "Siple is not running from its app bundle or install folder",
+        "not_writable" => "Siple cannot write to its install location without administrator rights",
+        "not_owner" => "Siple's files belong to another user",
+        "root" => "Siple does not update itself when run as administrator",
+        "package_manager" => "Siple was installed with a package manager; update it there",
+        "container" => "Siple runs in a container; update the image instead",
+        "sandboxed" => "Siple runs in a sandbox that manages its updates",
+        "system_install" => "Siple is installed system-wide; update it with the system's tools",
+        "translocated" => {
+            "macOS is running Siple from a quarantined location; move it to Applications"
+        }
+        "read_only_volume" => {
+            "Siple runs from a disk image or read-only volume; copy it to Applications"
+        }
+        "in_use" => "Siple's files are in use and cannot be replaced",
+        _ => "Siple cannot install this update here",
+    }
+}
+
+impl UpdateOffer<'_> {
+    /// Text of the button that opens the store page.
+    pub fn store_button(&self) -> &'static str {
+        match self.source {
+            SourceName::MicrosoftStore => "Open Microsoft Store",
+            _ => "Open App Store",
+        }
+    }
+}
+
 impl Snapshot {
-    /// The release the header offers: `(version, release page)`. `None` when up to date, when the
-    /// check is off or absent (store builds), and when the user skipped exactly that version (a
-    /// newer one is offered again).
-    #[cfg(not(feature = "store"))]
-    pub fn update_offer(&self) -> Option<(&str, &str)> {
+    /// A call (or one that is still ringing, dialing or on hold) exists: the update never
+    /// restarts Siple then.
+    pub fn call_active(&self) -> bool {
+        self.calls.iter().any(|c| c.state != CallState::Ended)
+    }
+
+    /// The update the header offers. `None` when up to date, when the check is off or has no
+    /// source, and when the user skipped exactly that version (a newer one is offered again).
+    pub fn update_offer(&self) -> Option<UpdateOffer<'_>> {
         let u = &self.update;
-        let (version, url) = (u.latest.as_deref()?, u.release_url.as_deref()?);
-        (u.enabled && u.available && self.update_skipped.as_deref() != Some(version))
-            .then_some((version, url))
+        if !(u.enabled && u.available) {
+            return None;
+        }
+        let version = u.latest.as_deref();
+        if version.is_some() && self.update_skipped.as_deref() == version {
+            return None;
+        }
+        let action = match u.action {
+            UpdateAction::OpenStore => UpdateAction::OpenStore,
+            UpdateAction::OpenReleasePage if u.release_url.is_some() => {
+                UpdateAction::OpenReleasePage
+            }
+            UpdateAction::Install if version.is_some() && u.install.is_some() => {
+                UpdateAction::Install
+            }
+            _ => return None,
+        };
+        Some(UpdateOffer {
+            version,
+            action,
+            install: u.install.as_ref(),
+            source: u.source,
+            release_url: u.release_url.as_deref(),
+            mandatory: u.mandatory == Some(true),
+        })
     }
 }
 

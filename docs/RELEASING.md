@@ -93,21 +93,54 @@ A tag for another version is ignored. Packaging scripts need no change.
 
 ## Update check, and store builds
 
-Direct-download builds look for a newer GitHub release (`[updates]` in `docs/CONFIG.md`; detection only). Releases that should be
-offered must be **published** (drafts are skipped), tagged `v<semver>`; release candidates `v<semver>-rc.N` are marked as GitHub
-pre-releases and are only offered to users on the `prerelease` channel (the default for someone already running a release candidate).
+Where the update check looks is decided at run time from how the process was installed (`[updates]` in `docs/CONFIG.md`; detection
+only): direct-download builds read the GitHub releases list, the Mac App Store edition asks Apple's lookup of its listing, the
+Microsoft Store edition asks Windows' Store service. Releases that should be offered on GitHub must be **published** (drafts are
+skipped), tagged `v<semver>`; release candidates `v<semver>-rc.N` are marked as GitHub pre-releases and are only offered to users on the
+`prerelease` channel (the default for someone already running a release candidate).
 
-Builds for the Mac App Store and the Microsoft Store update through their store, so they must not contain the check or its UI.
-Build them with the cargo feature `store` (off by default):
+Builds for the Mac App Store and the Microsoft Store update through their store: they never read the GitHub releases list and never
+download or install anything themselves. Build them with the cargo feature `store` (off by default):
 
 ```sh
 cargo build --release --locked -p siple -p siple-cli --features store
 ```
 
-The feature is declared on `siple-core`, `siple` and `siple-cli` (the last two forward it). With it, the checker, its HTTP code,
-the header pill and the Settings section are not compiled; `[updates]` is still accepted in `config.toml` (so a config can move
-between builds) but ignored, with a debug log line; `app.update_status` reports `enabled: false` and `app.check_updates` does
-nothing. CI runs clippy with the feature. The store packaging builds with it: see "Store packages" below.
+The feature is declared on `siple-core`, `siple` and `siple-cli` (the last two forward it). It removes code, it does not select
+behaviour: with it the GitHub source (its API request and releases parser) is not compiled, and neither is any downloader or
+installer. The store update checks stay in every build, so they can be tested everywhere; only the call into Windows' Store service
+(the `windows` crate, enabled by the feature) is Windows-and-`store` only. A store build run outside a store package has no update
+source (`app.update_status`: `source: none`, `disabled_reason: store_build_outside_store`), and a direct build inside a package has
+none either (`direct_build_in_package`). `scripts/verify-macos-mas.sh` checks the Mac App Store binary: no GitHub API path, no
+release download URL, no `SHA256SUMS.minisig`, and the App Store lookup present. CI runs clippy and the `siple-core` tests with the
+feature. The store packaging builds with it: see "Store packages" below.
+
+### Release signature
+
+The `release` job signs `SHA256SUMS` with minisign (`SHA256SUMS.minisig`, uploaded with the other assets and attested). The secret
+key is the `MINISIGN_SECRET_KEY` secret of the `release` environment (the complete secret key file, no password); the public key
+is `packaging/minisign.pub` (key id `2117F5F7CDB0EE58`). The trusted comment is `siple <tag> SHA256SUMS` (for example
+`siple v0.1.2 SHA256SUMS`), and the job verifies the signature with the committed public key before the draft release is created.
+Keep an offline backup of the key. The app embeds the public key in `RELEASE_KEYS` (`crates/siple-core/src/update/sums.rs`, a list so
+that a key can be rotated: ship the next key in a release, then sign with it in a later one).
+
+### Release asset contract (an API of the in-app updater)
+
+Direct builds install updates in place from these assets (see "In-place install" in `docs/CONFIG.md`). Changing a name, a layout or the
+signature is a change of the updater's interface: old versions in the field stop installing until they are updated by hand. Keep:
+
+| Asset | Contract |
+|---|---|
+| `SHA256SUMS` | Lines `<64 lowercase hex>␠␠<file name>`, plain file names, each ending in a newline. One line per asset. |
+| `SHA256SUMS.minisig` | minisign signature (prehashed) of `SHA256SUMS` by the release key, trusted comment exactly `siple <tag> SHA256SUMS`. A release without it is not installed in place. |
+| `Siple-<version>-macos.zip` | `<version>` is the full version (`0.2.0`, `0.2.0-rc.1`). Exactly one top-level entry, `Siple.app`, made by `ditto -c -k --keepParent`; app identifier `io.zyno.siple`, `Contents/MacOS/siple-cli` identifier `io.zyno.siple-cli`, Developer ID team `VUDU4KEQ99`, notarized; `CFBundleShortVersionString` is the numeric core (`0.2.0` for `0.2.0-rc.1`). |
+| `Siple-<core>-windows-x64.zip`, `Siple-<core>-windows-arm64.zip` | `<core>` is the numeric core (a release candidate keeps `0.2.0`). Flat zip: `siple.exe`, `siple-cli.exe`, `config.example.toml`, `LICENSE`, `README.md`, `THIRD-PARTY-NOTICES.html`, `docs/API.md`, `docs/CONFIG.md`. Both exes Authenticode-signed by Signal24 LLC (Artifact Signing, RFC 3161 timestamp), PE machine of the architecture, `FileVersion` the numeric core. |
+| `Siple-<core>-linux-x86_64.tar.gz` | One top directory `siple-<core>/` with `bin/siple`, `bin/siple-cli`, `share/...`, `LICENSE`, `THIRD-PARTY-NOTICES.html`; regular files and directories only. `bin/siple --version` and `bin/siple-cli --version` print the full version. |
+
+The updater accepts the full-version or the numeric-core spelling of a file name (the release candidates mix them) and requires
+exactly one match per platform. The Windows signer pins (publisher name, the Artifact Signing identity EKU, the Microsoft Identity
+Verification root) are in `crates/siple-core/src/update/install/windows.rs`; the macOS requirement is in `install/macos.rs`. When the
+signing identity changes, ship an app that accepts both before releasing with the new one.
 
 ## Store packages (Mac App Store, Microsoft Store)
 
@@ -234,10 +267,11 @@ Get-AuthenticodeSignature .\siple.exe, .\siple-cli.exe | Format-List Status, Sig
 # Status must be Valid
 ```
 
-Any platform (checksums and build provenance; the attestation proves the file was built by this repository's release
-workflow from the tagged commit):
+Any platform (checksums, the minisign signature and build provenance; the attestation proves the file was built by this
+repository's release workflow from the tagged commit). The public key is in `packaging/minisign.pub` and `SECURITY.md`:
 
 ```sh
+minisign -Vm SHA256SUMS -P RWRY7rDN9/UXId/KmnBcB1BTI/HNfTk0mM1OD+bxK4JUKDG5RLZGYIIH   # needs SHA256SUMS.minisig next to it
 sha256sum -c SHA256SUMS --ignore-missing          # shasum -a 256 -c on macOS
 gh attestation verify Siple-<version>-linux-x86_64.tar.gz --repo zyno-io/siple
 gh attestation verify SHA256SUMS --repo zyno-io/siple
