@@ -139,7 +139,7 @@ pub struct UiState {
     pub dismissed_calls: HashSet<String>,
     /// Ringing calls whose banner was silenced.
     pub silenced: HashSet<String>,
-    /// The dial bar is open although lines exist ("+ New call").
+    /// The dial bar is open although lines exist ("New call").
     pub new_call_open: bool,
     /// Wide / medium: this session's extensions panel choice. `None` = the saved choice, else
     /// the default: open on wide windows and on medium ones wide enough to leave the stage
@@ -612,25 +612,22 @@ pub fn draw(ui: &mut egui::Ui, vm: &ViewModel, st: &mut UiState) -> Vec<UiAction
         .frame(
             egui::Frame::new()
                 .fill(p.surface)
-                .inner_margin(Margin::symmetric(16, 10))
-                .stroke(Stroke::new(1.0, p.border)),
+                .inner_margin(Margin::symmetric(16, 10)),
         )
-        .show_separator_line(false)
+        .show_separator_line(true)
         .show(ui, |ui| header::show(ui, &cx, st, &mut out));
     egui::Panel::bottom("footer")
         .frame(
             egui::Frame::new()
                 .fill(p.surface)
-                .inner_margin(Margin::symmetric(12, 6))
-                .stroke(Stroke::new(1.0, p.border)),
+                .inner_margin(Margin::symmetric(12, 6)),
         )
-        .show_separator_line(false)
+        .show_separator_line(true)
         .show(ui, |ui| footer::show(ui, &cx, st, &mut out));
 
     let side_frame = |fill| {
         egui::Frame::new()
             .fill(fill)
-            .stroke(Stroke::new(1.0, p.border))
             .inner_margin(Margin::same(SP_S as i8 + 2))
     };
     match cx.mode {
@@ -650,7 +647,7 @@ pub fn draw(ui: &mut egui::Ui, vm: &ViewModel, st: &mut UiState) -> Vec<UiAction
             egui::Panel::left("rail")
                 .exact_size(rail_w)
                 .resizable(false)
-                .show_separator_line(false)
+                .show_separator_line(true)
                 .frame(rail_frame)
                 .show(ui, |ui| rail::show(ui, &cx, st, &mut out));
             if cx.ext_open(st) {
@@ -662,7 +659,7 @@ pub fn draw(ui: &mut egui::Ui, vm: &ViewModel, st: &mut UiState) -> Vec<UiAction
                         MEDIUM_DRAWER_W
                     })
                     .size_range(280.0..=420.0)
-                    .show_separator_line(false)
+                    .show_separator_line(true)
                     .frame(side_frame(p.bg))
                     .show(ui, |ui| {
                         egui::ScrollArea::vertical()
@@ -677,10 +674,9 @@ pub fn draw(ui: &mut egui::Ui, vm: &ViewModel, st: &mut UiState) -> Vec<UiAction
                 .frame(
                     egui::Frame::new()
                         .fill(p.surface)
-                        .inner_margin(Margin::symmetric(10, 6))
-                        .stroke(Stroke::new(1.0, p.border)),
+                        .inner_margin(Margin::symmetric(10, 6)),
                 )
-                .show_separator_line(false)
+                .show_separator_line(true)
                 .show(ui, |ui| rail::tabs(ui, &cx, st, &mut out));
             central(ui, &cx, st, &mut out, cx.ext_open(st));
         }

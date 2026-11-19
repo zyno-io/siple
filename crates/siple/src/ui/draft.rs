@@ -2,11 +2,12 @@
 
 use std::collections::BTreeMap;
 
-use eframe::egui::{self, RichText};
+use eframe::egui;
 use siple_core::config::edit::{AccountDraft, AccountField, EditValue};
 
 use super::form::{choice_row, hint_line, text_row, toggle_row};
-use crate::theme::{FS_SMALL, Palette};
+use crate::theme::Palette;
+use crate::widgets::disclosure;
 
 /// Transport choices (`value`, label).
 pub(crate) const TRANSPORTS: &[(&str, &str)] = &[
@@ -253,16 +254,7 @@ pub(crate) fn show(
     ) {
         f.domain = v;
     }
-    let head = ui.selectable_label(
-        f.advanced,
-        RichText::new(if f.advanced {
-            "Hide advanced options"
-        } else {
-            "Advanced options"
-        })
-        .size(FS_SMALL)
-        .color(p.muted),
-    );
+    let head = disclosure(ui, p, f.advanced, "Advanced options");
     if head.clicked() {
         f.advanced = !f.advanced;
     }

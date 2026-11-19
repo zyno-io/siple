@@ -186,16 +186,17 @@ pub(super) fn composer(
         let target = comp.target.trim().to_string();
         let can = !target.is_empty();
         if can {
-            ui.add(
-                egui::Label::new(
-                    mono(
-                        format!("\u{2192} {}", resolved_uri(cx, &c.account, &target)),
-                        FS_SMALL,
+            // The arrow is its own label so screen readers hear the address alone.
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 4.0;
+                ui.label(icon(ic::ARROW_RIGHT, FS_SMALL).color(p.muted));
+                ui.add(
+                    egui::Label::new(
+                        mono(resolved_uri(cx, &c.account, &target), FS_SMALL).color(p.muted),
                     )
-                    .color(p.muted),
-                )
-                .truncate(),
-            );
+                    .truncate(),
+                );
+            });
         }
         let consult_default = cx.vm.snap.ui.transfer_enter == TransferEnter::Consult;
         let m = modifier_name();
@@ -223,7 +224,7 @@ pub(super) fn composer(
             {
                 chosen = Some(false);
             }
-            if soft_button(ui, p, ic::PHONE_X, "Close", None, true, 0.0).clicked() {
+            if soft_button(ui, p, ic::X, "Close", None, true, 0.0).clicked() {
                 close = true;
             }
         });
@@ -263,13 +264,18 @@ fn suggestion(ui: &mut egui::Ui, cx: &Cx, b: &BlfStatus) -> egui::Response {
         format!("{} {}", b.uri, blf_title(b))
     };
     let state = blf_state_text(b);
-    let text = format!("{title}  {}", state.to_lowercase());
     let galley = ui.painter().layout_no_wrap(
-        text,
+        title,
         egui::FontId::new(FS_SMALL, crate::theme::semibold()),
         p.text,
     );
-    let size = egui::vec2(galley.size().x + 32.0, 26.0);
+    let state_galley = ui.painter().layout_no_wrap(
+        state.to_lowercase(),
+        egui::FontId::new(FS_SMALL, egui::FontFamily::Proportional),
+        p.muted,
+    );
+    let gap = 6.0;
+    let size = egui::vec2(galley.size().x + gap + state_galley.size().x + 36.0, 28.0);
     let (rect, resp) = ui.allocate_exact_size(size, egui::Sense::click());
     ui.painter().rect(
         rect,
@@ -286,10 +292,19 @@ fn suggestion(ui: &mut egui::Ui, cx: &Cx, b: &BlfStatus) -> egui::Response {
         9.0,
         true,
     );
+    let title_w = galley.size().x;
     ui.painter().galley(
         egui::pos2(rect.left() + 26.0, rect.center().y - galley.size().y / 2.0),
         galley,
         p.text,
+    );
+    ui.painter().galley(
+        egui::pos2(
+            rect.left() + 26.0 + title_w + gap,
+            rect.center().y - state_galley.size().y / 2.0,
+        ),
+        state_galley,
+        p.muted,
     );
     resp.widget_info(|| {
         egui::WidgetInfo::labeled(

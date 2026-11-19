@@ -41,3 +41,4 @@ website/.vitepress/dist/
 website/.vitepress/cache/
 website/public/screenshots/
 website/.vitepress/.temp/
+__pycache__/

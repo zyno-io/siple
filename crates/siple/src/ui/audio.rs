@@ -211,9 +211,9 @@ pub(super) fn echo_test(
     let running = matches!(e.phase, EchoPhase::Recording | EchoPhase::Playing);
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 8.0;
-        ui.add_space(LABEL_W + 6.0 - 8.0);
+        ui.add_space(LABEL_W + 6.0);
         if running {
-            if soft_button(ui, p, ic::PAUSE, "Stop echo test", None, true, 0.0).clicked() {
+            if soft_button(ui, p, ic::STOP, "Stop echo test", None, true, 0.0).clicked() {
                 out.push(UiAction::Rpc(RpcRequest {
                     tag: RpcTag::Echo,
                     method: "audio.echo_test",

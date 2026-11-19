@@ -97,9 +97,13 @@ plutil -lint "$APP/Contents/Info.plist" >/dev/null
 ICONSET="$(mktemp -d)/Siple.iconset"
 mkdir -p "$ICONSET"
 SRC="$ROOT/packaging/icons/siple-1024.png"
+# 16 and 32 pt frames come from the simplified mark (bigger handset, no lamp) so they stay legible.
+SRC_SMALL="$ROOT/packaging/icons/siple-small-128.png"
 for sz in 16 32 128 256 512; do
-  sips -z $sz $sz "$SRC" --out "$ICONSET/icon_${sz}x${sz}.png" >/dev/null
-  sips -z $((sz * 2)) $((sz * 2)) "$SRC" --out "$ICONSET/icon_${sz}x${sz}@2x.png" >/dev/null
+  src="$SRC"
+  [ "$sz" -le 32 ] && src="$SRC_SMALL"
+  sips -z $sz $sz "$src" --out "$ICONSET/icon_${sz}x${sz}.png" >/dev/null
+  sips -z $((sz * 2)) $((sz * 2)) "$src" --out "$ICONSET/icon_${sz}x${sz}@2x.png" >/dev/null
 done
 iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/Siple.icns"
 rm -rf "$(dirname "$ICONSET")"

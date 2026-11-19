@@ -27,8 +27,8 @@ use super::form::{primary_button, small_button};
 use super::rpc::{self, RpcReply, RpcTag, TestRun};
 use super::{Cx, UiAction, UiState, header, wizard};
 use crate::snapshot::Snapshot;
-use crate::theme::{FS_BODY, FS_SMALL, FS_TITLE, Palette, R_MD, SP_L, SP_S, SP_XS};
-use crate::widgets::{mono, solid_button, strong};
+use crate::theme::{FS_BODY, FS_SMALL, FS_TITLE, Palette, R_MD, SP_L, SP_S, SP_XS, icon as ic};
+use crate::widgets::{icon, mono, solid_button, strong};
 
 /// What a conflicting `config.edit` tells the user.
 pub const CONFLICT_MSG: &str =
@@ -512,10 +512,9 @@ fn show(ui: &mut egui::Ui, cx: &Cx, st: &mut UiState, out: &mut Vec<UiAction>) {
         .frame(
             egui::Frame::new()
                 .fill(p.surface)
-                .inner_margin(Margin::symmetric(16, 10))
-                .stroke(Stroke::new(1.0, p.border)),
+                .inner_margin(Margin::symmetric(16, 10)),
         )
-        .show_separator_line(false)
+        .show_separator_line(true)
         .show(ui, |ui| top_bar(ui, cx, st, out));
     if st.settings.dirty()
         || st.settings.notice.is_some()
@@ -526,21 +525,19 @@ fn show(ui: &mut egui::Ui, cx: &Cx, st: &mut UiState, out: &mut Vec<UiAction>) {
             .frame(
                 egui::Frame::new()
                     .fill(p.surface)
-                    .inner_margin(Margin::symmetric(16, 8))
-                    .stroke(Stroke::new(1.0, p.border)),
+                    .inner_margin(Margin::symmetric(16, 8)),
             )
-            .show_separator_line(false)
+            .show_separator_line(true)
             .show(ui, |ui| apply_bar(ui, cx, st, out));
     }
     if !narrow {
         egui::Panel::left("settings_nav")
             .exact_size(190.0)
             .resizable(false)
-            .show_separator_line(false)
+            .show_separator_line(true)
             .frame(
                 egui::Frame::new()
                     .fill(p.surface)
-                    .stroke(Stroke::new(1.0, p.border))
                     .inner_margin(Margin::same(SP_S as i8 + 2)),
             )
             .show(ui, |ui| nav(ui, p, st, true));
@@ -637,9 +634,13 @@ fn top_bar(ui: &mut egui::Ui, cx: &Cx, st: &mut UiState, out: &mut Vec<UiAction>
     ui.horizontal_wrapped(|ui| {
         ui.spacing_mut().item_spacing.x = 10.0;
         let back = ui.add(
-            egui::Button::new(RichText::new("\u{2190} Back").size(FS_BODY).color(p.text))
-                .corner_radius(CornerRadius::same(R_MD)),
+            egui::Button::new((
+                icon(ic::ARROW_LEFT, FS_BODY + 1.0).color(p.muted),
+                RichText::new("Back").size(FS_BODY).color(p.text),
+            ))
+            .corner_radius(CornerRadius::same(R_MD)),
         );
+        back.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, "Back"));
         if back.clicked() {
             st.settings.open = false;
             st.settings.add = None;
@@ -659,10 +660,9 @@ pub(in crate::ui) fn call_panel(ui: &mut egui::Ui, cx: &Cx, st: &UiState, out: &
         .frame(
             egui::Frame::new()
                 .fill(cx.p.surface)
-                .inner_margin(Margin::symmetric(16, 6))
-                .stroke(Stroke::new(1.0, cx.p.border)),
+                .inner_margin(Margin::symmetric(16, 6)),
         )
-        .show_separator_line(false)
+        .show_separator_line(true)
         .show(ui, |ui| {
             ui.horizontal(|ui| call_strip(ui, cx, st, out));
         });

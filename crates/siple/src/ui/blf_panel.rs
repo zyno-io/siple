@@ -22,7 +22,7 @@ use crate::snapshot::{
 use crate::theme::{
     self, FS_BODY, FS_MICRO, FS_SMALL, Palette, R_LG, R_MD, R_SM, SP_S, Tone, icon as ic,
 };
-use crate::widgets::{icon, strong};
+use crate::widgets::{icon, segmented, strong};
 
 /// The filter box and chips appear from this many entries on (§3.6).
 pub(crate) const FILTER_MIN_ENTRIES: usize = 12;
@@ -305,26 +305,15 @@ pub(super) fn show(ui: &mut egui::Ui, cx: &Cx, st: &mut UiState, out: &mut Vec<U
         };
         ui.label(RichText::new(meta).size(FS_SMALL).color(p.muted));
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            for (v, label) in [
-                (BlfView::List, "List"),
-                (BlfView::Lamps, "Lamps"),
-                (BlfView::Keys, "Keys"),
-            ] {
-                let b = egui::Button::new(RichText::new(label).size(FS_SMALL).color(p.text))
-                    .selected(view == v)
-                    .corner_radius(CornerRadius::same(R_MD));
-                let r = ui.add(b).on_hover_text(format!("{label} view"));
-                r.widget_info(|| {
-                    egui::WidgetInfo::selected(
-                        egui::WidgetType::Button,
-                        true,
-                        view == v,
-                        format!("{label} view"),
-                    )
-                });
-                if r.clicked() {
-                    st.blf_view = Some(v);
-                }
+            const VIEWS: [(BlfView, &str, &str); 3] = [
+                (BlfView::Keys, "Keys", "Keys view"),
+                (BlfView::Lamps, "Lamps", "Lamps view"),
+                (BlfView::List, "List", "List view"),
+            ];
+            let items: Vec<(&str, &str)> = VIEWS.iter().map(|(_, l, n)| (*l, *n)).collect();
+            let sel = VIEWS.iter().position(|(v, _, _)| *v == view).unwrap_or(0);
+            if let Some(i) = segmented(ui, p, "blf_view", &items, sel) {
+                st.blf_view = Some(VIEWS[i].0);
             }
         });
     });
@@ -413,7 +402,7 @@ fn filter_bar(ui: &mut egui::Ui, cx: &Cx, st: &mut UiState) {
         }
         if !st.blf_filter.is_empty()
             && ui
-                .add(egui::Button::new(icon(ic::PHONE_X, 13.0).color(p.muted)).frame(false))
+                .add(egui::Button::new(icon(ic::X, 13.0).color(p.muted)).frame(false))
                 .on_hover_text("Clear filter")
                 .clicked()
         {

@@ -17,6 +17,58 @@ pub fn mono(text: impl Into<String>, size: f32) -> RichText {
     RichText::new(text).family(FontFamily::Monospace).size(size)
 }
 
+/// Inner margin of every single-line text field, so fields share the 32 pt height of the combo
+/// boxes and buttons beside them.
+pub const FIELD_MARGIN: Margin = Margin::symmetric(9, 7);
+
+/// The brand mark: the app icon's tile (same handset as the Call button), `side` points square.
+/// Downscaled once per pixel size on the CPU (a box filter), so it stays crisp at any scale.
+pub fn brand_mark(ui: &mut egui::Ui, side: f32) -> Response {
+    let px = (side * ui.ctx().pixels_per_point()).round().max(1.0) as usize;
+    // One cache entry per display size, replaced when the scale changes (zoom, another
+    // monitor); dropping the old handle frees its texture.
+    let id = egui::Id::new(("siple-brand-mark", side.to_bits()));
+    let cached = ui
+        .ctx()
+        .data(|d| d.get_temp::<(usize, Option<egui::TextureHandle>)>(id))
+        .filter(|(at, _)| *at == px);
+    let tex = match cached {
+        Some((_, t)) => t,
+        None => {
+            let tex = eframe::icon_data::from_png_bytes(crate::BRAND_MARK_PNG)
+                .ok()
+                .filter(|i| i.width == i.height && i.width > 0)
+                .map(|i| {
+                    let rgba = crate::shell::tray_model::render_icon(
+                        &i.rgba,
+                        i.width as usize,
+                        px,
+                        crate::shell::tray_model::TrayIconState::Idle,
+                    );
+                    ui.ctx().load_texture(
+                        "brand-mark",
+                        egui::ColorImage::from_rgba_unmultiplied([px, px], &rgba),
+                        egui::TextureOptions::LINEAR,
+                    )
+                });
+            ui.ctx().data_mut(|d| d.insert_temp(id, (px, tex.clone())));
+            tex
+        }
+    };
+    // Painted, not an `Image` widget: decoration beside the "Siple" title, so screen readers
+    // get no unnamed image.
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(side, side), Sense::hover());
+    if let Some(t) = tex {
+        ui.painter().image(
+            t.id(),
+            rect,
+            egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+            Color32::WHITE,
+        );
+    }
+    resp
+}
+
 /// A Phosphor glyph (regular weight).
 pub fn icon(glyph: &str, size: f32) -> RichText {
     RichText::new(glyph)
@@ -66,6 +118,101 @@ pub fn paint_focus_ring(ui: &egui::Ui, p: &Palette, r: &Response, rect: egui::Re
             StrokeKind::Outside,
         );
     }
+}
+
+/// Segmented control: one inset track, the selected segment raised on it. `items` are
+/// (visible label, accessible name); `id_salt` keeps two controls in one Ui apart. Returns the
+/// index clicked this frame.
+pub fn segmented(
+    ui: &mut egui::Ui,
+    p: &Palette,
+    id_salt: &str,
+    items: &[(&str, &str)],
+    selected: usize,
+) -> Option<usize> {
+    let base = ui.id().with(id_salt);
+    let font = FontId::new(FS_SMALL, FontFamily::Proportional);
+    let galleys: Vec<_> = items
+        .iter()
+        .map(|(l, _)| {
+            ui.painter()
+                .layout_no_wrap((*l).to_string(), font.clone(), p.text)
+        })
+        .collect();
+    let (pad_x, h, inset) = (10.0, 28.0, 2.0);
+    let widths: Vec<f32> = galleys.iter().map(|g| g.size().x + 2.0 * pad_x).collect();
+    let total = widths.iter().sum::<f32>() + 2.0 * inset;
+    let (track, _) = ui.allocate_exact_size(egui::vec2(total, h), Sense::hover());
+    ui.painter().rect(
+        track,
+        CornerRadius::same(R_MD),
+        p.inset,
+        Stroke::new(1.0, p.border),
+        StrokeKind::Inside,
+    );
+    let raised = if p.dark {
+        Color32::from_rgb(0x2A, 0x36, 0x44)
+    } else {
+        p.surface
+    };
+    let seg_r = CornerRadius::same(R_MD - 2);
+    let mut x = track.left() + inset;
+    let mut clicked = None;
+    for (i, g) in galleys.into_iter().enumerate() {
+        let rect = egui::Rect::from_min_size(
+            egui::pos2(x, track.top() + inset),
+            egui::vec2(widths[i], h - 2.0 * inset),
+        );
+        x += widths[i];
+        let r = ui.interact(rect, base.with(i), Sense::click());
+        let on = i == selected;
+        if on {
+            ui.painter().rect_filled(
+                rect.translate(egui::vec2(0.0, 1.0)),
+                seg_r,
+                Color32::from_black_alpha(if p.dark { 70 } else { 18 }),
+            );
+            ui.painter().rect_filled(rect, seg_r, raised);
+        } else if r.hovered() {
+            ui.painter()
+                .rect_filled(rect, seg_r, p.border.gamma_multiply(0.5));
+        }
+        let ink = if on || r.hovered() { p.text } else { p.muted };
+        let pos = rect.center() - g.size() / 2.0;
+        ui.painter().galley_with_override_text_color(pos, g, ink);
+        paint_focus_ring(ui, p, &r, rect);
+        let name = items[i].1;
+        r.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, true, on, name));
+        if r.on_hover_text(name).clicked() {
+            clicked = Some(i);
+        }
+    }
+    clicked
+}
+
+/// A disclosure toggle: chevron (right when closed, down when open) and a quiet label.
+pub fn disclosure(ui: &mut egui::Ui, p: &Palette, open: bool, label: &str) -> Response {
+    let galley =
+        ui.painter()
+            .layout_no_wrap(label.to_string(), FontId::proportional(FS_SMALL), p.muted);
+    let size = egui::vec2(16.0 + galley.size().x + 4.0, 24.0);
+    let (rect, r) = ui.allocate_exact_size(size, Sense::click());
+    let ink = if r.hovered() { p.text } else { p.muted };
+    paint_chevron(
+        ui.painter(),
+        egui::pos2(rect.left() + 6.0, rect.center().y),
+        if open { Chevron::Down } else { Chevron::Right },
+        8.0,
+        ink,
+    );
+    ui.painter().galley_with_override_text_color(
+        egui::pos2(rect.left() + 16.0, rect.center().y - galley.size().y / 2.0),
+        galley,
+        ink,
+    );
+    paint_focus_ring(ui, p, &r, rect);
+    r.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, true, open, label));
+    r.on_hover_cursor(egui::CursorIcon::PointingHand)
 }
 
 /// A small square icon button with a chevron. The caller sets the accessible label with

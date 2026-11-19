@@ -5,14 +5,16 @@ use eframe::egui::{self, Align, CornerRadius, Layout, Margin, RichText, Stroke};
 
 use super::combo_icon;
 use crate::theme::{FS_BODY, FS_SMALL, Palette, R_LG, R_MD, SP_S, SP_XS};
-use crate::widgets::{account_switch, strong};
+use crate::widgets::{FIELD_MARGIN, account_switch, icon, strong};
 
 /// Width of the label column.
 const LABEL_W: f32 = 150.0;
+/// Height of every form control (fields, drop-downs, buttons), so a row of mixed controls lines up.
+pub(crate) const CONTROL_H: f32 = 32.0;
 
 fn label_cell(ui: &mut egui::Ui, p: &Palette, text: &str) -> egui::Response {
     ui.allocate_ui_with_layout(
-        egui::vec2(LABEL_W, 26.0),
+        egui::vec2(LABEL_W, CONTROL_H),
         Layout::left_to_right(Align::Center),
         |ui| {
             ui.set_width(LABEL_W);
@@ -71,6 +73,7 @@ pub(crate) fn text_row_focus(
                     .id_salt(("field", label))
                     .hint_text(hint)
                     .password(password)
+                    .margin(FIELD_MARGIN)
                     .desired_width(ui.available_width()),
             );
             let r = r.labelled_by(l.id);
@@ -219,7 +222,7 @@ pub(crate) fn small_button(
             .fill(egui::Color32::TRANSPARENT)
             .stroke(Stroke::new(1.0, p.border_strong))
             .corner_radius(CornerRadius::same(R_MD))
-            .min_size(egui::vec2(0.0, 26.0)),
+            .min_size(egui::vec2(0.0, CONTROL_H)),
     )
 }
 
@@ -236,8 +239,31 @@ pub(crate) fn primary_button(
             .fill(p.accent)
             .stroke(Stroke::NONE)
             .corner_radius(CornerRadius::same(R_MD))
-            .min_size(egui::vec2(88.0, 30.0)),
+            .min_size(egui::vec2(88.0, CONTROL_H)),
     )
+}
+
+/// [`primary_button`] with a leading icon; the accessible name is `text` alone.
+pub(crate) fn primary_icon_button(
+    ui: &mut egui::Ui,
+    p: &Palette,
+    glyph: &str,
+    text: &str,
+    enabled: bool,
+) -> egui::Response {
+    let r = ui.add_enabled(
+        enabled,
+        egui::Button::new((
+            icon(glyph, FS_BODY + 1.0).color(p.on_accent),
+            strong(text, FS_BODY).color(p.on_accent),
+        ))
+        .fill(p.accent)
+        .stroke(Stroke::NONE)
+        .corner_radius(CornerRadius::same(R_MD))
+        .min_size(egui::vec2(88.0, CONTROL_H)),
+    );
+    r.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, text));
+    r
 }
 
 /// A one-line status message on a tone's soft fill.

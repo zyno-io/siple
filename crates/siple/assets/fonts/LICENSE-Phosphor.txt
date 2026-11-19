@@ -1,4 +1,6 @@
-Phosphor icon font (Phosphor-Regular.ttf, Phosphor-Fill.ttf), subset to the glyphs Siple uses.
+Phosphor icon font (Phosphor-Regular.ttf, Phosphor-Fill.ttf), subset to the glyphs Siple uses
+(pyftsubset from @phosphor-icons/web 2.1.1; when adding an icon, re-subset both files and add its
+constant to theme::icon).
 Source: https://github.com/phosphor-icons/core (font files as packaged by the egui-phosphor crate).
 
 MIT License

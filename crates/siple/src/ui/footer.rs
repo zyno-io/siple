@@ -8,7 +8,7 @@ use crate::snapshot::{RegClass, reg_class, reg_label};
 use crate::theme::{FS_ICON, FS_MICRO, FS_SMALL, Palette, R_MD, SP_XS, icon as ic};
 use crate::widgets::{ghost_button, icon, icon_fill, mono, pill};
 
-/// "2 of 3 registered - legacy-fs: 403 Forbidden".
+/// "2 of 3 registered · legacy-fs: 403 Forbidden".
 pub(super) fn status_text(cx: &Cx) -> String {
     let enabled: Vec<_> = cx.vm.snap.accounts.iter().filter(|a| a.enabled).collect();
     if enabled.is_empty() {
@@ -29,7 +29,7 @@ pub(super) fn status_text(cx: &Cx) -> String {
     };
     for a in enabled.iter().filter(|a| reg_class(a) == RegClass::Failed) {
         text.push_str(&format!(
-            " - {}: {}",
+            " \u{b7} {}: {}",
             a.id,
             reg_label(a).replace("failed: ", "")
         ));

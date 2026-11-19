@@ -76,7 +76,7 @@ fn dtmf_target<'a>(cx: &Cx<'a>, st: &UiState) -> Option<&'a siple_sip::CallInfo>
 
 /// Opens (if collapsed) and focuses the dial field.
 fn show_dial(cx: &Cx, st: &mut UiState) {
-    // With no line the idle stage already shows the field; elsewhere "+ New call" opens it.
+    // With no line the idle stage already shows the field; elsewhere "New call" opens it.
     if cx.selected(st).is_some() || (cx.mode == LayoutMode::Narrow && cx.ext_open(st)) {
         rail::open_new_call(cx, st);
     }

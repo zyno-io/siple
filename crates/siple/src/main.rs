@@ -198,6 +198,11 @@ const APP_TITLE: &str = "Siple";
 
 /// Window / Dock / taskbar icon (the packaged app icon).
 static APP_ICON_PNG: &[u8] = include_bytes!("../../../packaging/icons/siple-1024.png");
+/// The simplified mark (tile only): the brand mark in the header and the first-run wizard.
+static BRAND_MARK_PNG: &[u8] = include_bytes!("../../../packaging/icons/siple-mark-256.png");
+/// Tray / menu-bar base image: the simplified mark on the app icon's grid (no lamp: the tray
+/// draws its own status badge).
+static TRAY_ICON_PNG: &[u8] = include_bytes!("../../../packaging/icons/siple-small-128.png");
 
 fn window_options(size: [f32; 2], min: [f32; 2]) -> eframe::NativeOptions {
     let mut viewport = egui::ViewportBuilder::default()

@@ -168,7 +168,7 @@ pub(super) fn shortcuts(ui: &mut egui::Ui, cx: &Cx) {
 pub(super) fn appearance(ui: &mut egui::Ui, cx: &Cx, out: &mut Vec<UiAction>) {
     let p = cx.p;
     let v = ui_json(cx.vm.snap);
-    group(ui, p, "Appearance", |ui| {
+    group(ui, p, "Theme and layout", |ui| {
         sec_choice(
             ui,
             p,

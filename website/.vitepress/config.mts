@@ -76,7 +76,7 @@ export default defineConfig({
   ignoreDeadLinks: false,
   // Enable only where full git history is available (CI checks out with fetch-depth: 0).
   lastUpdated: process.env.DOCS_LAST_UPDATED === '1',
-  head: [['link', { rel: 'icon', type: 'image/png', href: `${BASE}logo.png` }]],
+  head: [['link', { rel: 'icon', type: 'image/png', href: `${BASE}mark.png` }]],
   sitemap: { hostname: SITE_URL },
   // The local search index of the full API reference is a large chunk by design.
   vite: { build: { chunkSizeWarningLimit: 2500 } },
@@ -97,7 +97,7 @@ export default defineConfig({
     }
   },
   themeConfig: {
-    logo: '/logo.png',
+    logo: '/mark.png',
     siteTitle: 'Siple',
     nav: [
       { text: 'Guide', link: '/guide/install', activeMatch: '^/guide/' },

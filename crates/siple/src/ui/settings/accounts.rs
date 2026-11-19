@@ -7,13 +7,13 @@ use siple_core::config::{AccountConfig, PasswordStore};
 
 use super::super::draft::{self, DraftForm, PROFILES, SRTP, TRANSPORTS};
 use super::super::form::{
-    choice_row, group, hint_line, int_row, message_box, primary_button, small_button, text_row,
-    toggle_row,
+    choice_row, group, hint_line, int_row, message_box, primary_button, primary_icon_button,
+    small_button, text_row, toggle_row,
 };
 use super::super::rpc::{self, RpcRequest, RpcTag, TestRun};
 use super::super::{Cx, UiAction, UiState, reg_tone};
 use crate::snapshot::{RegClass, reg_class};
-use crate::theme::{FS_BODY, FS_MICRO, FS_SMALL, Palette, R_LG, SP_S};
+use crate::theme::{FS_BODY, FS_MICRO, FS_SMALL, Palette, R_LG, SP_S, icon as ic};
 use crate::widgets::{Chevron, account_switch, chevron_button, chip, mono, paint_lamp, strong};
 
 /// Account keys only the config file sets; shown read-only when set.
@@ -189,7 +189,8 @@ pub(super) fn show(ui: &mut egui::Ui, cx: &Cx, st: &mut UiState, out: &mut Vec<U
     }
     // Header actions.
     ui.horizontal_wrapped(|ui| {
-        if primary_button(ui, p, "+ Add account", st.settings.add.is_none()).clicked() {
+        if primary_icon_button(ui, p, ic::PLUS, "New account", st.settings.add.is_none()).clicked()
+        {
             st.settings.add = Some(DraftForm::default());
         }
         let file_pw = accounts
@@ -413,13 +414,13 @@ fn account_row(
                         9.0,
                     );
                 }
-                let label = format!("{} {}@{}", a.id, a.username, a.domain);
                 let r = ui.add(
-                    egui::Button::new(
-                        RichText::new(label.clone())
-                            .size(FS_BODY)
-                            .color(if selected { p.accent } else { p.text }),
-                    )
+                    egui::Button::new((
+                        strong(&a.id, FS_BODY).color(if selected { p.accent } else { p.text }),
+                        RichText::new(format!("{}@{}", a.username, a.domain))
+                            .size(FS_SMALL)
+                            .color(p.muted),
+                    ))
                     .frame(false),
                 );
                 r.widget_info(|| {

@@ -22,6 +22,12 @@
 - API: `app.install_update`, `app.cancel_update`, the events `app.update_progress` and `app.updated`, the `install` object of
   `app.update_status` and `install_state` in `status.update`; `action` can now be `install`. See `docs/CONFIG.md`, "In-place install".
 - Privacy: the direct downloads download the new version from GitHub when you, or a script or agent you run, chooses to install it.
+- New app icon: the same handset the app uses on its Call and Answer buttons, centred on a lit teal-to-blue tile with a
+  status lamp; the small sizes (16 to 40 px, tray, header) use a simplified mark. The header brand mark is now the icon itself.
+- Interface polish: text fields share the 32 pt height of the drop-downs and buttons beside them; the Extensions view switch is
+  one segmented control; panels are divided by single lines (no doubled borders); icons replace the text arrows and plus
+  signs ("New call", "New account", "Back"); Stop echo test shows a stop icon; the advanced account options open with a
+  disclosure arrow. Settings' "+ Add account" is now "New account".
 
 ## 0.1.1 (2026-11-18)
 

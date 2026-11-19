@@ -328,7 +328,7 @@ impl Shell {
             status: status.clone(),
             limiter: limiter.clone(),
         }));
-        let base_icon = eframe::icon_data::from_png_bytes(crate::APP_ICON_PNG)
+        let base_icon = eframe::icon_data::from_png_bytes(crate::TRAY_ICON_PNG)
             .ok()
             .map(|i| (i.rgba, i.width as usize));
         let config_dir = siple_core::config::config_dir_for(app.config_path());

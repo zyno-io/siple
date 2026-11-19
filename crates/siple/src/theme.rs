@@ -186,6 +186,8 @@ pub fn palette(ui: &egui::Ui) -> &'static Palette {
 
 pub mod icon {
     pub const ARROW_BEND_UP_RIGHT: &str = "\u{E026}";
+    pub const ARROW_LEFT: &str = "\u{E058}";
+    pub const ARROW_RIGHT: &str = "\u{E06C}";
     pub const ARROWS_CLOCKWISE: &str = "\u{E094}";
     pub const BELL_SLASH: &str = "\u{E0D4}";
     pub const DOTS_NINE: &str = "\u{E1FC}";
@@ -200,13 +202,17 @@ pub mod icon {
     pub const PHONE: &str = "\u{E3B8}";
     pub const PHONE_INCOMING: &str = "\u{E3BE}";
     pub const PHONE_OUTGOING: &str = "\u{E3C0}";
+    pub const PHONE_PLUS: &str = "\u{EC56}";
     pub const PHONE_TRANSFER: &str = "\u{E3C6}";
     pub const PHONE_X: &str = "\u{E3C4}";
     pub const PLAY: &str = "\u{E3D0}";
+    pub const PLUS: &str = "\u{E3D4}";
     pub const SPEAKER_HIGH: &str = "\u{E44A}";
+    pub const STOP: &str = "\u{E46C}";
     pub const TERMINAL_WINDOW: &str = "\u{EAE8}";
     pub const WARNING: &str = "\u{E4E0}";
     pub const WARNING_CIRCLE: &str = "\u{E4E2}";
+    pub const X: &str = "\u{E4F6}";
 }
 
 // ---- fonts -----------------------------------------------------------------------------------

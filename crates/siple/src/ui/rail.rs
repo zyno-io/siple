@@ -7,7 +7,7 @@ use siple_sip::{CallDirection, CallInfo, CallState, EndCause, TransferPhase};
 
 use super::{Cx, UiAction, UiState, display_name, session_for, state_tone};
 use crate::snapshot::{call_elapsed_secs, format_duration};
-use crate::theme::{FS_BODY, FS_MICRO, FS_SMALL, R_MD, SP_S, Tone, icon as ic};
+use crate::theme::{FS_BODY, FS_ICON, FS_MICRO, FS_SMALL, R_MD, SP_S, Tone, icon as ic};
 use crate::widgets::{
     Chevron, chevron_button, icon, paint_focus_ring, paint_lamp, soft_button, strong,
 };
@@ -176,8 +176,8 @@ pub(super) fn show(ui: &mut egui::Ui, cx: &Cx, st: &mut UiState, out: &mut Vec<U
     if soft_button(
         ui,
         p,
-        ic::PHONE_OUTGOING,
-        "+ New call",
+        ic::PHONE_PLUS,
+        "New call",
         None,
         true,
         ui.available_width(),
@@ -293,7 +293,7 @@ fn line_badge(ui: &mut egui::Ui, cx: &Cx, st: &UiState, slot: usize, c: &CallInf
         .clicked()
 }
 
-/// "+ New call": opens the dial bar in the stage, defaulting to the selected line's account.
+/// "New call": opens the dial bar in the stage, defaulting to the selected line's account.
 pub(super) fn open_new_call(cx: &Cx, st: &mut UiState) {
     st.new_call_open = true;
     leave_extensions_tab(cx, st);
@@ -491,7 +491,7 @@ pub(super) fn tabs(ui: &mut egui::Ui, cx: &Cx, st: &mut UiState, out: &mut Vec<U
                 }
                 let plus = ui
                     .add(
-                        egui::Button::new(RichText::new("+").size(FS_BODY))
+                        egui::Button::new(icon(ic::PLUS, FS_ICON).color(p.text))
                             .min_size(egui::vec2(28.0, 0.0)),
                     )
                     .on_hover_text("New call");

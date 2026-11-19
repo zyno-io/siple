@@ -16,7 +16,7 @@ use super::settings::sec_toggle_pub;
 use super::{Cx, UiAction, UiState, audio};
 use crate::snapshot::Snapshot;
 use crate::theme::{FS_BODY, FS_SMALL, FS_TITLE, SP_L, SP_S};
-use crate::widgets::strong;
+use crate::widgets::{brand_mark, strong};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Step {
@@ -198,6 +198,8 @@ pub(super) fn show(ui: &mut egui::Ui, cx: &Cx, st: &mut UiState, out: &mut Vec<U
                                     Step::Done => 3,
                                 };
                                 ui.horizontal(|ui| {
+                                    ui.spacing_mut().item_spacing.x = 10.0;
+                                    brand_mark(ui, 32.0);
                                     ui.label(
                                         strong("Welcome to Siple", FS_TITLE + 4.0).color(p.text),
                                     );

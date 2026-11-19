@@ -2275,7 +2275,7 @@ fn a_reverted_password_is_never_written_by_a_later_add() {
     );
     h.get_by_label("Revert").click_accesskit();
     h.run();
-    h.get_by_label("+ Add account").click_accesskit();
+    h.get_by_label("New account").click_accesskit();
     h.run();
     type_into(&mut h, "Username / extension", "4001");
     type_into(&mut h, "Domain / server", "pbx2.example.test");
@@ -2290,7 +2290,7 @@ fn a_reverted_password_is_never_written_by_a_later_add() {
 #[test]
 fn an_in_flight_add_keeps_its_keychain_password_when_an_apply_fails() {
     let mut h = settings_harness(base_snapshot(), Section::Accounts, WIDE);
-    h.get_by_label("+ Add account").click_accesskit();
+    h.get_by_label("New account").click_accesskit();
     h.run();
     type_into(&mut h, "Username / extension", "4001");
     type_into_first_password(&mut h, "addpw");
@@ -2426,11 +2426,7 @@ fn unparsable_file_makes_settings_read_only() {
             .accesskit_node()
             .is_disabled()
     );
-    assert!(
-        h.get_by_label("+ Add account")
-            .accesskit_node()
-            .is_disabled()
-    );
+    assert!(h.get_by_label("New account").accesskit_node().is_disabled());
     // A file that parses but is invalid stays editable.
     let mut snap = base_snapshot();
     snap.config_error = Some(crate::snapshot::ConfigErrorView {
@@ -2552,7 +2548,7 @@ fn staged_changes_disable_the_registration_test() {
 #[test]
 fn add_account_form_sends_add_account() {
     let mut h = settings_harness(base_snapshot(), Section::Accounts, WIDE);
-    h.get_by_label("+ Add account").click_accesskit();
+    h.get_by_label("New account").click_accesskit();
     h.run();
     type_into(&mut h, "Username / extension", "4001");
     type_into(&mut h, "Domain / server", "pbx2.example.test");
@@ -3029,7 +3025,7 @@ fn keep_mine_after_a_conflict_uses_the_conflicts_hash() {
 #[test]
 fn add_errors_the_form_does_not_show_go_to_the_notice() {
     let mut h = settings_harness(base_snapshot(), Section::Accounts, WIDE);
-    h.get_by_label("+ Add account").click_accesskit();
+    h.get_by_label("New account").click_accesskit();
     h.run();
     type_into(&mut h, "Username / extension", "1001");
     type_into(&mut h, "Domain / server", "pbx.example.test");
@@ -3165,7 +3161,7 @@ fn passwords_are_dropped_when_the_wizard_ends_or_the_add_form_is_left() {
     h.run();
     assert!(h.state().ui.wizard.form.password.is_empty());
     let mut h = settings_harness(base_snapshot(), Section::Accounts, WIDE);
-    h.get_by_label("+ Add account").click_accesskit();
+    h.get_by_label("New account").click_accesskit();
     h.run();
     type_into_first_password(&mut h, "pw-in-add");
     h.get_by_label_contains("Back").click_accesskit();

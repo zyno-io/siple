@@ -1,5 +1,5 @@
 //! Stage: the selected line (name, URI, account, state, media chips, Mute / Hold / Keypad /
-//! Transfer, Hang up), the call-waiting banners above it, the dial bar ("+ New call") and the
+//! Transfer, Hang up), the call-waiting banners above it, the dial bar ("New call") and the
 //! idle stage (dial field and keypad).
 
 use eframe::egui::{self, Align, Color32, CornerRadius, Layout, Margin, RichText, Stroke};
@@ -45,7 +45,7 @@ pub(super) fn show(ui: &mut egui::Ui, cx: &Cx, st: &mut UiState, out: &mut Vec<U
     line_card(ui, cx, st, c, out);
     if st.new_call_open {
         dial_bar(ui, cx, st, out);
-    } else if soft_button(ui, p, ic::PHONE_OUTGOING, "+ New call", None, true, 0.0).clicked() {
+    } else if soft_button(ui, p, ic::PHONE_PLUS, "New call", None, true, 0.0).clicked() {
         super::rail::open_new_call(cx, st);
     }
 }
@@ -227,12 +227,16 @@ fn banner(
                     ui.label(RichText::new("Silenced").size(FS_SMALL).color(p.muted));
                 }
             });
-            ui.horizontal(|ui| {
+            // Name and address read as one block, like the line card's.
+            ui.vertical(|ui| {
+                ui.spacing_mut().item_spacing.y = 2.0;
                 ui.add(egui::Label::new(strong(display_name(c), 17.0).color(p.text)).truncate());
+                if display_name(c) != c.remote_uri {
+                    ui.add(
+                        egui::Label::new(mono(&c.remote_uri, FS_MONO).color(p.muted)).truncate(),
+                    );
+                }
             });
-            if display_name(c) != c.remote_uri {
-                ui.add(egui::Label::new(mono(&c.remote_uri, FS_MONO).color(p.muted)).truncate());
-            }
             incoming_buttons(ui, cx, st, c, current, out);
         });
 }
@@ -693,7 +697,7 @@ fn idle(ui: &mut egui::Ui, cx: &Cx, st: &mut UiState, out: &mut Vec<UiAction>) {
     });
 }
 
-/// The dial bar inside the stage ("+ New call" expands it).
+/// The dial bar inside the stage ("New call" expands it).
 fn dial_bar(ui: &mut egui::Ui, cx: &Cx, st: &mut UiState, out: &mut Vec<UiAction>) {
     panel(cx.p).inner_margin(Margin::same(8)).show(ui, |ui| {
         ui.set_width(ui.available_width());
@@ -753,18 +757,31 @@ fn dial_row(ui: &mut egui::Ui, cx: &Cx, st: &mut UiState, large: bool, out: &mut
             .on_hover_text(sel_status.map(|a| a.aor.as_str()).unwrap_or("No account"));
         let can = sel_status.is_some() && !st.dial_target.trim().is_empty();
         let btn_w = 76.0;
+        // The full hint where it fits; a short one in a narrow window (never truncated).
+        let field_w = ui.available_width() - btn_w - 6.0;
+        let full_w = ui.fonts_mut(|f| {
+            f.layout_no_wrap(
+                "Number or SIP URI".into(),
+                egui::FontId::proportional(field_font.size),
+                p.faint,
+            )
+            .size()
+            .x
+        });
+        let hint = if full_w + 24.0 <= field_w {
+            "Number or SIP URI"
+        } else {
+            "Number"
+        };
         let edit = ui.add(
             egui::TextEdit::singleline(&mut st.dial_target)
                 .id_salt("dial_target")
                 // egui pins the hint to the top-left in the default font; at the field's size it
                 // fills the row and so sits centred like the typed text.
-                .hint_text(
-                    RichText::new("Number or SIP URI")
-                        .font(egui::FontId::proportional(field_font.size)),
-                )
+                .hint_text(RichText::new(hint).font(egui::FontId::proportional(field_font.size)))
                 .font(field_font)
                 .margin(Margin::symmetric(10, v_margin))
-                .desired_width(ui.available_width() - btn_w - 6.0),
+                .desired_width(field_w),
         );
         edit.widget_info(|| {
             egui::WidgetInfo::labeled(egui::WidgetType::TextEdit, true, "Number or SIP URI")

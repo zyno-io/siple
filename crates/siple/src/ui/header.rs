@@ -12,7 +12,7 @@ use crate::theme::{
     self, FS_BODY, FS_MICRO, FS_SMALL, FS_TITLE, Palette, R_LG, R_MD, SP_XS, icon as ic,
 };
 use crate::widgets::{
-    Chevron, account_switch, chip, hairline, icon, icon_fill, mono, paint_chevron,
+    Chevron, account_switch, brand_mark, chip, hairline, icon, icon_fill, mono, paint_chevron,
     paint_focus_ring, paint_lamp, pill, strong,
 };
 
@@ -21,17 +21,8 @@ pub(super) fn show(ui: &mut egui::Ui, cx: &Cx, st: &mut UiState, out: &mut Vec<U
     let compact = cx.mode == LayoutMode::Narrow;
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 6.0;
-        // Brand mark: the app icon's handset on the accent.
-        let (rect, _) = ui.allocate_exact_size(egui::vec2(26.0, 26.0), egui::Sense::hover());
-        ui.painter()
-            .rect_filled(rect, CornerRadius::same(R_MD), p.accent);
-        ui.painter().text(
-            rect.center() + egui::vec2(0.0, 1.0),
-            egui::Align2::CENTER_CENTER,
-            ic::PHONE,
-            egui::FontId::new(16.0, theme::icons_fill()),
-            p.on_accent,
-        );
+        // Brand mark: the app icon itself (same tile, same handset).
+        brand_mark(ui, 26.0);
         ui.add_space(2.0);
         ui.label(strong(crate::APP_TITLE, FS_TITLE).color(p.text));
         ui.add_space(8.0);
