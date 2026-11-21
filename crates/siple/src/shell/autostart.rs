@@ -286,7 +286,8 @@ fn apply_for(
         );
         return Ok(());
     }
-    let exe = std::env::current_exe()?;
+    // The AppImage edition starts its file, never the temporary mount the process runs from.
+    let exe = channel.launch_target()?;
     let extra = profile_args(config);
     let name = entry_name(config);
     #[cfg(target_os = "windows")]
@@ -351,6 +352,18 @@ mod tests {
         }
         #[cfg(not(target_os = "windows"))]
         assert_eq!(entry.as_ref().map(|p| p.exists()), before);
+    }
+
+    #[test]
+    fn the_appimage_login_entry_starts_the_file() {
+        use siple_core::config::channel::Channel;
+        let ch = Channel::appimage(Path::new("/home/u/My Apps/Siple.AppImage"));
+        assert!(!ch.is_packaged() && !uses_portal(&ch));
+        let entry = linux_autostart_entry(&ch.launch_target().unwrap(), &[]);
+        assert!(
+            entry.contains("Exec=\"/home/u/My Apps/Siple.AppImage\""),
+            "{entry}"
+        );
     }
 
     #[test]

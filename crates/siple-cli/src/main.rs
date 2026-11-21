@@ -200,6 +200,11 @@ struct RunArgs {
 
 #[tokio::main]
 async fn main() -> Result<ExitCode> {
+    #[cfg(target_os = "linux")]
+    if config::channel::current().kind == config::channel::ChannelKind::AppImage {
+        // The AppImage runtime leaves its keep-alive pipe open; see the function's doc.
+        config::channel::cloexec_inherited_fds();
+    }
     match Cli::parse().command {
         Command::Run(args) => run(args).await,
         Command::Ctl(args) => Ok(report(ctl(args).await)),

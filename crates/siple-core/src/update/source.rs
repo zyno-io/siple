@@ -67,7 +67,7 @@ pub enum SourceKind {
 /// The source for `channel` in a build that is (`store_build`) or is not compiled with the cargo
 /// feature `store`.
 ///
-/// | build \ channel | direct | Mac App Store | MSIX | Flatpak |
+/// | build \ channel | direct, AppImage | Mac App Store | MSIX | Flatpak |
 /// |---|---|---|---|---|
 /// | default | GitHub | App Store | none: `direct_build_in_package` | none: `direct_build_in_package` |
 /// | `store` | none: `store_build_outside_store` | App Store | Microsoft Store | none: `managed_by_flatpak` |
@@ -75,12 +75,14 @@ pub enum SourceKind {
 /// A package never installs updates itself, whatever the build.
 pub fn select(channel: &Channel, store_build: bool) -> SourceKind {
     match (store_build, channel.kind) {
-        (false, ChannelKind::Direct) => SourceKind::Github,
+        (false, ChannelKind::Direct | ChannelKind::AppImage) => SourceKind::Github,
         (false, ChannelKind::Msix | ChannelKind::Flatpak) => {
             SourceKind::None(DisabledReason::DirectBuildInPackage)
         }
         (true, ChannelKind::Flatpak) => SourceKind::None(DisabledReason::ManagedByFlatpak),
-        (true, ChannelKind::Direct) => SourceKind::None(DisabledReason::StoreBuildOutsideStore),
+        (true, ChannelKind::Direct | ChannelKind::AppImage) => {
+            SourceKind::None(DisabledReason::StoreBuildOutsideStore)
+        }
         (_, ChannelKind::MacAppStore) => SourceKind::AppStore,
         (true, ChannelKind::Msix) => SourceKind::MsStore,
     }
@@ -183,6 +185,9 @@ mod tests {
         assert_eq!(select(&Channel::DIRECT, true), SourceKind::None(o));
         assert_eq!(select(&Channel::MAC_APP_STORE, true), SourceKind::AppStore);
         assert_eq!(select(&msix, true), SourceKind::MsStore);
+        let appimage = Channel::appimage(std::path::Path::new("/x/Siple.AppImage"));
+        assert_eq!(select(&appimage, false), SourceKind::Github);
+        assert_eq!(select(&appimage, true), SourceKind::None(o));
         assert_eq!(select(&Channel::FLATPAK, false), SourceKind::None(d));
         assert_eq!(
             select(&Channel::FLATPAK, true),

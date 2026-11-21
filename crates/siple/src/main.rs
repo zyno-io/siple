@@ -106,6 +106,11 @@ fn missing_display(
 }
 
 fn main() -> ExitCode {
+    #[cfg(target_os = "linux")]
+    if config::channel::current().kind == config::channel::ChannelKind::AppImage {
+        // The AppImage runtime leaves its keep-alive pipe open; see the function's doc.
+        config::channel::cloexec_inherited_fds();
+    }
     let cli = Cli::parse();
     if let Some(pid) = cli.wait_pid
         && !wait_pid::wait_for_exit(pid, wait_pid::WAIT_LIMIT)
