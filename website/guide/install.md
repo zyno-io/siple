@@ -3,8 +3,8 @@
 Download Siple for your computer and get it running.
 
 **Download:** [siple.app](https://siple.app/#download) picks the right build for your computer. Every build is also on
-[GitHub Releases](https://github.com/zyno-io/siple/releases/latest). Mac App Store and Microsoft Store editions are coming
-soon.
+[GitHub Releases](https://github.com/zyno-io/siple/releases/latest). Mac App Store, Microsoft Store and Flathub editions are
+coming soon.
 
 | Computer | Download | Needs |
 |---|---|---|
@@ -65,6 +65,28 @@ The launcher entry runs `siple %u`, so `~/.local/bin` must be on your `PATH`. To
 - **The app window:** `libxkbcommon0 libxkbcommon-x11-0 libwayland-client0 libwayland-egl1 libx11-6 libx11-xcb1 libxcursor1
   libxrandr2 libxi6`, a Vulkan or GL driver (`mesa-vulkan-drivers`, or `libegl1 libgl1-mesa-dri`) and `xdg-utils`.
 - **Headless `siple-cli` only:** just ALSA (`libasound2`).
+:::
+
+::: details Flatpak (Flathub, coming soon)
+Siple will also be on Flathub as `io.zyno.siple`:
+
+```sh
+flatpak install flathub io.zyno.siple
+flatpak run io.zyno.siple
+```
+
+- **Updates** come from your software center or `flatpak update`. Siple makes no update check of its own.
+- **Settings folder:** `~/.var/app/io.zyno.siple/config/siple/`. To move over from the tarball, copy `config.toml` there; passwords
+  kept in the system keyring carry over. If you turn on launch at login in the Flatpak, it writes `~/.config/autostart/io.zyno.siple.desktop`,
+  the same file the tarball uses; the tarball leaves an entry written by the Flatpak alone (it neither overwrites nor removes it), so
+  switch the setting off in the Flatpak before you go back to the tarball.
+- **The CLI:** `flatpak run --command=siple-cli io.zyno.siple ctl status`. For an MCP client, see
+  [Quick start with MCP](/agents/mcp-quickstart).
+- **Limits.** The `[speech]` commands are not available. Files Siple reads (TLS files, `file:` audio) must be inside
+  `~/.var/app/io.zyno.siple/`, or granted with `flatpak override --user --filesystem=/path:ro io.zyno.siple`.
+- **Phone links:** `xdg-mime default io.zyno.siple.desktop x-scheme-handler/sip`, and the same for `sips`, `tel` and `callto`.
+- Do not run the tarball and the Flatpak at the same time with the same accounts.
+- It runs on Ubuntu 22.04 too.
 :::
 
 ::: details Run headless in Docker

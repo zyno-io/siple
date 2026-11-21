@@ -8,14 +8,15 @@
 //!   [`http`]);
 //! - Mac App Store: one anonymous HTTPS GET of Apple's lookup of Siple's listing;
 //! - Microsoft Store: a question to Windows' Store service about this package (Siple sends
-//!   nothing itself).
+//!   nothing itself);
+//! - Flatpak: no check (Flatpak updates the app from Flathub).
 //!
 //! Each runs about every 24 hours, with `Siple/<version>` as the only identifying header of the two
 //! HTTPS ones. The checker ([`Updater`]) is an async task owned by the app; its status is served by
 //! `app.update_status` / `app.check_updates`, summarised in `status`, and a newly found version is
 //! announced once as the event `app.update_available`.
 //!
-//! The cargo feature `store` (Mac App Store and Microsoft Store builds) only removes code: the
+//! The cargo feature `store` (Mac App Store, Microsoft Store and Flatpak builds) only removes code: the
 //! GitHub source, its releases parser, the downloader and the installer. The store sources are compiled in every build so they
 //! can be tested everywhere; only the Windows Store call itself needs `windows` and `store`.
 
@@ -102,7 +103,7 @@ pub struct UpdateStatus {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub store_url: Option<String>,
     /// Why there is no source (`direct_build_in_package`, `store_build_outside_store`,
-    /// `sideloaded`).
+    /// `sideloaded`, `managed_by_flatpak`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub disabled_reason: Option<DisabledReason>,
     /// The Microsoft Store marked the waiting update mandatory.

@@ -5,7 +5,8 @@
 //! - macOS: LaunchAgent plist `~/Library/LaunchAgents/io.zyno.siple.plist` (works unsigned and
 //!   on macOS 12; `SMAppService` needs macOS 13 and a signed bundle);
 //! - Windows: `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`;
-//! - Linux: `~/.config/autostart/io.zyno.siple.desktop` (XDG autostart).
+//! - Linux: `~/.config/autostart/io.zyno.siple.desktop` (XDG autostart);
+//! - Flatpak: the Background portal (`portal_background`), which writes that entry on the host.
 
 // Windows only writes a registry value; the file-based entries are built (and tested) everywhere.
 #![cfg_attr(target_os = "windows", allow(dead_code))]
@@ -80,7 +81,7 @@ pub fn profile_args(config: Option<&Path>) -> Vec<String> {
 /// Quotes one argument of a Desktop Entry `Exec=` line (spec: wrap in double quotes when it has
 /// spaces or reserved characters; escape `"`, `` ` ``, `$` and `\`; `%` doubles).
 pub fn desktop_exec_quote(arg: &str) -> String {
-    let reserved = " \t\n\"'\\><~|&;$*?#()`";
+    let reserved = " \t\n\r\"'\\><~|&;$*?#()`";
     if !arg.chars().any(|c| reserved.contains(c) || c == '%') {
         return arg.to_string();
     }
@@ -95,6 +96,9 @@ pub fn desktop_exec_quote(arg: &str) -> String {
             }
             '\\' => out.push_str("\\\\\\\\"),
             '%' => out.push_str("%%"),
+            // String escapes, so a path can never start a new key line.
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
             _ => out.push(c),
         }
     }
@@ -175,6 +179,49 @@ fn write_if_changed(path: &Path, content: &str) -> std::io::Result<()> {
     std::fs::write(path, content)
 }
 
+/// Whether `content` is a login entry written by the Flatpak edition's Background portal
+/// (xdg-desktop-portal writes `X-Flatpak=<app id>` and `Exec=flatpak run ...`). The tarball
+/// shares that file name (`io.zyno.siple.desktop`), so it must leave such an entry alone.
+fn is_flatpak_entry(content: &str) -> bool {
+    content.lines().map(str::trim).any(|l| {
+        l.starts_with("X-Flatpak=")
+            || l.starts_with("X-Flatpak-")
+            || l.strip_prefix("Exec=")
+                .is_some_and(|e| e.trim_start().starts_with("flatpak run"))
+    })
+}
+
+/// True when `path` holds the Flatpak edition's entry (logged once per process).
+fn owned_by_flatpak(path: &Path) -> bool {
+    static LOGGED: std::sync::Once = std::sync::Once::new();
+    let owned = std::fs::read_to_string(path).is_ok_and(|c| is_flatpak_entry(&c));
+    if owned {
+        LOGGED.call_once(|| {
+            tracing::info!(
+                path = %path.display(),
+                "the login entry belongs to the Flatpak edition; leaving it alone"
+            );
+        });
+    }
+    owned
+}
+
+/// [`write_if_changed`] that never overwrites the Flatpak edition's entry.
+fn write_unless_flatpak(path: &Path, content: &str) -> std::io::Result<()> {
+    if owned_by_flatpak(path) {
+        return Ok(());
+    }
+    write_if_changed(path, content)
+}
+
+/// [`remove_if_present`] that never removes the Flatpak edition's entry.
+fn remove_unless_flatpak(path: &Path) -> std::io::Result<()> {
+    if owned_by_flatpak(path) {
+        return Ok(());
+    }
+    remove_if_present(path)
+}
+
 fn remove_if_present(path: &Path) -> std::io::Result<()> {
     match std::fs::remove_file(path) {
         Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e),
@@ -190,8 +237,40 @@ fn remove_if_present(path: &Path) -> std::io::Result<()> {
 /// A no-op in packaged editions: a LaunchAgent cannot work in the Mac App Store sandbox, and an
 /// MSIX run key would persist the versioned `WindowsApps` path (MSIX users enable the declared
 /// startup task in Windows Settings instead).
-pub fn apply(enabled: bool, config: Option<&Path>) -> std::io::Result<()> {
-    apply_for(siple_core::config::channel::current(), enabled, config)
+///
+/// The Flatpak edition asks the Background portal instead (`config_dir` holds its marker, `rt`
+/// drives the D-Bus call; both are unused elsewhere).
+pub fn apply(
+    enabled: bool,
+    config: Option<&Path>,
+    config_dir: &Path,
+    rt: &tokio::runtime::Handle,
+) -> std::io::Result<()> {
+    let ch = siple_core::config::channel::current();
+    let portal = || {
+        #[cfg(target_os = "linux")]
+        return super::portal_background::sync(enabled, config, config_dir, rt);
+        #[cfg(not(target_os = "linux"))]
+        {
+            let _ = (config_dir, rt);
+            Ok(())
+        }
+    };
+    dispatch(ch, portal, || apply_for(ch, enabled, config))
+}
+
+/// Picks the Background portal for the Flatpak edition and the file/registry entry for the rest.
+fn dispatch(
+    c: &siple_core::config::channel::Channel,
+    portal: impl FnOnce() -> std::io::Result<()>,
+    entry: impl FnOnce() -> std::io::Result<()>,
+) -> std::io::Result<()> {
+    if uses_portal(c) { portal() } else { entry() }
+}
+
+/// Whether the login entry goes through the Background portal (the Flatpak edition).
+fn uses_portal(c: &siple_core::config::channel::Channel) -> bool {
+    c.kind == siple_core::config::channel::ChannelKind::Flatpak
 }
 
 fn apply_for(
@@ -243,9 +322,9 @@ fn apply_for(
             } else {
                 linux_autostart_entry(&exe, &extra)
             };
-            write_if_changed(&path, &content)
+            write_unless_flatpak(&path, &content)
         } else {
-            remove_if_present(&path)
+            remove_unless_flatpak(&path)
         }
     }
 }
@@ -272,6 +351,45 @@ mod tests {
         }
         #[cfg(not(target_os = "windows"))]
         assert_eq!(entry.as_ref().map(|p| p.exists()), before);
+    }
+
+    #[test]
+    fn only_the_flatpak_uses_the_background_portal() {
+        use siple_core::config::channel::Channel;
+        assert!(uses_portal(&Channel::FLATPAK));
+        for ch in [
+            Channel::DIRECT,
+            Channel::MAC_APP_STORE,
+            Channel::msix("a_b", None),
+        ] {
+            assert!(!uses_portal(&ch));
+        }
+    }
+
+    #[test]
+    fn apply_goes_through_the_portal_only_in_the_flatpak() {
+        use siple_core::config::channel::Channel;
+        use std::cell::Cell;
+        for (ch, via_portal) in [
+            (Channel::FLATPAK, true),
+            (Channel::DIRECT, false),
+            (Channel::MAC_APP_STORE, false),
+        ] {
+            let (p, e) = (Cell::new(0), Cell::new(0));
+            dispatch(
+                &ch,
+                || {
+                    p.set(p.get() + 1);
+                    Ok(())
+                },
+                || {
+                    e.set(e.get() + 1);
+                    Ok(())
+                },
+            )
+            .unwrap();
+            assert_eq!((p.get(), e.get()), if via_portal { (1, 0) } else { (0, 1) });
+        }
     }
 
     #[test]
@@ -328,6 +446,9 @@ mod tests {
     #[test]
     fn desktop_exec_quoting() {
         assert_eq!(desktop_exec_quote("/usr/bin/siple"), "/usr/bin/siple");
+        let q = desktop_exec_quote("/tmp/a\nX-Flatpak=io.zyno.siple\r");
+        assert!(!q.contains('\n') && !q.contains('\r'), "{q}");
+        assert_eq!(q, "\"/tmp/a\\nX-Flatpak=io.zyno.siple\\r\"");
         assert_eq!(
             desktop_exec_quote("/opt/my apps/siple"),
             "\"/opt/my apps/siple\""
@@ -403,6 +524,40 @@ mod tests {
             ))
         );
         assert_eq!(entry_path(None, None, true, APP_ID), None);
+    }
+
+    #[test]
+    fn the_tarball_leaves_the_flatpaks_login_entry_alone() {
+        let portal = "[Desktop Entry]\nType=Application\nName=Siple\n\
+            Exec=flatpak run --command=siple io.zyno.siple\nX-Flatpak=io.zyno.siple\n";
+        assert!(is_flatpak_entry(portal));
+        assert!(is_flatpak_entry("[Desktop Entry]\nX-Flatpak-Foo=1\n"));
+        assert!(is_flatpak_entry(
+            "[Desktop Entry]\nExec=flatpak run io.zyno.siple\n"
+        ));
+        assert!(!is_flatpak_entry(&linux_autostart_entry(
+            Path::new("/usr/bin/siple"),
+            &[]
+        )));
+
+        let d = tempfile::tempdir().unwrap();
+        let f = d.path().join("autostart/io.zyno.siple.desktop");
+        std::fs::create_dir_all(f.parent().unwrap()).unwrap();
+        std::fs::write(&f, portal).unwrap();
+        write_unless_flatpak(&f, "tarball").unwrap();
+        assert_eq!(std::fs::read_to_string(&f).unwrap(), portal);
+        remove_unless_flatpak(&f).unwrap();
+        assert_eq!(std::fs::read_to_string(&f).unwrap(), portal);
+
+        // The tarball's own entry is still written and removed.
+        let own = linux_autostart_entry(Path::new("/usr/bin/siple"), &[]);
+        std::fs::write(&f, &own).unwrap();
+        write_unless_flatpak(&f, "new").unwrap();
+        assert_eq!(std::fs::read_to_string(&f).unwrap(), "new");
+        remove_unless_flatpak(&f).unwrap();
+        assert!(!f.exists());
+        write_unless_flatpak(&f, &own).unwrap();
+        assert_eq!(std::fs::read_to_string(&f).unwrap(), own);
     }
 
     #[test]

@@ -206,6 +206,35 @@ mod microsoft_store {
     }
 }
 
+/// A Flatpak never checks: Flatpak installs the updates. A direct build in a Flatpak (the default
+/// features) reports `direct_build_in_package`, a store build `managed_by_flatpak`.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_flatpak_does_not_check_for_updates() {
+    let fake = Arc::new(FakeLookup {
+        calls: AtomicUsize::new(0),
+        last_ua: Mutex::new(String::new()),
+        version: "98.0.0",
+    });
+    let f = fake.clone();
+    let (_d, app) = start("", Channel::FLATPAK, move |o| {
+        o.update_providers.lookup = f;
+    })
+    .await;
+    let s = call(&app, "app.check_updates").await;
+    assert_eq!(s["enabled"], false);
+    assert_eq!(s["source"], "none");
+    assert_eq!(
+        s["disabled_reason"],
+        if cfg!(feature = "store") {
+            "managed_by_flatpak"
+        } else {
+            "direct_build_in_package"
+        }
+    );
+    assert_eq!(fake.calls.load(Ordering::SeqCst), 0);
+    app.shutdown().await;
+}
+
 /// A direct build inside a package does not check: the store owns the updates.
 #[cfg(not(feature = "store"))]
 #[tokio::test(flavor = "multi_thread")]

@@ -539,7 +539,7 @@ async fn start_as(env: &Env, channel: siple_config::channel::Channel) -> App {
 }
 
 /// `build` in `hello` and `status` reports the injected channel; speech is `unsupported` in the
-/// Mac App Store edition even when `[speech]` is configured (accepted with a warning), and works
+/// Mac App Store and Flatpak editions even when `[speech]` is configured (accepted with a warning), and works
 /// as before (here: not-configured / invalid_params paths) elsewhere.
 #[tokio::test(flavor = "multi_thread")]
 async fn mas_channel_gates_speech_and_reports_build() {
@@ -552,39 +552,44 @@ async fn mas_channel_gates_speech_and_reports_build() {
         config_text(&["a1"])
     );
     let env = Env::new(&text);
-    let app = start_as(&env, Channel::MAC_APP_STORE).await;
-    let mut c = client(&app).await;
-    let hello = c.server_info().unwrap().clone();
-    assert_eq!(hello["build"]["channel"], "mas");
-    assert_eq!(hello["build"]["sandboxed"], true);
-    let s = c.call("status", Value::Null).await.unwrap();
-    assert_eq!(s["build"]["channel"], "mas");
-    assert_eq!(s["build"]["store"], cfg!(feature = "store"));
-    assert!(s["build"]["version"].is_string());
-    for (m, p) in [
-        ("speech.synthesize", json!({"text": "hi"})),
-        ("speech.transcribe", json!({"wav_base64": "AAAA"})),
-        ("call.say", json!({"call_id": "c1", "text": "hi"})),
-        ("call.listen", json!({"call_id": "c1", "transcribe": true})),
-        (
-            "call.rx_audio",
-            json!({"call_id": "c1", "transcribe": true}),
-        ),
+    for (channel, name) in [
+        (Channel::MAC_APP_STORE, "mas"),
+        (Channel::FLATPAK, "flatpak"),
     ] {
-        match c.call(m, p).await {
-            Err(ClientError::Api(e)) => {
-                assert_eq!(e.kind, ErrorKind::Unsupported, "{m}: {e}");
-                assert_eq!(e.kind.code(), -32006);
+        let app = start_as(&env, channel).await;
+        let mut c = client(&app).await;
+        let hello = c.server_info().unwrap().clone();
+        assert_eq!(hello["build"]["channel"], name);
+        assert_eq!(hello["build"]["sandboxed"], true);
+        let s = c.call("status", Value::Null).await.unwrap();
+        assert_eq!(s["build"]["channel"], name);
+        assert_eq!(s["build"]["store"], cfg!(feature = "store"));
+        assert!(s["build"]["version"].is_string());
+        for (m, p) in [
+            ("speech.synthesize", json!({"text": "hi"})),
+            ("speech.transcribe", json!({"wav_base64": "AAAA"})),
+            ("call.say", json!({"call_id": "c1", "text": "hi"})),
+            ("call.listen", json!({"call_id": "c1", "transcribe": true})),
+            (
+                "call.rx_audio",
+                json!({"call_id": "c1", "transcribe": true}),
+            ),
+        ] {
+            match c.call(m, p).await {
+                Err(ClientError::Api(e)) => {
+                    assert_eq!(e.kind, ErrorKind::Unsupported, "{m}: {e}");
+                    assert_eq!(e.kind.code(), -32006);
+                }
+                other => panic!("{m}: expected unsupported, got {other:?}"),
             }
-            other => panic!("{m}: expected unsupported, got {other:?}"),
         }
+        // Not gated without transcription: a missing call is still not_found.
+        match c.call("call.rx_audio", json!({"call_id": "c1"})).await {
+            Err(ClientError::Api(e)) => assert_ne!(e.kind, ErrorKind::Unsupported),
+            other => panic!("{other:?}"),
+        }
+        app.shutdown().await;
     }
-    // Not gated without transcription: a missing call is still not_found.
-    match c.call("call.rx_audio", json!({"call_id": "c1"})).await {
-        Err(ClientError::Api(e)) => assert_ne!(e.kind, ErrorKind::Unsupported),
-        other => panic!("{other:?}"),
-    }
-    app.shutdown().await;
 
     // Direct: same request is not `unsupported`.
     let app = start_as(&env, Channel::DIRECT).await;

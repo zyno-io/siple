@@ -15,6 +15,9 @@ Outputs (all checked in, so CI needs no Pillow; `pip install pillow` only to cha
   packaging/icons/siple-small-128.png  the simplified mark on the Apple grid: macOS 16/32 pt frames
                                       and the tray / menu-bar base image
   packaging/windows/msix-assets/      MSIX tile and app-list logos (`--msix-only` redoes just these)
+  packaging/linux/hicolor/<N>x<N>/apps/io.zyno.siple.png   N = 64, 128, 256, 512: the Flatpak / Linux
+                                      app icon (Flatpak exports PNGs up to 512 px); `--hicolor-only`
+                                      redoes just these, resized from the committed siple-1024.png
 
 `--preview DIR` also writes a contact sheet of every size to DIR/icon-sheet.png.
 """
@@ -26,6 +29,8 @@ from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 OUT = ROOT / "packaging" / "icons"
+HICOLOR_OUT = ROOT / "packaging" / "linux" / "hicolor"
+HICOLOR_SIZES = (64, 128, 256, 512)
 MSIX_OUT = ROOT / "packaging" / "windows" / "msix-assets"
 GLYPH_FONT = ROOT / "crates" / "siple" / "assets" / "fonts" / "Phosphor-Fill.ttf"
 PHONE = "\ue3b8"  # Phosphor "phone"; theme::icon::PHONE
@@ -282,7 +287,20 @@ def preview(dirpath):
     print("preview", d / "icon-sheet.png")
 
 
+def hicolor():
+    """Resizes the committed siple-1024.png into the hicolor sizes; touches nothing else."""
+    icon = Image.open(OUT / "siple-1024.png").convert("RGBA")
+    for px in HICOLOR_SIZES:
+        d = HICOLOR_OUT / f"{px}x{px}" / "apps"
+        d.mkdir(parents=True, exist_ok=True)
+        icon.resize((px, px), Image.LANCZOS).save(d / "io.zyno.siple.png", optimize=True)
+        print("wrote", d / "io.zyno.siple.png")
+
+
 def main():
+    if "--hicolor-only" in sys.argv:
+        hicolor()
+        return
     if "--msix-only" in sys.argv:
         msix_assets()
         return

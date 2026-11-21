@@ -1,6 +1,18 @@
 <!-- siple-rename: keep (this file documents the legacy ZynoPhone names on purpose) -->
 # Changelog
 
+## Unreleased
+
+- Flatpak edition `io.zyno.siple`, in preparation for Flathub: built from source on the freedesktop 26.08 runtime
+  for x86_64 and aarch64; CI builds a test bundle. Sandboxed: network, audio (PulseAudio / PipeWire), tray,
+  notifications and the Secret Service, no access to your home folder. Settings live in
+  `~/.var/app/io.zyno.siple/config/siple/`. Flatpak updates it (no update check of its own); `[speech]` commands are
+  not available; `launch_at_login` goes through the desktop's Background portal; the CLI is
+  `flatpak run --command=siple-cli io.zyno.siple`.
+- API: `build.channel` can be `flatpak`; `app.update_status` `disabled_reason` can be `managed_by_flatpak`.
+- Linux: hicolor app icons and a complete AppStream file (releases, screenshots, content rating) in `packaging/linux/`;
+  the tarball's `share/metainfo` file gains the same metadata.
+
 ## 0.1.2 (2026-11-19)
 
 - Store editions now tell you about updates. The Mac App Store edition asks Apple's public lookup of Siple's listing about

@@ -373,7 +373,7 @@ pub fn builtin_methods() -> Vec<MethodInfo> {
     vec![
         MethodInfo::new(
             "hello",
-            "Handshake; must be the first message. Returns server version, current event seq, `instance_id` / `started_at` and `build` ({channel: direct|mas|msix, sandboxed, store, version}: which edition answers) (a different instance_id than before means the application restarted: event seqs and call ids reset).",
+            "Handshake; must be the first message. Returns server version, current event seq, `instance_id` / `started_at` and `build` ({channel: direct|mas|msix|flatpak, sandboxed, store, version}: which edition answers) (a different instance_id than before means the application restarted: event seqs and call ids reset).",
             json!({"type":"object","properties":{
                 "token":{"type":"string","description":"Per-run token from runtime.json (mandatory on TCP)."},
                 "client":{"type":"string","description":"Client name for logs."}},
