@@ -291,7 +291,7 @@ async fn mic_level_and_echo_test_without_audio() {
 
 /// A file that parses but fails validation is rejected by the reload; `config.view` still gives
 /// the hash of what is on disk, so an edit based on it (disabling the bad account) repairs it
-/// (plan section 4.2) instead of conflicting forever.
+/// instead of conflicting forever.
 #[tokio::test(flavor = "multi_thread")]
 async fn an_invalid_file_can_be_repaired_by_an_edit_based_on_the_viewed_hash() {
     let env = Env::new(&config_text(&["a1"]));

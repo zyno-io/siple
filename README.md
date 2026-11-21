@@ -230,7 +230,8 @@ details). Use `srtp = "mandatory"` to test that a PBX really negotiates SRTP;
 
 ## Development
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+See [CONTRIBUTING.md](CONTRIBUTING.md) and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Open work and known limitations are in
+[docs/ROADMAP.md](docs/ROADMAP.md).
 
 ```sh
 cargo test --workspace                 # unit + in-process integration (UDP/TCP/TLS peer accounts, no PBX)
@@ -260,7 +261,8 @@ crates/siple-core     engine: audio devices, media thread, logging, event log, c
 crates/siple          GUI binary (egui/wgpu); also `--headless`
 crates/siple-cli      console binary: run --headless, ctl, events, mcp, methods, config-example, skill
 vendor/rsipstack      vendored rsipstack 0.7.3 with Siple patches (see its SIPLE_PATCHES.md)
-docs/                 ARCHITECTURE.md, CONFIG.md, API.md (generated from API-intro.md + the code)
+docs/                 ARCHITECTURE.md, CONFIG.md, API.md (generated from API-intro.md + the code), RELEASING.md,
+                      ROADMAP.md, STORE.md
 packaging/, scripts/  icons, Info.plist, entitlements, manifest; package-*.sh, gen-api-docs.sh, gen-licenses.sh
 deny.toml, about.toml dependency licence policy and licence bundle config
 ```

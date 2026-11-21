@@ -1,4 +1,4 @@
-//! Phase 6: hold / unhold. Peer-mode accounts in one stack plus raw-UDP probes.
+//! Hold / unhold. Peer-mode accounts in one stack plus raw-UDP probes.
 
 mod common;
 

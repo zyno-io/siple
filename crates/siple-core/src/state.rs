@@ -1,4 +1,4 @@
-//! App-owned `state.toml`: runtime state that is not a setting (D3), and the effective audio
+//! App-owned `state.toml`: runtime state that is not a setting, and the effective audio
 //! devices.
 //!
 //! Audio devices are settings, so they live in `[audio]` of `config.toml` and nowhere else: the

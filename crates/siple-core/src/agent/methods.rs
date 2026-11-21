@@ -4,7 +4,7 @@
 //! Every play goes through [`AppBackend::start_play`]: the clip is decoded in the API layer,
 //! the event-log position is captured before the clip is issued, and `wait` polls the log from
 //! that position for the play's `call.play_finished` (or the call ending), so a finish can never
-//! be missed (invariant I2).
+//! be missed.
 
 use std::io::Cursor;
 use std::path::PathBuf;

@@ -159,7 +159,7 @@ jobs:
           mkdir -p "$cred"
           printf '%s' "$APPLE_CERTIFICATE_P12" | base64 --decode > "$cred/cert.p12"
           printf '%s' "$APPLE_CERTIFICATE_PASSWORD" > "$cred/cert-password"
-          # APP_STORE_CONNECT_API_KEY: base64 of {"issuer_id","key_id","private_key"} (same as sp2p).
+          # APP_STORE_CONNECT_API_KEY: base64 of {"issuer_id","key_id","private_key"} (docs/RELEASING.md).
           printf '%s' "$APP_STORE_CONNECT_API_KEY" | base64 --decode > "$cred/api-key-raw.json"
           jq -r '.private_key' "$cred/api-key-raw.json" > "$cred/api-key.p8"
           rcodesign encode-app-store-connect-api-key \
@@ -286,7 +286,7 @@ jobs:
             [ -n "${!v}" ] || { echo "::error::secret $v is not set in the 'release' environment"; exit 1; }
           done
 
-      # Same Azure Artifact Signing account / certificate profile as sp2p (see docs/RELEASING.md).
+      # Azure Artifact Signing account and certificate profile: see docs/RELEASING.md.
       # The folder holds exactly one staged directory with siple.exe and siple-cli.exe.
       - name: Sign siple.exe and siple-cli.exe with Azure Artifact Signing
         uses: Azure/artifact-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82 # v2

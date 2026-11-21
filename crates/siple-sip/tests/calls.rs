@@ -814,7 +814,7 @@ async fn prack_disabled_require_100rel_gets_420_and_bad_sdp_400() {
     let resp = raw2.final_response("CSeq: 1 INVITE").await;
     assert!(resp.starts_with("SIP/2.0 400"), "{resp}");
     assert!(r.stack.calls().is_empty());
-    // Replaces is a Phase 7 hook: refused for now, and it must not count as DND / max_calls.
+    // Replaces is not supported yet: refused, and it must not count as DND / max_calls.
     let raw3 = Raw::new(&b).await;
     raw3.send(&raw3.msg(
         "INVITE",

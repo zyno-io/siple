@@ -485,7 +485,7 @@ mod tests {
         assert_eq!(r.apply(sdp), sdp);
         r.update(&cfg(true, false), &accounts, &token);
         assert!(!r.apply(sdp).contains("QUJD"));
-        // Credentials off again: the password passes (it is the operator's choice, D2).
+        // Credentials off again: the password passes (it is the operator's choice).
         assert!(r.apply("pw=hunter2-secret").contains("hunter2-secret"));
         r.update(&cfg(false, false), &accounts, &token);
         assert!(!r.active());
