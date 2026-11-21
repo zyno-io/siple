@@ -51,14 +51,18 @@ unknown-git = "deny"
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
 
 [advisories]
+# Unmaintained notices for every crate in the graph, not just our own: cargo-deny 0.22 changed the
+# default to "workspace", which would silently drop the transitive notices ignored below.
+unmaintained = "all"
 # Deliberate, reviewed exceptions only. Each needs a reason and an exit condition.
 ignore = [
     # chrono declared unmaintained (2026-09-14, no vulnerability). Only Siple's own crates use it
     # (timestamps, RFC 3339 formatting). Remove once migrated to jiff (docs/TODO.md).
     { id = "RUSTSEC-2026-0543", reason = "chrono unmaintained notice only; migration to jiff tracked in TODO" },
-    # zbus 4.x helper crates, pulled in by egui -> accesskit_unix -> atspi (Linux screen-reader
-    # support, needed for accessibility). "Unmaintained" notices, not vulnerabilities. Remove once
-    # egui/accesskit move to zbus 5.
+    # zbus 5.x helper crates (merged into zbus 6), Linux only: pulled in by egui -> accesskit_unix
+    # -> atspi (screen-reader support, needed for accessibility), ksni (tray) and keyring ->
+    # secret-service. "Unmaintained" notices, not vulnerabilities. Remove once accesskit_unix/atspi,
+    # ksni and secret-service move to zbus 6.
     { id = "RUSTSEC-2026-0370", reason = "zvariant via accesskit_unix; unmaintained notice only" },
     { id = "RUSTSEC-2026-0371", reason = "zbus_names via accesskit_unix; unmaintained notice only" },
     { id = "RUSTSEC-2026-0372", reason = "zvariant_derive via accesskit_unix; unmaintained notice only" },
