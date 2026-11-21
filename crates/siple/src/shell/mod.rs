@@ -748,7 +748,8 @@ impl Shell {
             }
             #[cfg(not(feature = "store"))]
             ShellMsg::Ui(UiRequest::RelaunchForUpdate(spec)) => {
-                crate::relaunch::request(spec);
+                // A minimized window is still `visible`: only the tray-hidden state is "hidden".
+                crate::relaunch::request(spec, self.visible);
                 self.quit(ctx);
             }
             ShellMsg::Ui(UiRequest::State | UiRequest::SetPanels { .. }) => {}

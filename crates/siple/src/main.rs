@@ -29,6 +29,20 @@ use siple_core::events::EventFilter;
 use siple_core::instance::InstanceError;
 use siple_core::{App, AppError, AppOptions, config};
 
+/// The window state a relaunch restores (`--window`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, clap::ValueEnum)]
+pub enum WindowArg {
+    Shown,
+    Hidden,
+}
+
+impl WindowArg {
+    #[cfg_attr(feature = "store", allow(dead_code))]
+    fn from_shown(shown: bool) -> Self {
+        if shown { Self::Shown } else { Self::Hidden }
+    }
+}
+
 #[derive(Parser)]
 #[command(name = "siple", version = siple_core::update::full_version(), about = "Siple (SIP test softphone)")]
 struct Cli {
@@ -45,12 +59,35 @@ struct Cli {
     /// the instance lock and control socket free. A permanent part of the command line.
     #[arg(long, hide = true, value_name = "PID")]
     wait_pid: Option<u32>,
+    /// Window state to restore after an in-place update; overrides `[ui] start_hidden`. `hidden`
+    /// only applies when there is a tray. Passed by the relaunch, never by users.
+    #[arg(long, hide = true, value_enum, value_name = "STATE")]
+    window: Option<WindowArg>,
     /// A `sip:`, `sips:`, `tel:`, `callto:` or `siple:` link passed by the OS URL handler.
     /// Validated, then handed to the running (or this) instance. A call link is put into the
     /// dial field and never dials by itself; a `siple:provision` setup link opens a review
     /// screen and changes nothing until the user confirms every step.
     #[arg(hide = true)]
     uri: Option<String>,
+}
+
+/// Whether the window starts hidden. A link always shows it. After an update relaunch `--window`
+/// restores the state the old process had (`hidden` needs a tray, or the window would be
+/// unreachable); otherwise `[ui] start_hidden` decides.
+fn start_hidden(
+    cfg_start_hidden: bool,
+    tray: bool,
+    has_link: bool,
+    window_arg: Option<WindowArg>,
+) -> bool {
+    if has_link {
+        return false;
+    }
+    match window_arg {
+        Some(WindowArg::Shown) => false,
+        Some(WindowArg::Hidden) => tray,
+        None => cfg_start_hidden && tray,
+    }
 }
 
 /// Linux without X11 or Wayland: the GUI cannot open a window, and eframe would only fail after
@@ -167,6 +204,7 @@ fn main() -> ExitCode {
         app,
         link,
         (!is_default_path).then_some(config_path_for_login),
+        cli.window,
     )
 }
 
@@ -255,6 +293,7 @@ fn run_gui(
     app: Arc<App>,
     link: Option<Result<siple_core::uri::IncomingLink, String>>,
     login_config: Option<PathBuf>,
+    window_arg: Option<WindowArg>,
 ) -> ExitCode {
     if app.created_config() {
         tracing::info!("created example config at {}", app.config_path().display());
@@ -353,7 +392,7 @@ fn run_gui(
                 &handle,
                 shared.clone(),
                 actions,
-                ui_cfg.start_hidden && ui_cfg.tray && link.is_none(),
+                start_hidden(ui_cfg.start_hidden, ui_cfg.tray, link.is_some(), window_arg),
                 login_config,
             );
             let mut shell_app = shell::ShellApp::new(phone, sh);
@@ -634,6 +673,47 @@ mod tests {
         let c = Cli::try_parse_from(["siple", "--headless", "tel:+15551234567"]).unwrap();
         assert!(c.headless && c.uri.is_some());
         assert!(Cli::try_parse_from(["siple"]).unwrap().uri.is_none());
+    }
+
+    #[test]
+    fn start_hidden_without_the_flag_is_the_config() {
+        assert!(start_hidden(true, true, false, None));
+        assert!(!start_hidden(false, true, false, None));
+        assert!(!start_hidden(true, false, false, None));
+    }
+
+    #[test]
+    fn window_shown_overrides_start_hidden() {
+        let shown = Some(WindowArg::Shown);
+        assert!(!start_hidden(true, true, false, shown));
+        assert!(!start_hidden(false, true, false, shown));
+    }
+
+    #[test]
+    fn window_hidden_needs_a_tray() {
+        let hidden = Some(WindowArg::Hidden);
+        assert!(start_hidden(false, true, false, hidden));
+        assert!(start_hidden(true, true, false, hidden));
+        assert!(!start_hidden(true, false, false, hidden));
+    }
+
+    #[test]
+    fn a_link_always_shows_the_window() {
+        for arg in [None, Some(WindowArg::Hidden), Some(WindowArg::Shown)] {
+            assert!(!start_hidden(true, true, true, arg));
+        }
+    }
+
+    #[test]
+    fn accepts_the_hidden_window_flag() {
+        assert!(Cli::try_parse_from(["siple"]).unwrap().window.is_none());
+        let c = Cli::try_parse_from(["siple", "--window", "hidden"]).unwrap();
+        assert_eq!(c.window, Some(WindowArg::Hidden));
+        let c = Cli::try_parse_from(["siple", "--wait-pid", "4", "--window", "shown"]).unwrap();
+        assert_eq!(c.window, Some(WindowArg::Shown));
+        assert!(Cli::try_parse_from(["siple", "--window", "bogus"]).is_err());
+        let help = Cli::command().render_help().to_string();
+        assert!(!help.contains("--window"));
     }
 
     #[test]
