@@ -9,3 +9,5 @@ Terminal=false
 Categories=Network;Telephony;AudioVideo;
 MimeType=x-scheme-handler/sip;x-scheme-handler/sips;x-scheme-handler/tel;x-scheme-handler/callto;
 StartupWMClass=io.zyno.siple
+Keywords=SIP;VoIP;softphone;phone;telephony;call;PBX;
+SingleMainWindow=true

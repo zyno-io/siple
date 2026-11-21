@@ -11,6 +11,7 @@ how you installed Siple.
 |---|---|
 | Direct download (zip, dmg, tarball) | **Install and restart** downloads the new version, checks it and installs it in place. If that is not possible, **Download** and **Release notes** open the release page in your browser. |
 | Mac App Store | **Open App Store** opens Siple's page there. The App Store installs the update. |
+| Flatpak (Flathub) | No pill. Flatpak installs the update: use your software center or `flatpak update`. Siple makes no check of its own. |
 | Microsoft Store | **Open Microsoft Store** opens Siple's page there. The Store does not tell a version number, so the pill reads **Update**. The Store installs the update. |
 
 To hide an update you do not want yet:

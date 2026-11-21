@@ -1,0 +1,61 @@
+# Siple as a Flatpak. This in-repo manifest builds the checkout itself (type: dir); scripts/flathub-manifest.sh
+# renders the Flathub copy (git tag + commit, notices from the release). Build: scripts/flatpak-build.sh
+# (CI: .github/workflows/flatpak.yml; a Linux host with docker: scripts/flatpak-local.sh). docs/RELEASING.md, "Flatpak".
+id: io.zyno.siple
+runtime: org.freedesktop.Platform
+runtime-version: '26.08'
+sdk: org.freedesktop.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+command: siple
+finish-args:
+  # SIP signalling (UDP/TCP/TLS), RTP media, DNS SRV, the route monitor (netlink).
+  - --share=network
+  # X11 shared memory (with fallback-x11).
+  - --share=ipc
+  - --socket=wayland
+  - --socket=fallback-x11
+  # GPU for the wgpu renderer (Vulkan / GL).
+  - --device=dri
+  # Microphone and speaker: cpal opens ALSA "default", which the runtime routes to PulseAudio
+  # (PipeWire's pulse server on PipeWire hosts) through the ALSA pulse plugin.
+  - --socket=pulseaudio
+  # Tray icon: StatusNotifierItem registered under the unique bus name (no own-name needed).
+  - --talk-name=org.kde.StatusNotifierWatcher
+  # Incoming-call notifications with Answer / Decline actions.
+  - --talk-name=org.freedesktop.Notifications
+  # password_store = "keyring": account passwords in the Secret Service (GNOME Keyring, KWallet).
+  - --talk-name=org.freedesktop.secrets
+build-options:
+  append-path: /usr/lib/sdk/rust-stable/bin
+  env:
+    CARGO_HOME: /run/build/siple/cargo
+    CARGO_NET_OFFLINE: 'true'
+modules:
+  - name: siple
+    buildsystem: simple
+    build-commands:
+      # `store`: no GitHub update source, downloader or installer: Flatpak updates the app.
+      - cargo build --release --locked --offline -p siple -p siple-cli --features store
+      - install -Dm755 -t /app/bin target/release/siple target/release/siple-cli
+      - install -Dm644 -t /app/share/applications packaging/linux/io.zyno.siple.desktop
+      - install -Dm644 -t /app/share/metainfo packaging/linux/io.zyno.siple.metainfo.xml
+      - "for s in 64 128 256 512; do install -Dm644 -t /app/share/icons/hicolor/${s}x${s}/apps packaging/linux/hicolor/${s}x${s}/apps/io.zyno.siple.png; done"
+      - install -Dm644 -t /app/share/licenses/io.zyno.siple LICENSE THIRD-PARTY-NOTICES.html
+    sources:
+      # BEGIN local-source (scripts/flathub-manifest.sh replaces this block)
+      - type: dir
+        path: ../..
+        skip:
+          - .git
+          - target
+          - flatpak-work
+          - dist
+          - website
+          - .flatpak-builder
+          - tests/interop/pbx.env
+          - tests/interop/fs-conf.tar.gz
+      - type: file
+        path: THIRD-PARTY-NOTICES.html
+      # END local-source
+      - cargo-sources.json

@@ -43,7 +43,7 @@ xdg-mime default io.zyno.siple.desktop x-scheme-handler/sip
 ```
 
 Repeat the command for `sips`, `tel` and `callto`. The switch in Settings has no effect on Linux, because this registration
-happens at install time.
+happens at install time. The Flatpak edition works the same way: run the `xdg-mime` command above.
 
 </template>
 </OsTabs>

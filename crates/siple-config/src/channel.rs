@@ -1,8 +1,9 @@
 //! Distribution channel: how this process was installed (direct download, Mac App Store,
-//! Microsoft Store MSIX) and the file locations that follow from it.
+//! Microsoft Store MSIX, Flatpak) and the file locations that follow from it.
 //!
 //! Detection looks at the process, not at the build: macOS sandbox containers set
-//! `APP_SANDBOX_CONTAINER_ID`, and an MSIX process has a package identity. Gating code copies the
+//! `APP_SANDBOX_CONTAINER_ID`, an MSIX process has a package identity, and a Linux Flatpak sandbox
+//! has `/.flatpak-info`. Gating code copies the
 //! [`Channel`] (it is `Copy`), so tests can inject any channel.
 
 use std::path::{Path, PathBuf};
@@ -23,6 +24,8 @@ pub enum ChannelKind {
     MacAppStore,
     /// Microsoft Store (or sideloaded) MSIX package: config in the package's LocalState.
     Msix,
+    /// Flatpak sandbox (Flathub): config in the per-app `$XDG_CONFIG_HOME`, no external programs.
+    Flatpak,
 }
 
 impl ChannelKind {
@@ -32,6 +35,7 @@ impl ChannelKind {
             Self::Direct => "direct",
             Self::MacAppStore => "mas",
             Self::Msix => "msix",
+            Self::Flatpak => "flatpak",
         }
     }
 }
@@ -41,7 +45,7 @@ impl ChannelKind {
 pub struct Channel {
     /// Which channel.
     pub kind: ChannelKind,
-    /// Running inside an OS sandbox (macOS app sandbox).
+    /// Running inside an OS sandbox (macOS app sandbox, Flatpak).
     pub sandboxed: bool,
     /// May spawn arbitrary external programs (`[speech]` hooks, a headless engine, ...).
     pub can_exec: bool,
@@ -63,6 +67,15 @@ impl Channel {
     /// A Mac App Store sandboxed process.
     pub const MAC_APP_STORE: Channel = Channel {
         kind: ChannelKind::MacAppStore,
+        sandboxed: true,
+        can_exec: false,
+        package_family: None,
+        aumid: None,
+    };
+
+    /// A Flatpak (Flathub) process.
+    pub const FLATPAK: Channel = Channel {
+        kind: ChannelKind::Flatpak,
         sandboxed: true,
         can_exec: false,
         package_family: None,
@@ -141,7 +154,44 @@ fn detect() -> Channel {
     }
 }
 
-#[cfg(not(any(target_os = "macos", windows)))]
+#[cfg(target_os = "linux")]
+fn detect() -> Channel {
+    detect_in(Path::new("/"))
+}
+
+/// Flatpak writes `/.flatpak-info` into every sandbox; it never exists on the host. It must name
+/// this app: the tarball run inside another app's sandbox (or a stray file) is not the Flatpak edition.
+#[cfg(any(target_os = "linux", test))]
+fn detect_in(root: &Path) -> Channel {
+    match std::fs::read_to_string(root.join(".flatpak-info")) {
+        Ok(text) if flatpak_info_app(&text).as_deref() == Some(FLATPAK_APP_ID) => Channel::FLATPAK,
+        _ => Channel::DIRECT,
+    }
+}
+
+/// The Flatpak application id.
+#[cfg(any(target_os = "linux", test))]
+const FLATPAK_APP_ID: &str = "io.zyno.siple";
+
+/// `name` of the `[Application]` group of a `.flatpak-info` key file (whitespace around the
+/// header, key and value is ignored).
+#[cfg(any(target_os = "linux", test))]
+fn flatpak_info_app(text: &str) -> Option<String> {
+    let mut in_app = false;
+    for line in text.lines().map(str::trim) {
+        if let Some(group) = line.strip_prefix('[').and_then(|l| l.strip_suffix(']')) {
+            in_app = group.trim() == "Application";
+        } else if in_app
+            && let Some((k, v)) = line.split_once('=')
+            && k.trim() == "name"
+        {
+            return Some(v.trim().to_string());
+        }
+    }
+    None
+}
+
+#[cfg(not(any(target_os = "macos", windows, target_os = "linux")))]
 fn detect() -> Channel {
     Channel::DIRECT
 }
@@ -228,6 +278,8 @@ pub fn config_dir_for_channel(channel: &Channel) -> Option<PathBuf> {
             let pfn = channel.package_family?;
             dirs::data_local_dir().map(|d| msix_dir_in(&d, pfn))
         }
+        // Flatpak sets `$XDG_CONFIG_HOME` to `~/.var/app/<app id>/config`, the same path on the host.
+        ChannelKind::Flatpak => crate::paths::direct_config_dir(),
     }
 }
 
@@ -292,6 +344,58 @@ mod tests {
         let m = Channel::msix("a_b", Some("a_b!App"));
         assert!(m.is_packaged() && m.can_exec && !m.sandboxed);
         assert_eq!(ChannelKind::MacAppStore.as_str(), "mas");
+        let f = std::hint::black_box(Channel::FLATPAK);
+        assert!(f.is_packaged() && f.sandboxed && !f.can_exec);
+        assert_eq!(ChannelKind::Flatpak.as_str(), "flatpak");
+    }
+
+    #[test]
+    fn flatpak_is_detected_by_flatpak_info() {
+        let d = tempfile::tempdir().unwrap();
+        assert_eq!(detect_in(d.path()), Channel::DIRECT);
+        std::fs::create_dir(d.path().join(".flatpak-info")).unwrap();
+        assert_eq!(detect_in(d.path()), Channel::DIRECT);
+        std::fs::remove_dir(d.path().join(".flatpak-info")).unwrap();
+        std::fs::write(d.path().join(".flatpak-info"), "[Application]\n").unwrap();
+        assert_eq!(detect_in(d.path()), Channel::DIRECT, "no name");
+        let info = d.path().join(".flatpak-info");
+        std::fs::write(&info, "[Application]\nname=io.zyno.siple\nruntime=x\n").unwrap();
+        assert_eq!(detect_in(d.path()), Channel::FLATPAK);
+        std::fs::write(
+            &info,
+            "[Instance]\nx=1\n\n [ Application ] \n name = io.zyno.siple \n",
+        )
+        .unwrap();
+        assert_eq!(
+            detect_in(d.path()),
+            Channel::FLATPAK,
+            "whitespace is tolerated"
+        );
+    }
+
+    #[test]
+    fn another_apps_flatpak_info_is_not_this_flatpak() {
+        let d = tempfile::tempdir().unwrap();
+        let info = d.path().join(".flatpak-info");
+        for text in [
+            "[Application]\nname=org.example.Other\n",
+            "[Application]\nname=io.zyno.siple.Other\n",
+            "[Instance]\nname=io.zyno.siple\n",
+            "[Application]\nruntime=io.zyno.siple\n",
+            "[Context]\nname=io.zyno.siple\n[Application]\nname=org.example.Other\n",
+            "",
+        ] {
+            std::fs::write(&info, text).unwrap();
+            assert_eq!(detect_in(d.path()), Channel::DIRECT, "{text:?}");
+        }
+    }
+
+    #[test]
+    fn flatpak_uses_the_per_app_xdg_config_dir() {
+        assert_eq!(
+            config_dir_for_channel(&Channel::FLATPAK),
+            crate::paths::direct_config_dir()
+        );
     }
 
     #[cfg(unix)]

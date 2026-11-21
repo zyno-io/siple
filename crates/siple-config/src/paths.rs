@@ -27,7 +27,8 @@ const APP_DIR: &str = "siple";
 /// Config directory of this process's distribution channel (see [`crate::channel`]): the
 /// platform default for direct installs (`~/Library/Application Support/Siple`,
 /// `%APPDATA%\Siple`, or `$XDG_CONFIG_HOME/siple` elsewhere), the app group container for the Mac
-/// App Store build, the package's LocalState for MSIX.
+/// App Store build, the package's LocalState for MSIX, and the per-app `$XDG_CONFIG_HOME/siple`
+/// (`~/.var/app/<app id>/config/siple`) in a Flatpak.
 pub fn default_config_dir() -> Option<PathBuf> {
     crate::channel::config_dir()
 }

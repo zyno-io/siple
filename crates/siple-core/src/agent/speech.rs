@@ -71,7 +71,7 @@ pub enum SpeechError {
     Internal(String),
     /// This edition cannot run external commands (Mac App Store build).
     #[error(
-        "speech hooks are not available in this edition (the Mac App Store build cannot run \
+        "speech hooks are not available in this edition (the Mac App Store and Flatpak editions cannot run \
          external commands); use `siple-cli stream` or base64 audio with your own TTS/STT instead"
     )]
     Unsupported,

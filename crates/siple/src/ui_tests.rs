@@ -330,6 +330,26 @@ fn settings_without_a_source_say_so() {
 }
 
 #[test]
+fn settings_of_the_flatpak_edition_say_flatpak_updates_it() {
+    let mut snap = base_snapshot();
+    snap.update = siple_core::update::UpdateStatus {
+        source: SourceName::None,
+        disabled_reason: Some(siple_core::update::DisabledReason::ManagedByFlatpak),
+        enabled: false,
+        ..update_status("", false)
+    };
+    let mut h = harness(snap, WIDE);
+    h.state_mut().ui.settings.open = true;
+    h.state_mut().ui.settings.section = crate::ui::settings::Section::Advanced;
+    h.run();
+    assert!(
+        h.query_by_label("Updated by Flatpak").is_some()
+            || h.query_by_label_contains("Updated by Flatpak").is_some()
+    );
+    assert!(h.query_by_label("Channel").is_none());
+}
+
+#[test]
 fn no_update_pill_when_up_to_date_disabled_or_not_checked() {
     let mut up_to_date = base_snapshot();
     up_to_date.update = update_status("0.1.0", false);

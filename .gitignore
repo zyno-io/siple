@@ -42,3 +42,9 @@ website/.vitepress/cache/
 website/public/screenshots/
 website/.vitepress/.temp/
 __pycache__/
+
+# Flatpak build products (scripts/flatpak-*.sh): generated from Cargo.lock, never committed.
+/flatpak-work/
+/packaging/flatpak/cargo-sources.json
+/packaging/flatpak/THIRD-PARTY-NOTICES.html
+.flatpak-builder/
