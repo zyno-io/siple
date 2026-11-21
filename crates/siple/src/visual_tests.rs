@@ -481,7 +481,7 @@ struct TestApp {
     snap: Snapshot,
     state: UiState,
     config_path: PathBuf,
-    notice: Option<String>,
+    notice: Option<crate::snapshot::Notice>,
     live: crate::ui::LiveAudio,
 }
 
@@ -492,7 +492,7 @@ impl eframe::App for TestApp {
             now: now(),
             config_path: &self.config_path,
             has_log_dir: true,
-            notice: self.notice.as_deref(),
+            notice: self.notice.as_ref(),
             live: self.live.clone(),
         };
         let _ = draw(ui, &vm, &mut self.state);
@@ -650,7 +650,9 @@ fn visual_blf_list() {
 #[test]
 fn visual_config_error() {
     render_all("config_error", config_error, |h| {
-        h.state_mut().notice = Some("Dial failed: account lab-tls is not registered".into());
+        h.state_mut().notice = Some(crate::snapshot::Notice::plain(
+            "Dial failed: account lab-tls is not registered",
+        ));
     });
 }
 
@@ -715,6 +717,7 @@ fn visual_settings_accounts() {
             RpcReply {
                 tag: RpcTag::TestAccount("desk-1001".into()),
                 result: Ok(serde_json::json!({"diagnosis": "tls_untrusted", "ok": false,
+                    "problem": siple_sip::problem::Problem::TlsUntrusted,
                     "fingerprint": "ab12".repeat(16),
                     "message": "The server's TLS certificate is not trusted (self-signed certificate)"})),
             },
@@ -777,6 +780,8 @@ fn visual_wizard_account() {
             RpcReply {
                 tag: RpcTag::TestDraft,
                 result: Ok(serde_json::json!({"diagnosis": "auth_failed", "ok": false,
+                    "code": 403,
+                    "problem": siple_sip::problem::Problem::AuthFailed,
                     "message": "Wrong username or password (the server answered 403)"})),
             },
             &snap,

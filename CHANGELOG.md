@@ -27,6 +27,15 @@
   - Hanging up an outgoing call while it rings now sends the CANCEL to the same next hop as the INVITE (outbound
     proxy or registrar). Before, it went wherever the dialled address resolved, so with an outbound proxy, or a
     registrar host other than the domain, the other side could keep ringing.
+- Plain-language errors. A failed registration, call, busy lamp or transfer, and a failed action, now say what went wrong and
+  what to try ("Wrong username or password", "Busy", "Extension not found") instead of a bare SIP code. The server's answer
+  moves to a details line or a hover. A busy lamp whose subscription failed reads "Failed" (its tooltip and the banner above
+  the extensions name the problem).
+- API: a `problem {kind, title, hint}` object on failed registrations (`registration.problem`), ended calls (`end.problem`),
+  BLF subscriptions (`subscription.last_problem`), transfer errors (`last_error.problem`), `account.test` results (`problem`)
+  and SIP-level JSON-RPC errors (`error.data.problem`). Existing fields keep their names and values. Kinds are stable; see
+  `docs/PROBLEMS.md`.
+- `siple-cli problems` lists the catalog (`--json`, `--markdown`).
 
 ## 0.1.2 (2026-11-19)
 

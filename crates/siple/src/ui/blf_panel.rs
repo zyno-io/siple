@@ -10,6 +10,7 @@ use std::collections::{HashMap, HashSet};
 
 use eframe::egui::{self, Align, Color32, CornerRadius, Layout, Margin, RichText, Stroke};
 use siple_core::config::{BlfClick, BlfClickInCall, BlfClickRinging, BlfGroupBy, BlfView};
+use siple_sip::problem::Problem;
 use siple_sip::{BlfState, BlfStatus, CallInfo, SubscriptionPhase};
 
 use super::{
@@ -17,7 +18,8 @@ use super::{
     truncate_galley,
 };
 use crate::snapshot::{
-    blf_dialog_lines, blf_health_lines, blf_state_text, blf_time_lines, blf_title, format_duration,
+    blf_dialog_lines, blf_failure, blf_health_lines, blf_state_text, blf_time_lines, blf_title,
+    format_duration,
 };
 use crate::theme::{
     self, FS_BODY, FS_MICRO, FS_SMALL, Palette, R_LG, R_MD, R_SM, SP_S, Tone, icon as ic,
@@ -26,7 +28,7 @@ use crate::widgets::{icon, segmented, strong};
 
 /// The filter box and chips appear from this many entries on.
 pub(crate) const FILTER_MIN_ENTRIES: usize = 12;
-/// This many failed keys of one account with one code collapse into one banner.
+/// This many failed keys of one account with one problem collapse into one banner.
 const BANNER_MIN_FAILURES: usize = 5;
 
 pub(crate) fn blf_tone(p: &Palette, s: BlfState) -> (Tone, bool) {
@@ -438,9 +440,15 @@ fn filter_bar(ui: &mut egui::Ui, cx: &Cx, st: &mut UiState) {
     });
 }
 
-/// One banner per account whose keys fail with one code (`BANNER_MIN_FAILURES` or more).
-fn failure_groups(cx: &Cx) -> Vec<(String, u16, usize)> {
-    let mut counts: HashMap<(String, u16), usize> = HashMap::new();
+/// Whether failures of this kind can share one banner. `other` and `refused` cover unrelated
+/// causes, so those keys keep their own red lamp and raw reason.
+fn groupable(p: Problem) -> bool {
+    !matches!(p, Problem::Other | Problem::Refused)
+}
+
+/// One banner per account whose keys fail with one problem (`BANNER_MIN_FAILURES` or more).
+fn failure_groups(cx: &Cx) -> Vec<(String, Problem, usize)> {
+    let mut counts: HashMap<(String, Problem), usize> = HashMap::new();
     for b in cx
         .vm
         .snap
@@ -448,14 +456,14 @@ fn failure_groups(cx: &Cx) -> Vec<(String, u16, usize)> {
         .iter()
         .filter(|b| b.state == BlfState::Failed)
     {
-        if let Some(code) = b.subscription.last_code {
-            *counts.entry((b.account.clone(), code)).or_default() += 1;
+        if let Some(p) = b.subscription.problem().filter(|p| groupable(*p)) {
+            *counts.entry((b.account.clone(), p)).or_default() += 1;
         }
     }
     let mut v: Vec<_> = counts
         .into_iter()
         .filter(|(_, n)| *n >= BANNER_MIN_FAILURES)
-        .map(|((a, c), n)| (a, c, n))
+        .map(|((a, p), n)| (a, p, n))
         .collect();
     v.sort();
     v
@@ -463,7 +471,7 @@ fn failure_groups(cx: &Cx) -> Vec<(String, u16, usize)> {
 
 fn health_banners(ui: &mut egui::Ui, cx: &Cx) {
     let p = cx.p;
-    for (account, code, n) in failure_groups(cx) {
+    for (account, problem, n) in failure_groups(cx) {
         egui::Frame::new()
             .fill(p.err.soft)
             .stroke(Stroke::new(1.0, p.err.led))
@@ -475,21 +483,16 @@ fn health_banners(ui: &mut egui::Ui, cx: &Cx) {
                     ui.label(icon(ic::WARNING, 15.0).color(p.err.ink));
                     ui.add(
                         egui::Label::new(
-                            strong(
-                                format!("{account}: BLF rejected by PBX ({code})"),
-                                FS_SMALL,
-                            )
-                            .color(p.err.ink),
+                            strong(format!("{account}: {}", problem.title()), FS_SMALL)
+                                .color(p.err.ink),
                         )
                         .wrap(),
                     );
                 });
                 ui.label(
-                    RichText::new(format!(
-                        "{n} extensions failed with the same code. Check the account's BLF settings in the config."
-                    ))
-                    .size(FS_SMALL)
-                    .color(p.text),
+                    RichText::new(format!("{n} extensions are affected. {}", problem.hint()))
+                        .size(FS_SMALL)
+                        .color(p.text),
                 );
             });
     }
@@ -497,10 +500,10 @@ fn health_banners(ui: &mut egui::Ui, cx: &Cx) {
 
 /// Failed keys covered by a banner show a quiet (grey) glyph instead of N red ones.
 fn quiet_failures(shown: &[&BlfStatus]) -> HashSet<String> {
-    let mut counts: HashMap<(&str, u16), usize> = HashMap::new();
+    let mut counts: HashMap<(&str, Problem), usize> = HashMap::new();
     for b in shown.iter().filter(|b| b.state == BlfState::Failed) {
-        if let Some(c) = b.subscription.last_code {
-            *counts.entry((&b.account, c)).or_default() += 1;
+        if let Some(p) = b.subscription.problem().filter(|p| groupable(*p)) {
+            *counts.entry((&b.account, p)).or_default() += 1;
         }
     }
     shown
@@ -508,8 +511,9 @@ fn quiet_failures(shown: &[&BlfStatus]) -> HashSet<String> {
         .filter(|b| {
             b.state == BlfState::Failed
                 && b.subscription
-                    .last_code
-                    .is_some_and(|c| counts[&(b.account.as_str(), c)] >= BANNER_MIN_FAILURES)
+                    .problem()
+                    .filter(|p| groupable(*p))
+                    .is_some_and(|p| counts[&(b.account.as_str(), p)] >= BANNER_MIN_FAILURES)
         })
         .map(|b| format!("{}\0{}", b.account, b.uri))
         .collect()
@@ -1190,6 +1194,11 @@ fn finish(
 /// Accessible value of a key: `<ext>, <state>[, with <peer>][, stale]`.
 fn access_value(b: &BlfStatus) -> String {
     let mut v = format!("{}, {}", b.uri, blf_state_text(b));
+    if b.state == BlfState::Failed
+        && let Some(f) = blf_failure(b)
+    {
+        v.push_str(&format!(", {}", f.title));
+    }
     if let Some(who) = peer(b) {
         v.push_str(&format!(", with {who}"));
     }

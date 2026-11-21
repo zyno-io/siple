@@ -6,6 +6,7 @@
 
 use serde_json::{Value, json};
 use siple_core::config::edit::{ConfigEdit, EditValue};
+use siple_sip::problem::Problem;
 
 use super::UiAction;
 
@@ -185,6 +186,12 @@ pub struct TestResult {
     pub message: String,
     /// SHA-256 of the server certificate (`tls_untrusted`).
     pub fingerprint: Option<String>,
+    /// The plain-language problem of a failed test (rendered from the in-process catalog, not
+    /// from the API's strings).
+    pub problem: Option<Problem>,
+    /// The raw evidence under the problem: the server's answer, the certificate fingerprint, or
+    /// the one-line message.
+    pub detail: String,
 }
 
 impl TestResult {
@@ -195,14 +202,29 @@ impl TestResult {
             .or_else(|| d["kind"].as_str())
             .or_else(|| d["diagnosis"].as_str())
             .unwrap_or("other");
+        let message = v["message"].as_str().unwrap_or_default().to_string();
+        let fingerprint = d["fingerprint"]
+            .as_str()
+            .or_else(|| v["fingerprint"].as_str())
+            .map(str::to_string);
+        let problem = v["problem"]["kind"].as_str().and_then(Problem::from_id);
+        let detail = match (problem, &fingerprint) {
+            (Some(Problem::AuthFailed), _) => {
+                match v["code"].as_u64().or_else(|| d["code"].as_u64()) {
+                    Some(code) => format!("Server answer: {code}"),
+                    None => message.clone(),
+                }
+            }
+            (Some(Problem::TlsUntrusted), Some(fp)) => format!("Certificate SHA-256: {fp}"),
+            _ => message.clone(),
+        };
         Self {
             diagnosis: kind.to_string(),
             ok: v["ok"].as_bool().unwrap_or(false),
-            message: v["message"].as_str().unwrap_or_default().to_string(),
-            fingerprint: d["fingerprint"]
-                .as_str()
-                .or_else(|| v["fingerprint"].as_str())
-                .map(str::to_string),
+            message,
+            fingerprint,
+            problem,
+            detail,
         }
     }
 }

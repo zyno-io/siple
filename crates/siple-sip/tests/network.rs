@@ -578,10 +578,9 @@ async fn server_retry_after_wins_over_a_plain_signal_but_not_over_a_request() {
     r.stack.network_refresh().await;
     tokio::time::sleep(Duration::from_millis(1500)).await;
     assert_eq!(reg.count(), 1, "no REGISTER before Retry-After expires");
-    assert!(matches!(
-        r.stack.account_status("a").unwrap().registration,
-        RegState::Failed { code: 503, .. }
-    ));
+    let state = r.stack.account_status("a").unwrap().registration;
+    assert!(matches!(state, RegState::Failed { code: 503, .. }));
+    assert_eq!(state.problem(), Some(siple_sip::Problem::ServerError));
 
     // An explicit account.reregister overrides it.
     r.stack.reregister("a").unwrap();

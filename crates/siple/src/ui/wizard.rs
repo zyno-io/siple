@@ -10,7 +10,7 @@ use siple_core::audio::MicPermission;
 use siple_core::config::edit::ConfigEdit;
 
 use super::draft::{self, DraftForm};
-use super::form::{group, message_box, primary_button, small_button};
+use super::form::{group, message_box, primary_button, small_button, test_result_box};
 use super::rpc::{self, RpcReply, RpcRequest, RpcTag, TestRun};
 use super::settings::sec_toggle_pub;
 use super::{Cx, UiAction, UiState, audio};
@@ -249,7 +249,7 @@ fn account_step(ui: &mut egui::Ui, cx: &Cx, st: &mut UiState, out: &mut Vec<UiAc
         }
         Some(TestRun::Failed(m)) => message_box(ui, p.err, m),
         Some(TestRun::Done(r)) => {
-            message_box(ui, if r.ok { p.ok } else { p.err }, &r.message);
+            test_result_box(ui, p, r);
             if r.diagnosis == "tls_untrusted"
                 && let Some(fp) = r.fingerprint.clone()
             {

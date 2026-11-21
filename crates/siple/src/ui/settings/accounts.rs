@@ -8,7 +8,7 @@ use siple_core::config::{AccountConfig, PasswordStore};
 use super::super::draft::{self, DraftForm, PROFILES, SRTP, TRANSPORTS};
 use super::super::form::{
     choice_row, group, hint_line, int_row, message_box, primary_button, primary_icon_button,
-    small_button, text_row, toggle_row,
+    small_button, test_result_box, text_row, toggle_row,
 };
 use super::super::rpc::{self, RpcRequest, RpcTag, TestRun};
 use super::super::{Cx, UiAction, UiState, reg_tone};
@@ -622,7 +622,7 @@ pub(in crate::ui) fn test_result(
         }
         Some(TestRun::Failed(m)) => message_box(ui, p.err, m),
         Some(TestRun::Done(r)) => {
-            message_box(ui, if r.ok { p.ok } else { p.err }, &r.message);
+            test_result_box(ui, p, r);
             if r.diagnosis == "tls_untrusted"
                 && let Some(fp) = &r.fingerprint
             {

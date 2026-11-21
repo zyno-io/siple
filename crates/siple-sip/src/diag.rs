@@ -34,10 +34,16 @@ use crate::client::{Client, ContactSel, RegIdentity, RegResult};
 use crate::dns::split_host_port;
 use crate::error::SipError;
 use crate::net::{NetProbe, is_unreachable_text};
+use crate::problem::{Context, Problem, classify};
 use crate::transport::{bind_udp, cert_sha256, client_tls_config, init_crypto};
 
 /// Longest time an `account.test` may take, and the default.
 pub const TEST_TIMEOUT: Duration = Duration::from_secs(15);
+
+/// Local failure text: nothing to register with.
+pub(crate) const NO_REGISTRAR: &str = "no domain or registrar to register with";
+/// Local failure text: the account's address does not parse.
+pub(crate) const BAD_ADDRESS: &str = "username or domain is not usable in a SIP address";
 
 /// Bound on the unREGISTER that follows a successful test.
 const UNREGISTER_TIMEOUT: Duration = Duration::from_secs(3);
@@ -105,6 +111,27 @@ impl Diagnosis {
     /// Whether the registrar accepted the account.
     pub fn is_ok(&self) -> bool {
         matches!(self, Diagnosis::Ok { .. })
+    }
+
+    /// The plain-language problem behind a failed test; `None` when the test passed.
+    pub fn problem(&self) -> Option<Problem> {
+        Some(match self {
+            Diagnosis::Ok { .. } => return None,
+            Diagnosis::AuthFailed { .. } => Problem::AuthFailed,
+            Diagnosis::NotFound => Problem::UserNotFound,
+            Diagnosis::Timeout { .. } => Problem::NoResponse,
+            Diagnosis::TlsUntrusted { .. } => Problem::TlsUntrusted,
+            Diagnosis::DnsFailed { .. } => Problem::DnsFailed,
+            Diagnosis::NetworkUnreachable { .. } => Problem::NetworkUnreachable,
+            Diagnosis::Other { code: 0, reason }
+                if reason == NO_REGISTRAR || reason == BAD_ADDRESS =>
+            {
+                Problem::AccountConfig
+            }
+            Diagnosis::Other { code, reason } => {
+                classify(Context::Register, *code, reason).unwrap_or(Problem::Other)
+            }
+        })
     }
 
     /// One line for a user.
@@ -319,7 +346,7 @@ async fn attempt(
     if hop.is_empty() {
         return Diagnosis::Other {
             code: 0,
-            reason: "no domain or registrar to register with".into(),
+            reason: NO_REGISTRAR.into(),
         };
     }
     let probed = match probe(cfg, probe_src.as_ref(), None).await {
@@ -447,7 +474,7 @@ async fn register_once(
     ) else {
         return Diagnosis::Other {
             code: 0,
-            reason: "username or domain is not usable in a SIP address".into(),
+            reason: BAD_ADDRESS.into(),
         };
     };
     let probe_target = SipAddr::new(sip_transport(transport), target.into());

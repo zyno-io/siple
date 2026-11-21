@@ -4918,6 +4918,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "siple-problem"
+version = "0.1.2"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "siple-sip"
 version = "0.1.2"
 dependencies = [
@@ -4939,6 +4947,7 @@ dependencies = [
  "serde_json",
  "siple-config",
  "siple-media",
+ "siple-problem",
  "socket2",
  "system-configuration",
  "tempfile",

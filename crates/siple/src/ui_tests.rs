@@ -21,6 +21,7 @@ struct State {
     ui: UiState,
     actions: Vec<UiAction>,
     live: crate::ui::LiveAudio,
+    notice: Option<crate::snapshot::Notice>,
 }
 
 impl eframe::App for State {
@@ -30,7 +31,7 @@ impl eframe::App for State {
             now: now(),
             config_path: Path::new("config.toml"),
             has_log_dir: false,
-            notice: None,
+            notice: self.notice.as_ref(),
             live: self.live.clone(),
         };
         self.actions.extend(draw(ui, &vm, &mut self.ui));
@@ -52,6 +53,7 @@ fn harness_ui(snap: Snapshot, size: egui::Vec2, ui: UiState) -> Harness<'static,
             ui,
             actions: Vec::new(),
             live: Default::default(),
+            notice: None,
         }
     })
 }
@@ -1055,11 +1057,11 @@ fn session_panel_unconfirmed_and_failure_messaging() {
     let mut h = harness(snap, WIDE);
     h.state_mut().ui.selected_line = Some("c1".into());
     h.run();
-    assert!(h.query_by_label_contains("failed: 486 Busy Here").is_some());
+    assert!(h.query_by_label_contains("failed: Busy.").is_some());
     click_first(&mut h, "Dismiss");
     assert!(h.state().ui.dismissed_sessions.contains("t1"));
     h.run();
-    assert!(h.query_by_label_contains("failed: 486").is_none());
+    assert!(h.query_by_label_contains("failed: Busy").is_none());
 }
 
 #[test]
@@ -1238,12 +1240,14 @@ fn blf_tooltips_say_what_a_click_does_and_show_health() {
     h.run_steps(60);
     assert!(h.query_by_label_contains("Click to call").is_some());
     assert!(h.query_by_label_contains("Stale:").is_some());
-    // Failed: the text carries the code, so it never differs from Busy by colour alone.
+    // Failed: the key reads "Failed" (never differing from Busy by colour alone); the tooltip
+    // names the problem and shows the server's answer.
     h.get_by_label("Old lobby (desk-1001)").hover();
     h.run_steps(60);
-    assert!(h.query_by_label_contains("Sub failed 404").is_some());
+    assert!(h.query_by_label_contains("Failed").is_some());
+    assert!(h.query_by_label_contains("Extension not found").is_some());
     assert!(
-        h.query_by_label_contains("Subscription: Not Found")
+        h.query_by_label_contains("Details: 404 Not Found")
             .is_some()
     );
 }
@@ -1261,7 +1265,10 @@ fn blf_keys_expose_state_and_staleness_to_assistive_tech() {
         value(&h, "Support queue (desk-1001)"),
         "1004, Ringing, with Dana, stale"
     );
-    assert_eq!(value(&h, "Old lobby (desk-1001)"), "1099, Sub failed 404");
+    assert_eq!(
+        value(&h, "Old lobby (desk-1001)"),
+        "1099, Failed, Extension not found"
+    );
     assert_eq!(value(&h, "Bob Martin (desk-1001)"), "1003, Busy");
 }
 
@@ -1585,7 +1592,7 @@ fn stale_ringing_blf_does_not_offer_pickup() {
     );
 }
 
-/// Retrying keeps the last known state and the tooltip says "Retrying (503)".
+/// Retrying keeps the last known state; the tooltip names the problem, the code and the retry.
 #[test]
 fn retrying_blf_tooltip_shows_code_and_keeps_state() {
     let mut snap = base_snapshot();
@@ -1600,7 +1607,11 @@ fn retrying_blf_tooltip_shows_code_and_keeps_state() {
     h.get_by_label("Support queue (desk-1001)").hover();
     h.run_steps(60);
     assert!(
-        h.query_by_label_contains("Retrying (503), next attempt")
+        h.query_by_label_contains("The server had a problem")
+            .is_some()
+    );
+    assert!(
+        h.query_by_label_contains("Details: 503 Service Unavailable, next attempt")
             .is_some()
     );
     assert!(h.query_by_label_contains("Stale:").is_some());
@@ -1735,13 +1746,60 @@ fn many_identical_failures_collapse_into_one_banner() {
     let mut h = harness_ext(snap, WIDE);
     h.run();
     assert!(
-        h.query_by_label_contains("BLF rejected by PBX (489)")
+        h.query_by_label_contains("desk-1001: Line status not available")
+            .is_some()
+    );
+    assert!(
+        h.query_by_label_contains("6 extensions are affected.")
             .is_some()
     );
     // A single failure shows no banner.
     let mut h = harness_ext(base_snapshot(), WIDE);
     h.run();
-    assert!(h.query_by_label_contains("BLF rejected by PBX").is_none());
+    assert!(
+        h.query_by_label_contains("extensions are affected")
+            .is_none()
+    );
+}
+
+/// Local failures (code 0) group by problem too: six keys refused with "noresource".
+#[test]
+fn many_local_failures_collapse_into_one_banner() {
+    let mut snap = base_snapshot();
+    snap.blf = (0..6)
+        .map(|i| {
+            let mut b = blf(&format!("20{i}"), &format!("Ext {i}"), BlfState::Failed);
+            b.subscription.last_code = None;
+            b.subscription.last_reason = Some("subscription terminated: noresource".into());
+            b
+        })
+        .collect();
+    let mut h = harness_ext(snap, WIDE);
+    h.run();
+    assert!(
+        h.query_by_label_contains("desk-1001: Extension not found")
+            .is_some()
+    );
+}
+
+/// `other` and `refused` cover unrelated causes: they never collapse into one banner.
+#[test]
+fn unclassified_failures_keep_their_own_lamps() {
+    let mut snap = base_snapshot();
+    snap.blf = (0..6)
+        .map(|i| {
+            let mut b = blf(&format!("20{i}"), &format!("Ext {i}"), BlfState::Failed);
+            b.subscription.last_code = None;
+            b.subscription.last_reason = Some(format!("gremlin {i}"));
+            b
+        })
+        .collect();
+    let mut h = harness_ext(snap, WIDE);
+    h.run();
+    assert!(
+        h.query_by_label_contains("extensions are affected")
+            .is_none()
+    );
 }
 
 #[test]
@@ -1854,10 +1912,8 @@ fn connected_consult_shows_a_failed_refer() {
     let mut h = harness(snap, WIDE);
     h.run();
     assert!(
-        h.query_by_label_contains(
-            "Transfer failed: 486 Busy Here. You're still talking to Carol Diaz"
-        )
-        .is_some()
+        h.query_by_label_contains("Transfer failed: Busy. You're still talking to Carol Diaz")
+            .is_some()
     );
 }
 
@@ -4132,4 +4188,155 @@ fn composer_actions_fit_inside_a_medium_call_card() {
         close.right() <= field.right() + 1.0,
         "Close is clipped: {close:?} vs field {field:?}"
     );
+}
+
+// ---- problems: plain-language failures --------------------------------------------------------
+
+#[test]
+fn failed_account_menu_names_the_problem_its_hint_and_the_servers_answer() {
+    let mut h = harness(base_snapshot(), WIDE);
+    h.run();
+    // The chip's accessible name carries the title, not "failed: 403 Forbidden".
+    assert!(
+        h.query_by_label_contains("Account legacy-fs: Wrong username or password")
+            .is_some()
+    );
+    open_account_menu(&mut h, "Account legacy-fs");
+    assert!(h.query_by_label("Wrong username or password").is_some());
+    assert!(
+        h.query_by_label("Check the account's username, auth username and password.")
+            .is_some()
+    );
+    assert!(h.query_by_label_contains("403 Forbidden").is_some());
+    assert!(h.query_by_label_contains("next attempt").is_some());
+    assert!(h.query_by_label_contains("failed: 403").is_none());
+}
+
+#[test]
+fn ended_call_shows_the_problem_chip_with_details_and_the_hint() {
+    let mut snap = two_calls();
+    snap.calls[0].state = CallState::Ended;
+    snap.calls[0].ended_at = Some(now());
+    snap.calls[0].end = Some(siple_sip::CallEnd {
+        code: 486,
+        reason: "Busy Here".into(),
+        by: siple_sip::EndedBy::Remote,
+        missed: false,
+        q850_cause: None,
+        cause: siple_sip::EndCause::Rejected,
+    });
+    let mut h = harness(snap, WIDE);
+    h.state_mut().ui.selected_line = Some("c1".into());
+    h.run();
+    assert!(h.query_by_label("Busy").is_some());
+    assert!(
+        h.query_by_label("The other side is on another call; try again later.")
+            .is_some()
+    );
+    // The raw answer is on hover, no longer the chip text.
+    assert!(h.query_by_label("486 Busy Here").is_none());
+    h.get_by_label("Busy").hover();
+    h.run_steps(60);
+    assert!(
+        h.query_by_label_contains("Details: 486 Busy Here")
+            .is_some()
+    );
+}
+
+#[test]
+fn ended_call_without_a_failure_shows_no_hint() {
+    let mut snap = two_calls();
+    snap.calls[0].state = CallState::Ended;
+    snap.calls[0].ended_at = Some(now());
+    snap.calls[0].end = Some(siple_sip::CallEnd {
+        code: 200,
+        reason: "OK".into(),
+        by: siple_sip::EndedBy::Remote,
+        missed: false,
+        q850_cause: None,
+        cause: siple_sip::EndCause::RemoteHangup,
+    });
+    let mut h = harness(snap, WIDE);
+    h.state_mut().ui.selected_line = Some("c1".into());
+    h.run();
+    assert!(h.query_by_label_contains("try again later").is_none());
+    assert!(h.query_by_label_contains("Call back").is_some());
+}
+
+#[test]
+fn account_test_with_a_problem_shows_title_hint_and_evidence() {
+    let mut h = settings_harness(base_snapshot(), Section::Accounts, WIDE);
+    deliver(
+        &mut h,
+        RpcTag::TestAccount("desk-1001".into()),
+        Ok(json!({"diagnosis": "auth_failed", "ok": false, "code": 403,
+            "problem": siple_sip::problem::Problem::AuthFailed,
+            "message": "Wrong username or password (the server answered 403)"})),
+    );
+    assert!(h.query_by_label("Wrong username or password").is_some());
+    assert!(
+        h.query_by_label("Check the account's username, auth username and password.")
+            .is_some()
+    );
+    assert!(h.query_by_label("Server answer: 403").is_some());
+    assert!(
+        h.query_by_label_contains("the server answered 403")
+            .is_none()
+    );
+    // The fingerprint stays visible before it is trusted.
+    let fp = "cd".repeat(32);
+    deliver(
+        &mut h,
+        RpcTag::TestAccount("desk-1001".into()),
+        Ok(
+            json!({"diagnosis": "tls_untrusted", "ok": false, "fingerprint": fp,
+            "problem": siple_sip::problem::Problem::TlsUntrusted,
+            "message": "The server's TLS certificate is not trusted"}),
+        ),
+    );
+    assert!(
+        h.query_by_label("The server's certificate is not trusted")
+            .is_some()
+    );
+    assert!(
+        h.query_by_label(&format!("Certificate SHA-256: {fp}"))
+            .is_some()
+    );
+    assert!(h.query_by_label("Trust this certificate").is_some());
+    // `other`, or a server without problems: the one-line message as before.
+    deliver(
+        &mut h,
+        RpcTag::TestAccount("desk-1001".into()),
+        Ok(json!({"diagnosis": "other", "ok": false,
+            "problem": siple_sip::problem::Problem::Other,
+            "message": "503 Service Unavailable"})),
+    );
+    assert!(h.query_by_label("503 Service Unavailable").is_some());
+    assert!(h.query_by_label("Something went wrong").is_none());
+}
+
+#[test]
+fn notice_shows_its_text_and_the_raw_answer_on_hover() {
+    let mut h = harness(base_snapshot(), WIDE);
+    h.state_mut().notice = Some(crate::snapshot::Notice {
+        text: "Dial failed: Busy. The other side is on another call; try again later.".into(),
+        detail: Some("486 Busy Here".into()),
+    });
+    h.run();
+    // The footer settles its height after the first frames: hover where the label is now.
+    h.run_steps(5);
+    h.get_by_label_contains("Dial failed: Busy.").hover();
+    h.run_steps(60);
+    assert!(
+        h.query_by_label_contains("Details: 486 Busy Here")
+            .is_some()
+    );
+    // A plain notice has no details.
+    h.state_mut().notice = Some(crate::snapshot::Notice::plain(
+        "Dial failed: account lab-tls is not registered",
+    ));
+    h.run_steps(5);
+    h.get_by_label_contains("Dial failed: account").hover();
+    h.run_steps(60);
+    assert!(h.query_by_label_contains("Details:").is_none());
 }

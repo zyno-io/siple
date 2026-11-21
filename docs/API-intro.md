@@ -73,6 +73,43 @@ Standard JSON-RPC error objects; the machine-readable kind is `error.data.kind`:
 Some errors carry extra fields in `data` (for example the end code and reason when a wait fails
 because the call ended, or the digits received so far when `call.expect_dtmf` times out).
 
+### Problems: plain-language errors
+
+Failures that a person can act on also carry a `problem` object: a stable kind plus an English title and a
+one-sentence hint.
+
+```json
+{"kind":"busy","title":"Busy","hint":"The other side is on another call; try again later."}
+```
+
+```json
+{"code":-32004,"message":"486 Busy Here","data":{"kind":"sip_error","sip_code":486,
+  "problem":{"kind":"busy","title":"Busy","hint":"The other side is on another call; try again later."}}}
+```
+
+`data.kind` is the API error class; `data.problem.kind` is the plain-language category. Match on `kind`, never on the
+`title` or `hint` text, which may be reworded and will be translated. Kinds are append-only: they are never renamed or
+removed, a client that meets an unknown kind should treat it as `other`, and a SIP code may later move to a more
+specific kind. The same code can mean different things by request: a 403 on REGISTER is a wrong password
+(`auth_failed`), a 403 on an INVITE is `forbidden`. When the kind is `other`, show the raw `reason`. Titles and hints take
+no parameters: the host, account, code and fingerprint are in sibling fields. The existing fields (`code`, `reason`,
+`message`, `data.kind`, `sip_code`) keep their names and values.
+
+Where `problem` appears:
+
+| Object | Field |
+|---|---|
+| `registration` in state `failed` (`status`, `account.list`, `account.get`, `account.registration` events) | `problem` (always) |
+| `end` of an ended call (`call.state`, `call.get`, `call.list`, `data.call` of a failed `call.wait_for`) | `end.problem` (absent for a normal end) |
+| `blf.list` entries, `status` BLF | `subscription.last_problem` (absent while healthy) |
+| `transfer.session`, `transfer.get`, `transfer.list`, `status.transfers` | `last_error.problem` |
+| `account.test` | `problem` (absent when `ok`) |
+| JSON-RPC errors from a SIP-level failure | `error.data.problem` |
+
+Every kind, its message and the SIP answers behind it:
+
+<!-- problem-kinds -->
+
 ## Events
 
 Every state change is appended to a global event log: a ring of the most recent **10 000** events,
@@ -98,7 +135,7 @@ Two ways to consume them:
 
 | Kind | `account` / `call_id` | `data` |
 |---|---|---|
-| `account.registration` | account | `{state: disabled\|unregistered\|registering\|waiting_for_network\|registered\|failed, expires_at?, granted_secs?, code?, reason?, retry_at?}` |
+| `account.registration` | account | `{state: disabled\|unregistered\|registering\|waiting_for_network\|registered\|failed, expires_at?, granted_secs?, code?, reason?, retry_at?, problem? (failed only)}` |
 | `account.mwi` | account | `{waiting, account_uri, voice:{new,old,urgent_new,urgent_old}, other:{class:counts}, updated_at}` |
 | `account.dnd` | account | `{enabled}` |
 | `account.reconnecting` | account | `{reason}`: the account is re-probing and re-registering (`network_changed`/`os:*`/`wake`/`route_changed`/`manual`, `send_error`, `keepalive_timeout`) |
@@ -111,7 +148,7 @@ Two ways to consume them:
 | `subscription.notify` | account | `{sub_id?, event, content_type?, body, subscription_state?, matched}` (`matched:false` = unsolicited NOTIFY) |
 | `message.received` | account | `{from, content_type, body}` (SIP MESSAGE) |
 | `call.incoming` | account, call | full call snapshot (below) |
-| `call.state` | account, call | full call snapshot; `state` is `dialing\|ringing\|early\|active\|held\|remote_held\|ended`; when ended, `end = {code, reason, by: local\|remote, missed, q850_cause, cause}` (`cause`: `hangup\|remote_hangup\|transferred\|replaced\|rejected\|cancelled\|missed\|failed\|session_expired\|network_lost`) |
+| `call.state` | account, call | full call snapshot; `state` is `dialing\|ringing\|early\|active\|held\|remote_held\|ended`; when ended, `end = {code, reason, by: local\|remote, missed, q850_cause, cause}` (`cause`: `hangup\|remote_hangup\|transferred\|replaced\|rejected\|cancelled\|missed\|failed\|session_expired\|network_lost`; `problem?` when the call did not end normally) |
 | `call.updated` | account, call | call snapshot after a change of call details without a state transition |
 | `call.reconnecting` | account, call | `{call_id, account}`: a network change moved the account's local address and this established call is being moved onto the new path (media rebound, re-INVITE with the new Contact and `c=` outstanding, 10 s per attempt). Snapshot `reconnecting` is `true` meanwhile. Followed by `call.reconnected`, or by `call.state` ended with `end.cause = network_lost` |
 | `call.reconnected` | account, call | `{call_id}`: the peer accepted the re-INVITE; the call runs on the new path (hold direction and SRTP keys kept) |
@@ -151,17 +188,17 @@ the call was retried once with plain RTP.
 `account.test {account | draft, timeout_secs?}` runs a one-off REGISTER (then unREGISTER) on a private socket, without disturbing any
 running account, and returns a structured diagnosis; it is what the first-run wizard's "Test & continue" calls. `account` tests a
 configured account (its stored settings and password); `draft` tests settings that are not saved yet (`{id?, fields:{...}}`, the fields
-of `config.edit` `add_account`). The result always has `ok`, `message` (one line for a user) and `diagnosis`:
+of `config.edit` `add_account`). The result always has `ok`, `message` (one line for a user) and `diagnosis`, and, unless `ok`, `problem`:
 
 | `diagnosis` | Meaning | Extra fields |
 |---|---|---|
 | `ok` | Registered | `transport` (what `auto` picked), `auto`, `server`, `granted_secs`, `elapsed_ms` |
 | `auth_failed` | 401 / 403 / 407 after the digest answer: wrong username or password | `code` |
 | `not_found` | 404: the user does not exist on the server | |
-| `timeout` | No answer within `timeout_secs` (default 15, max 25) | `transport`, `hint` (with UDP: try TCP or TLS) |
+| `timeout` | No answer within `timeout_secs` (default 15, max 25) | `transport`, `hint` (with UDP: try TCP or TLS; predates `problem.hint`, which says the same in stable words) |
 | `tls_untrusted` | The TLS handshake was refused: certificate not trusted | `fingerprint` (SHA-256 of the server certificate, lowercase hex), `reason` |
-| `dns_failed` | The server name did not resolve | `message` |
-| `network_unreachable` | No route to the server | `message` |
+| `dns_failed` | The server name did not resolve | (the resolver text is part of `message`) |
+| `network_unreachable` | No route to the server | (the OS text is part of `message`) |
 | `other` | Another SIP status or a local failure | `code` (0 = local), `reason` |
 
 After `tls_untrusted` a UI can offer "Trust this server": `config.edit` `set_account tls_fingerprint <fingerprint>`, then test again.
@@ -269,7 +306,7 @@ events.poll {since:N, kinds:["blf.state"], account:"fs-1001", timeout_ms:10000}
 ```
 
 BLF entries come from `[[account.blf]]` in the config; adding/removing them is hot-reloadable. Each entry also reports
-`subscription {phase, last_code, ...}` and `stale` (the state may be out of date: check these before trusting `idle`).
+`subscription {phase, last_code, last_reason, last_problem, ...}` and `stale` (the state may be out of date: check these before trusting `idle`).
 `blf.dial {account, uri}` calls an entry; `call.pickup {account, uri}` picks up a `ringing` one (needs `pickup` in the
 config; `invalid_state` otherwise). A call is device-bound if either its source or its sink is the device: pass both a non-device `source` (e.g. `"silence"`) and `sink` (e.g. `"null"`) to keep a pickup from holding device calls.
 Use `subscribe {account, uri, event:"presence"}` for any other event package.
@@ -310,7 +347,7 @@ returns `{session_id, consult_call_id}`; `call.consult_link {call_id, consult_ca
 account. Then `transfer.complete {session_id, mode}` (`attended`: REFER with Replaces, needs an answered consult;
 `blind_now`: end the consult, refer A to its dialled URI), `transfer.swap` (hold the leg you talk to, resume the other,
 move the audio focus) or `transfer.cancel` (hang up B, resume A). `transfer.get` / `transfer.list` read sessions;
-`status.transfers` and `call.transfer {session_id, role}` carry them too.
+`status.transfers` and `call.transfer {session_id, role}` carry them too. `last_error` is `{stage, code, reason, problem}`.
 
 ```text
 call.consult_start {call_id:"c5", target:"1003"}   -> {session_id:"t1", consult_call_id:"c6"}
