@@ -42,7 +42,7 @@ use siple_sip::{AccountStatus, AnswerMode, CallDirection, CallInfo, CallState, C
 use siple_sip::{RegState, TransferSession};
 
 use crate::actions::{Actions, open_path, open_store_page, open_url};
-use crate::snapshot::{RegClass, Shared, Snapshot, reg_class, visible_calls};
+use crate::snapshot::{Notice, RegClass, Shared, Snapshot, reg_class, visible_calls};
 use crate::theme::{
     self, FS_BODY, FS_TITLE, NARROW_BREAKPOINT, Palette, R_MD, SP_L, SP_S, Tone, WIDE_BREAKPOINT,
     icon as ic,
@@ -64,7 +64,7 @@ pub struct ViewModel<'a> {
     /// A log directory exists (shows "Open logs").
     pub has_log_dir: bool,
     /// Transient failure message (last action that failed).
-    pub notice: Option<&'a str>,
+    pub notice: Option<&'a Notice>,
     /// Microphone level and echo-test progress (meters).
     pub live: LiveAudio,
 }
@@ -935,7 +935,7 @@ impl eframe::App for PhoneUi {
             now: Utc::now(),
             config_path: &self.shared.config_path,
             has_log_dir: self.shared.log_dir.is_some(),
-            notice: notice.as_deref(),
+            notice: notice.as_ref(),
             live,
         };
         let actions = draw(ui, &vm, &mut self.state);

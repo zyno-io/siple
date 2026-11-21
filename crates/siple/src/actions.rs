@@ -12,7 +12,22 @@ use siple_media::tone::{Segment, ToneSpec};
 use siple_sip::{AnswerMode, AnswerOptions, CompleteMode, DialOptions};
 use tokio::runtime::Handle;
 
-use crate::snapshot::Shared;
+use crate::snapshot::{Shared, action_notice};
+
+/// An action failure: its text, and the plain-language problem when it names one.
+trait ActionError: std::fmt::Display {
+    fn problem(&self) -> Option<siple_sip::problem::Problem> {
+        None
+    }
+}
+
+impl ActionError for siple_sip::SipError {
+    fn problem(&self) -> Option<siple_sip::problem::Problem> {
+        siple_sip::SipError::problem(self)
+    }
+}
+
+impl ActionError for String {}
 
 #[derive(Clone)]
 pub struct Actions {
@@ -93,13 +108,13 @@ impl Actions {
     fn spawn<F, E>(&self, what: &'static str, fut: F)
     where
         F: Future<Output = Result<(), E>> + Send + 'static,
-        E: std::fmt::Display,
+        E: ActionError,
     {
         let shared = self.shared.clone();
         self.rt.spawn(async move {
             if let Err(e) = fut.await {
                 tracing::warn!("{what} failed: {e}");
-                shared.set_notice(format!("{what} failed: {e}"));
+                shared.set_notice_full(action_notice(what, e.problem(), &e.to_string()));
             }
             shared.wake.notify_one();
         });

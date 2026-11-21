@@ -74,7 +74,7 @@ Run all of these before opening a PR. CI runs the same set.
 
 ```sh
 # Format per package. Do NOT run `cargo fmt --all`: it reformats vendor/rsipstack.
-cargo fmt -p siple-media -p siple-config -p siple-core -p siple-sip -p siple -p siple-cli
+cargo fmt -p siple-problem -p siple-media -p siple-config -p siple-core -p siple-sip -p siple -p siple-cli
 
 cargo clippy --workspace --all-targets -- -D warnings
 

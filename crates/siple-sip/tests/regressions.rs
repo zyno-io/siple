@@ -840,6 +840,10 @@ async fn register_false_to_true_with_unresolvable_host_rebuilds() {
         |s| matches!(&s.registration, RegState::Failed { reason, .. } if reason.contains("DNS")),
     )
     .await;
+    assert_eq!(
+        s.registration.problem(),
+        Some(siple_sip::Problem::DnsFailed)
+    );
     let RegState::Failed { reason, .. } = s.registration else {
         unreachable!()
     };

@@ -28,11 +28,7 @@ pub(super) fn status_text(cx: &Cx) -> String {
         format!("{registered} of {} registered", enabled.len())
     };
     for a in enabled.iter().filter(|a| reg_class(a) == RegClass::Failed) {
-        text.push_str(&format!(
-            " \u{b7} {}: {}",
-            a.id,
-            reg_label(a).replace("failed: ", "")
-        ));
+        text.push_str(&format!(" \u{b7} {}: {}", a.id, reg_label(a)));
     }
     text
 }
@@ -45,7 +41,12 @@ pub(super) fn show(ui: &mut egui::Ui, cx: &Cx, st: &mut UiState, out: &mut Vec<U
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 6.0;
             ui.label(icon_fill(ic::WARNING_CIRCLE, FS_ICON).color(p.err.led));
-            ui.add(egui::Label::new(RichText::new(n).size(FS_SMALL).color(p.err.ink)).wrap());
+            let label = ui.add(
+                egui::Label::new(RichText::new(&n.text).size(FS_SMALL).color(p.err.ink)).wrap(),
+            );
+            if let Some(d) = &n.detail {
+                label.on_hover_text(format!("Details: {d}"));
+            }
         });
     }
     if st.audio_open {

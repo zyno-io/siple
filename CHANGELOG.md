@@ -1,6 +1,18 @@
 <!-- siple-rename: keep (this file documents the legacy ZynoPhone names on purpose) -->
 # Changelog
 
+## Unreleased
+
+- Plain-language errors. A failed registration, call, busy lamp or transfer, and a failed action, now say what went wrong and
+  what to try ("Wrong username or password", "Busy", "Extension not found") instead of a bare SIP code. The server's answer
+  moves to a details line or a hover. A busy lamp whose subscription failed reads "Failed" (its tooltip and the banner above
+  the extensions name the problem).
+- API: a `problem {kind, title, hint}` object on failed registrations (`registration.problem`), ended calls (`end.problem`),
+  BLF subscriptions (`subscription.last_problem`), transfer errors (`last_error.problem`), `account.test` results (`problem`)
+  and SIP-level JSON-RPC errors (`error.data.problem`). Existing fields keep their names and values. Kinds are stable; see
+  `docs/PROBLEMS.md`.
+- `siple-cli problems` lists the catalog (`--json`, `--markdown`).
+
 ## 0.1.2 (2026-11-19)
 
 - Store editions now tell you about updates. The Mac App Store edition asks Apple's public lookup of Siple's listing about

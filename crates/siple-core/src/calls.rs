@@ -84,7 +84,18 @@ fn parse_state(s: &str) -> Result<CallState, ApiError> {
 /// - transport / DNS / TLS failures and other protocol failures -> `sip_error` with `sip_code`
 ///   0 (no SIP status was involved; the message says what failed). Final responses to calls
 ///   arrive as `call.state` `ended` events carrying `end.code`.
+///
+/// Every failure [`SipError::problem`] can name also carries `data.problem {kind, title, hint}`.
 pub fn sip_error(e: SipError) -> ApiError {
+    let problem = e.problem();
+    let err = sip_error_kind(e);
+    match problem {
+        Some(p) => err.with_problem(p),
+        None => err,
+    }
+}
+
+fn sip_error_kind(e: SipError) -> ApiError {
     match e {
         SipError::UnknownAccount(_)
         | SipError::UnknownCall(_)
@@ -1220,7 +1231,7 @@ pub fn call_methods() -> Vec<MethodInfo> {
         ),
         MethodInfo::new(
             "transfer.get",
-            "One transfer session (live, or among the last 16 finished): {id, kind: blind|attended|semi, phase, account, original, consult, target_uri, refer_call, talking_to, we_held_original, last_notify {code, reason, at}, last_error {stage, code, reason}, started_at, ended_at}. Phases: consult_dialing, consult_ringing, consult_connected, consult_failed, referring, transferring, unconfirmed (no final NOTIFY after 32 s: the transfer may have happened; nothing is done automatically, a late final NOTIFY moves it on), and the terminal transferred, failed, cancelled, abandoned (the original ended before the outcome). Calls carry `transfer {session_id, role: original|consult}`. While a session is referring or transferring, call.hold / call.unhold of either call fail with invalid_state. Errors: not_found.",
+            "One transfer session (live, or among the last 16 finished): {id, kind: blind|attended|semi, phase, account, original, consult, target_uri, refer_call, talking_to, we_held_original, last_notify {code, reason, at}, last_error {stage, code, reason, problem {kind, title, hint}}, started_at, ended_at}. Phases: consult_dialing, consult_ringing, consult_connected, consult_failed, referring, transferring, unconfirmed (no final NOTIFY after 32 s: the transfer may have happened; nothing is done automatically, a late final NOTIFY moves it on), and the terminal transferred, failed, cancelled, abandoned (the original ended before the outcome). Calls carry `transfer {session_id, role: original|consult}`. While a session is referring or transferring, call.hold / call.unhold of either call fail with invalid_state. Errors: not_found.",
             session_by_id(),
         ),
         MethodInfo::new(
@@ -1244,7 +1255,7 @@ pub fn call_methods() -> Vec<MethodInfo> {
         ),
         MethodInfo::new(
             "call.list",
-            "All calls of this run (the last 64 ended ones included), oldest first: id, account, direction, state, remote party, SIP Call-ID, timestamps, end {code, reason, by}, negotiated codec / SRTP suite.",
+            "All calls of this run (the last 64 ended ones included), oldest first: id, account, direction, state, remote party, SIP Call-ID, timestamps, end {code, reason, by, problem (absent for a normal end)}, negotiated codec / SRTP suite.",
             obj(
                 json!({"account":{"type":"string","description":"Only calls of this account."},
                 "active_only":{"type":"boolean","description":"Leave out ended calls."}}),
@@ -1258,7 +1269,7 @@ pub fn call_methods() -> Vec<MethodInfo> {
         ),
         MethodInfo::new(
             "call.wait_for",
-            "Wait until a call reaches a state (dialing|ringing|early|active|held|remote_held|ended). Give `call_id`, or `account` (any/most recent call of the account, e.g. to catch an incoming call: state `ringing`). Race-free: if the call is already in that state and `since` is omitted it returns at once; otherwise it waits for a call.state event after `since` (default: now; pass the event_seq of the action that triggers it). With `call_id`, the call ending first (or already being over, without the state in the log after `since`) fails at once with invalid_state and the end code/reason. A `since` ahead of the event log (instance restarted) fails with invalid_params. Returns {call, event_seq, matched_seq}. Errors: timeout, invalid_state, not_found.",
+            "Wait until a call reaches a state (dialing|ringing|early|active|held|remote_held|ended). Give `call_id`, or `account` (any/most recent call of the account, e.g. to catch an incoming call: state `ringing`). Race-free: if the call is already in that state and `since` is omitted it returns at once; otherwise it waits for a call.state event after `since` (default: now; pass the event_seq of the action that triggers it). With `call_id`, the call ending first (or already being over, without the state in the log after `since`) fails at once with invalid_state and the end code/reason/problem. A `since` ahead of the event log (instance restarted) fails with invalid_params. Returns {call, event_seq, matched_seq}. Errors: timeout, invalid_state, not_found.",
             obj(
                 json!({"call_id":call_id.clone(),
                 "account":{"type":"string","description":"Watch calls of this account instead of one call."},
@@ -1368,5 +1379,36 @@ mod dial_doc_tests {
             d.description
         );
         assert!(d.description.contains("1024"), "{}", d.description);
+    }
+}
+
+#[cfg(test)]
+mod problem_tests {
+    use super::*;
+    use crate::control::ErrorKind;
+
+    #[test]
+    fn sip_errors_carry_the_plain_language_problem() {
+        let e = sip_error(SipError::Status {
+            code: 486,
+            reason: "Busy Here".into(),
+        });
+        assert_eq!((e.kind, e.sip_code), (ErrorKind::SipError, Some(486)));
+        let w = e.to_wire();
+        assert_eq!(w["data"]["kind"], "sip_error");
+        assert_eq!(w["data"]["sip_code"], 486);
+        assert_eq!(w["data"]["problem"]["kind"], "busy");
+
+        let w = sip_error(SipError::UnknownCall("c9".into())).to_wire();
+        assert!(w["data"].get("problem").is_none(), "{w}");
+
+        let w = sip_error(SipError::Timeout).to_wire();
+        assert_eq!(w["data"]["kind"], "timeout");
+        assert_eq!(w["data"]["problem"]["kind"], "no_response");
+
+        let w = sip_error(SipError::Dns("no such host".into())).to_wire();
+        assert_eq!(w["data"]["kind"], "sip_error");
+        assert_eq!(w["data"]["sip_code"], 0);
+        assert_eq!(w["data"]["problem"]["kind"], "dns_failed");
     }
 }

@@ -11,7 +11,8 @@ use super::{
     visible_session,
 };
 use crate::snapshot::{
-    RegClass, call_elapsed_secs, call_state_label, format_duration, reg_class, reg_label,
+    RegClass, call_elapsed_secs, call_state_label, end_failure, format_duration, reg_class,
+    reg_label,
 };
 use crate::theme::{
     self, FS_BODY, FS_DISPLAY, FS_ICON, FS_MICRO, FS_MONO, FS_SMALL, FS_TIMER, Palette, R_LG, R_MD,
@@ -408,6 +409,10 @@ fn line_card_body(
     media_chips(ui, cx, c, ended);
     if ended {
         ui.add_space(SP_S);
+        if let Some(f) = c.end.as_ref().and_then(end_failure) {
+            ui.add(egui::Label::new(RichText::new(f.hint).size(FS_SMALL).color(p.muted)).wrap());
+            ui.add_space(SP_XS);
+        }
         ui.horizontal(|ui| {
             if soft_button(ui, p, ic::PHONE_OUTGOING, "Call back", None, true, 0.0).clicked() {
                 out.push(UiAction::Dial(c.account.clone(), c.remote_uri.clone()));
@@ -497,6 +502,17 @@ fn media_chips(ui: &mut egui::Ui, cx: &Cx, c: &CallInfo, ended: bool) {
         if ended && let Some(end) = &c.end {
             if end.cause == EndCause::Transferred {
                 chip(ui, p, None, strong("Transferred", FS_MICRO + 0.5), None);
+            } else if let Some(f) = end_failure(end) {
+                let r = chip(
+                    ui,
+                    p,
+                    None,
+                    strong(&f.title, FS_MICRO + 0.5).color(p.err.ink),
+                    Some(p.err),
+                );
+                if !f.detail.is_empty() {
+                    r.on_hover_text(format!("Details: {}", f.detail));
+                }
             } else {
                 chip(
                     ui,
