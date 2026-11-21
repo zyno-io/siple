@@ -1,5 +1,6 @@
 use crate::platform::CancellationToken;
 use crate::sip::SipMessage;
+use crate::transport::tcp_listener::accept_or_cancelled;
 use crate::{
     transport::{
         connection::{TransportSender, KEEPALIVE_REQUEST, KEEPALIVE_RESPONSE},
@@ -10,8 +11,9 @@ use crate::{
     },
     Result,
 };
+use core::time::Duration;
 use futures_util::{SinkExt, StreamExt};
-use socket2::{Domain, Protocol, Socket, Type};
+use socket2::{Protocol, Type};
 use std::{fmt, net::SocketAddr, sync::Arc};
 use tokio::{net::TcpListener, sync::Mutex};
 use tokio_tungstenite::{
@@ -78,12 +80,7 @@ impl WebSocketListenerConnection {
         transport_layer_inner: TransportLayerInnerRef,
     ) -> Result<()> {
         let local = self.inner.local_addr.get_socketaddr()?;
-        let domain = if local.is_ipv6() {
-            Domain::IPV6
-        } else {
-            Domain::IPV4
-        };
-        let socket = Socket::new(domain, Type::STREAM, Some(Protocol::TCP))?;
+        let socket = crate::platform::net::socket_for(local, Type::STREAM, Protocol::TCP)?;
         if let Err(e) = socket.set_reuse_address(true) {
             warn!(error = %e, "failed to set SO_REUSEADDR on WebSocket listener");
         }
@@ -101,13 +98,19 @@ impl WebSocketListenerConnection {
         debug!(local = %self.inner.local_addr, "Starting WebSocket listener");
         crate::platform::spawn(async move {
             loop {
-                let (stream, remote_addr) = match listener.accept().await {
-                    Ok((stream, remote_addr)) => (stream, remote_addr),
-                    Err(e) => {
-                        warn!(error = ?e, "Failed to accept WebSocket connection");
-                        continue;
-                    }
-                };
+                let (stream, remote_addr) =
+                    match accept_or_cancelled(&listener, &transport_layer_inner.cancel_token).await
+                    {
+                        Some(Ok((stream, remote_addr))) => (stream, remote_addr),
+                        Some(Err(e)) => {
+                            warn!(error = ?e, "Failed to accept WebSocket connection");
+                            continue;
+                        }
+                        None => {
+                            debug!(local = %listener_local_addr, "WebSocket listener cancelled");
+                            break;
+                        }
+                    };
                 if !transport_layer_inner.is_whitelisted(remote_addr.ip()).await {
                     debug!(remote = %remote_addr, "websocket connection rejected by whitelist");
                     continue;
@@ -235,10 +238,8 @@ impl WebSocketConnection {
             _ => "ws",
         };
 
-        let host = match &remote.addr.host {
-            crate::sip::Host::Domain(domain) => domain.to_string(),
-            crate::sip::Host::IpAddr(ip) => ip.to_string(),
-        };
+        // `Host` writes an IPv6 address in brackets, as a URL needs it.
+        let host = remote.addr.host.to_string();
 
         let port = remote.addr.port.as_ref().map_or(5060, |p| p.value());
         let ws_path = path.unwrap_or("/");
@@ -306,7 +307,7 @@ impl StreamConnection for WebSocketConnection {
         Ok(())
     }
 
-    async fn serve_loop(&self, sender: TransportSender) -> Result<()> {
+    async fn serve_loop(&self, sender: TransportSender, idle_timeout: Duration) -> Result<()> {
         let sip_connection = SipConnection::WebSocket(self.clone());
 
         let remote_addr = self.inner.remote_addr.clone();
@@ -317,7 +318,25 @@ impl StreamConnection for WebSocketConnection {
                 return Ok(());
             }
         };
-        while let Some(msg) = ws_read.next().await {
+        loop {
+            let msg_opt = if idle_timeout.is_zero() {
+                ws_read.next().await
+            } else {
+                match tokio::time::timeout(idle_timeout, ws_read.next()).await {
+                    Ok(msg_opt) => msg_opt,
+                    Err(_) => {
+                        warn!(
+                            src = %remote_addr,
+                            idle_secs = idle_timeout.as_secs(),
+                            "websocket idle timeout, closing connection"
+                        );
+                        break;
+                    }
+                }
+            };
+            let Some(msg) = msg_opt else {
+                break;
+            };
             match msg {
                 Ok(Message::Text(text)) => {
                     info!(src = %remote_addr, raw_message = ?text.as_str(), "websocket message received");

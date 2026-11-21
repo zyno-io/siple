@@ -6,15 +6,17 @@ use super::{
 };
 use crate::platform::CancellationToken;
 use crate::sip::SipMessage;
+use crate::transport::tcp_listener::accept_or_cancelled;
 use crate::{error::Error, transport::transport_layer::TransportLayerInnerRef, Result};
 use core::future::Future;
 use core::pin::Pin;
 use core::task::{Context, Poll};
+use core::time::Duration;
 use rustls::client::danger::ServerCertVerifier;
 use rustls::crypto::CryptoProvider;
 use rustls::server::{ClientHello, ResolvesServerCert};
 use rustls::sign::CertifiedKey;
-use socket2::{Domain, Protocol, Socket, Type};
+use socket2::{Protocol, Type};
 use std::{fmt, fmt::Debug, net::SocketAddr, sync::Arc};
 use tokio::net::{TcpListener, TcpStream};
 use tokio_rustls::{
@@ -220,7 +222,19 @@ impl Clone for ReloadableCertResolver {
     }
 }
 
-// TLS configuration
+/// TLS configuration.
+///
+/// TLS uses rustls's process-wide crypto provider. When the application links
+/// both the `ring` and `aws-lc-rs` backends (e.g. through another crate's
+/// rustls features), rustls cannot pick one and the first TLS connection
+/// panics; install one at startup, before creating any TLS transport:
+///
+/// ```ignore
+/// rustls::crypto::ring::default_provider()
+///     .install_default()
+///     .expect("install rustls crypto provider");
+/// ```
+// siple: `Debug` is implemented by hand below (the verifier is not `Debug`).
 #[derive(Clone, Default)]
 pub struct TlsConfig {
     // Server certificate in PEM format
@@ -327,12 +341,7 @@ impl TlsListenerConnection {
         transport_layer_inner: TransportLayerInnerRef,
     ) -> Result<()> {
         let local = self.inner.local_addr.get_socketaddr()?;
-        let domain = if local.is_ipv6() {
-            Domain::IPV6
-        } else {
-            Domain::IPV4
-        };
-        let socket = Socket::new(domain, Type::STREAM, Some(Protocol::TCP))?;
+        let socket = crate::platform::net::socket_for(local, Type::STREAM, Protocol::TCP)?;
         if let Err(e) = socket.set_reuse_address(true) {
             warn!(error = %e, "failed to set SO_REUSEADDR on TLS listener");
         }
@@ -346,13 +355,19 @@ impl TlsListenerConnection {
 
         crate::platform::spawn(async move {
             loop {
-                let (stream, remote_addr) = match listener.accept().await {
-                    Ok((stream, remote_addr)) => (stream, remote_addr),
-                    Err(e) => {
-                        warn!(error = ?e, "Failed to accept TLS connection");
-                        continue;
-                    }
-                };
+                let (stream, remote_addr) =
+                    match accept_or_cancelled(&listener, &transport_layer_inner.cancel_token).await
+                    {
+                        Some(Ok((stream, remote_addr))) => (stream, remote_addr),
+                        Some(Err(e)) => {
+                            warn!(error = ?e, "Failed to accept TLS connection");
+                            continue;
+                        }
+                        None => {
+                            debug!(local = %listener_local_addr, "TLS listener cancelled");
+                            break;
+                        }
+                    };
                 if !transport_layer_inner.is_whitelisted(remote_addr.ip()).await {
                     debug!(remote = %remote_addr, "tls connection rejected by whitelist");
                     continue;
@@ -428,12 +443,16 @@ impl TlsListenerConnection {
                 .ok_or_else(|| Error::Error("No private key provided".to_string()))?,
             ServerConfig::builder().crypto_provider().clone(),
         )?;
+        // The acceptor and the handle kept for `reload_tls_config` must share
+        // one resolver: a clone has its own lock and certificate, and a
+        // reload of the clone would never reach a handshake.
+        let resolver = Arc::new(resolver);
         let server_config = ServerConfig::builder()
             .with_no_client_auth()
-            .with_cert_resolver(Arc::new(resolver.clone()));
+            .with_cert_resolver(resolver.clone());
 
         let acceptor = TlsAcceptor::from(Arc::new(server_config));
-        Ok((acceptor, Arc::new(resolver)))
+        Ok((acceptor, resolver))
     }
 
     pub async fn reload_tls_config(&self, cert: Vec<u8>, key: Vec<u8>) -> Result<()> {
@@ -626,6 +645,11 @@ impl TlsConnection {
                 .await;
         }
 
+        // siple: an explicit argument wins, else fall back to the verifier in
+        // TlsConfig. The verifier replaces the (possibly empty) root store.
+        let custom_verifier =
+            custom_verifier.or_else(|| tls_config.and_then(|c| c.verifier.clone()));
+
         let mut root_store = RootCertStore::empty();
 
         // Load CA certificates if provided
@@ -638,6 +662,16 @@ impl TlsConnection {
                     .add(cert)
                     .map_err(|e| Error::Error(format!("Failed to add CA certificate: {}", e)))?;
             }
+        } else if custom_verifier.is_none() {
+            // siple: no warning when a verifier replaces the root store.
+            // Library policy: no implicit trust anchors. Callers own the
+            // trust store (system roots / pinning / provisioned anchors) and
+            // pass it via `TlsConfig::ca_certs`; an empty store rejects
+            // public-CA peers as UnknownIssuer.
+            tracing::warn!(
+                "TLS: no CA certificates configured — a public-CA peer will \
+                 fail verification; pass TlsConfig::ca_certs"
+            );
         }
 
         // Build client config with optional mutual TLS
@@ -662,10 +696,6 @@ impl TlsConnection {
                 .with_no_client_auth(),
         };
 
-        // siple: an explicit argument wins, else fall back to the verifier in
-        // TlsConfig. The verifier replaces the (possibly empty) root store.
-        let custom_verifier =
-            custom_verifier.or_else(|| tls_config.and_then(|c| c.verifier.clone()));
         if let Some(verifier) = custom_verifier {
             client_config.dangerous().set_certificate_verifier(verifier);
         }
@@ -890,11 +920,15 @@ impl StreamConnection for TlsConnection {
         }
     }
 
-    async fn serve_loop(&self, sender: TransportSender) -> Result<()> {
+    async fn serve_loop(&self, sender: TransportSender, idle_timeout: Duration) -> Result<()> {
         let sip_connection = SipConnection::Tls(self.clone());
         match &self.inner {
-            TlsConnectionInner::Client(inner) => inner.serve_loop(sender, sip_connection).await,
-            TlsConnectionInner::Server(inner) => inner.serve_loop(sender, sip_connection).await,
+            TlsConnectionInner::Client(inner) => {
+                inner.serve_loop(sender, sip_connection, idle_timeout).await
+            }
+            TlsConnectionInner::Server(inner) => {
+                inner.serve_loop(sender, sip_connection, idle_timeout).await
+            }
         }
     }
 

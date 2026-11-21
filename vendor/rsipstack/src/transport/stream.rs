@@ -1,5 +1,5 @@
 use super::wire_tap::{WireDirection, WireTapSlot};
-use crate::sip::prelude::HeadersExt;
+use crate::sip::prelude::{HasHeaders, HeadersExt};
 use crate::sip::SipMessage;
 use crate::{
     transport::{
@@ -9,7 +9,8 @@ use crate::{
     Result,
 };
 use bytes::{Buf, BytesMut};
-use memchr::{memchr, memmem};
+use core::time::Duration;
+use memchr::memmem;
 use tokio::{
     io::{AsyncRead, AsyncWrite, AsyncWriteExt},
     sync::Mutex,
@@ -18,8 +19,6 @@ use tokio_util::codec::{Decoder, Encoder};
 use tracing::{debug, info, warn};
 
 pub(super) const MAX_SIP_MESSAGE_SIZE: usize = 65535;
-const CL_FULL_NAME: &[u8] = b"content-length";
-const CL_SHORT_NAME: &[u8] = b"l";
 
 pub struct SipCodec {
     // siple: invoked with each raw frame (message or keepalive) before it
@@ -89,63 +88,27 @@ impl Decoder for SipCodec {
         }
 
         if let Some(headers_end) = memmem::find(src, b"\r\n\r\n") {
-            let headers = &src[..headers_end + 4]; // include CRLFCRLF
-
-            // Parse Content-Length as u32 without UTF-8 conversion
-            let mut content_length: usize = 0;
-            let mut start = 0;
-            while start < headers.len() {
-                // find end of line with memchr
-                let end = memchr(b'\n', &headers[start..])
-                    .map(|p| start + p)
-                    .unwrap_or(headers.len());
-
-                let mut line = &headers[start..end];
-                if let Some(&b'\r') = line.last() {
-                    line = &line[..line.len().saturating_sub(1)];
-                }
-
-                if let Some(colon) = memchr(b':', line) {
-                    let header = &line[..colon];
-                    let is_cl = if header.len() == CL_FULL_NAME.len()
-                        && header
-                            .iter()
-                            .zip(CL_FULL_NAME.iter())
-                            .all(|(&a, &b)| a.to_ascii_lowercase() == b)
-                    {
-                        true
-                    } else {
-                        header.len() == CL_SHORT_NAME.len()
-                            && header
-                                .iter()
-                                .zip(CL_SHORT_NAME.iter())
-                                .all(|(&a, &b)| a.to_ascii_lowercase() == b)
-                    };
-
-                    if is_cl {
-                        // parse value
-                        let value_buf = &line[colon + 1..];
-                        content_length = std::str::from_utf8(value_buf)
-                            .map_err(|_| crate::Error::Error("Invalid Content-Length".to_string()))?
-                            .trim()
-                            .parse()
-                            .map_err(|_| {
-                                crate::Error::Error("Invalid Content-Length value".to_string())
-                            })?;
-                        break;
-                    }
-                }
-
-                start = if end < headers.len() { end + 1 } else { end };
-            }
-
-            let total_len = headers_end + 4 + content_length;
-
+            let (mut message, body_start) =
+                crate::sip::parser::parse_message_head(&src[..headers_end + 4])?;
+            let content_length = crate::sip::parser::content_length(message.headers())?
+                .ok_or_else(|| {
+                    crate::Error::Error("Missing Content-Length on SIP stream".into())
+                })?;
+            let total_len = body_start
+                .checked_add(content_length)
+                .filter(|len| *len <= MAX_SIP_MESSAGE_SIZE)
+                .ok_or_else(|| crate::Error::Error("SIP message too large".into()))?;
             if src.len() >= total_len {
-                let msg_data = src.split_to(total_len); // consume full message
-                self.frame(&msg_data); // siple: tap before parsing
-                let msg = SipMessage::try_from(&msg_data[..])?;
-                return Ok(Some(SipCodecType::Message(msg)));
+                let msg_data = src.split_to(total_len);
+                // siple: tap the whole frame (its head is already parsed; a head that
+                // fails to parse is tapped by the read loop's error path)
+                self.frame(&msg_data);
+                let body = msg_data[body_start..].to_vec();
+                match &mut message {
+                    SipMessage::Request(r) => r.body = body,
+                    SipMessage::Response(r) => r.body = body,
+                }
+                return Ok(Some(SipCodecType::Message(message)));
             }
         }
 
@@ -234,6 +197,7 @@ where
         &self,
         sender: TransportSender,
         connection: SipConnection,
+        idle_timeout: Duration,
     ) -> Result<()> {
         let mut read_half = match self.read_half.lock().await.take() {
             Some(read_half) => read_half,
@@ -259,13 +223,21 @@ where
         let mut read_buf = BytesMut::with_capacity(MAX_SIP_MESSAGE_SIZE);
         read_buf.resize(MAX_SIP_MESSAGE_SIZE, 0);
         loop {
-            use tokio::io::AsyncReadExt;
-            match read_half.read(&mut read_buf).await {
-                Ok(0) => {
+            match read_stream_chunk(&mut read_half, &mut read_buf, idle_timeout).await {
+                StreamRead::Idle => {
+                    warn!(
+                        local = %self.local_addr,
+                        remote = %remote_addr,
+                        idle_secs = idle_timeout.as_secs(),
+                        "stream idle timeout, closing connection"
+                    );
+                    break;
+                }
+                StreamRead::Data(Ok(0)) => {
                     debug!(local = %self.local_addr, remote = %remote_addr, "Connection closed");
                     break;
                 }
-                Ok(n) => {
+                StreamRead::Data(Ok(n)) => {
                     buffer.extend_from_slice(&read_buf[0..n]);
 
                     // siple: a framing error leaves unconsumed bytes; tap them
@@ -307,7 +279,7 @@ where
                         }
                     }
                 }
-                Err(e) => {
+                StreamRead::Data(Err(e)) => {
                     warn!(error = %e, src = %remote_addr, "Error reading from stream");
                     break;
                 }
@@ -332,8 +304,35 @@ pub trait StreamConnection: Send + Sync + 'static {
     fn get_remote_addr(&self) -> &SipAddr;
     async fn send_message(&self, msg: SipMessage) -> Result<()>;
     async fn send_raw(&self, data: &[u8]) -> Result<()>;
-    async fn serve_loop(&self, sender: TransportSender) -> Result<()>;
+    /// Serve the connection until the peer closes, an error occurs, or no
+    /// bytes arrive for `idle_timeout` (`Duration::ZERO` = wait forever).
+    async fn serve_loop(&self, sender: TransportSender, idle_timeout: Duration) -> Result<()>;
     async fn close(&self) -> Result<()>;
+}
+
+/// Outcome of one stream read attempt.
+pub enum StreamRead {
+    /// Bytes read, EOF, or an I/O error — mirrors `AsyncReadExt::read`.
+    Data(std::io::Result<usize>),
+    /// No bytes arrived within the configured idle timeout.
+    Idle,
+}
+
+/// Read one chunk from a stream, bounding the wait by `idle_timeout`.
+/// `Duration::ZERO` disables the timeout (blocking read, legacy behavior).
+async fn read_stream_chunk<R: AsyncRead + Unpin>(
+    read_half: &mut R,
+    buf: &mut [u8],
+    idle_timeout: Duration,
+) -> StreamRead {
+    use tokio::io::AsyncReadExt;
+    if idle_timeout.is_zero() {
+        return StreamRead::Data(read_half.read(buf).await);
+    }
+    match tokio::time::timeout(idle_timeout, read_half.read(buf)).await {
+        Ok(res) => StreamRead::Data(res),
+        Err(_) => StreamRead::Idle,
+    }
 }
 
 pub async fn send_to_stream<W>(write_half: &Mutex<W>, msg: SipMessage) -> Result<()>

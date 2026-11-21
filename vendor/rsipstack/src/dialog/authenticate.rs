@@ -387,7 +387,63 @@ pub async fn handle_client_authenticate(
         tx.connection.clone(),
     );
     new_tx.destination = tx.destination.clone();
+    new_tx.dialog_route_set = tx.dialog_route_set.clone();
     Ok(new_tx)
+}
+
+/// Upper bound on extra challenge rounds answered because the server marked
+/// the nonce stale, so a server that always says `stale=true` cannot loop a
+/// client transaction forever.
+const MAX_STALE_RETRIES: u8 = 2;
+
+/// Whether a 401/407 challenge carries `stale=true` (RFC 2617 §3.2.1,
+/// RFC 7616 §3.3): the server accepted the credentials and only rejected the
+/// nonce, so retrying with the fresh nonce from this challenge is expected.
+pub fn is_stale_challenge(resp: &Response) -> bool {
+    let is_true = |stale: Option<String>| {
+        stale.is_some_and(|s| s.trim_matches('"').eq_ignore_ascii_case("true"))
+    };
+    let www = resp
+        .www_authenticate_header()
+        .and_then(|h| h.typed().ok())
+        .is_some_and(|t| is_true(t.stale));
+    let proxy = crate::sip_header_opt!(resp.headers().iter(), Header::ProxyAuthenticate)
+        .and_then(|h| h.typed().ok())
+        .is_some_and(|t| is_true(t.stale));
+    www || proxy
+}
+
+/// Decides whether a 401/407 received on a client transaction should be
+/// answered with credentials.
+///
+/// The first challenge always is. A repeated challenge normally means the
+/// credentials were rejected and is final; the exception is `stale=true`,
+/// which load-balanced servers send when the node handling the retry did not
+/// issue the nonce (seen with MTT, `401 Stale nonce`). Those are answered up
+/// to [`MAX_STALE_RETRIES`] times.
+#[derive(Debug, Default)]
+pub struct AuthRetry {
+    sent: bool,
+    stale_retries: u8,
+}
+
+impl AuthRetry {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Returns `true` if `resp` should be answered, recording the attempt.
+    pub fn should_answer(&mut self, resp: &Response) -> bool {
+        if !self.sent {
+            self.sent = true;
+            return true;
+        }
+        if self.stale_retries < MAX_STALE_RETRIES && is_stale_challenge(resp) {
+            self.stale_retries += 1;
+            return true;
+        }
+        false
+    }
 }
 
 /// Compute the digest hash value using the specified algorithm.
@@ -477,6 +533,20 @@ pub fn compute_digest(
     qop: Option<&AuthQop>,
 ) -> String {
     let ha1 = hash_value(algorithm, &format!("{}:{}:{}", username, realm, password));
+    // RFC 2617 §3.2.2.2 / RFC 7616: with the `-sess` algorithms HA1 is a
+    // session key derived per response: H(H(A1):nonce:cnonce).
+    let ha1 = match algorithm {
+        Algorithm::Md5Sess | Algorithm::Sha256Sess | Algorithm::Sha512Sess => {
+            let cnonce = match qop {
+                Some(AuthQop::Auth { cnonce, .. }) | Some(AuthQop::AuthInt { cnonce, .. }) => {
+                    cnonce.as_str()
+                }
+                None => "",
+            };
+            hash_value(algorithm, &format!("{}:{}:{}", ha1, nonce, cnonce))
+        }
+        _ => ha1,
+    };
     let ha2 = match qop {
         None | Some(AuthQop::Auth { .. }) => {
             hash_value(algorithm, &format!("{}:{}", method, uri_raw))
@@ -489,11 +559,11 @@ pub fn compute_digest(
 
     let value = match qop {
         Some(AuthQop::Auth { cnonce, nc }) => {
-            format!("{}:{}:{:08}:{}:{}:{}", ha1, nonce, nc, cnonce, "auth", ha2)
+            format!("{}:{}:{:08x}:{}:{}:{}", ha1, nonce, nc, cnonce, "auth", ha2)
         }
         Some(AuthQop::AuthInt { cnonce, nc }) => {
             format!(
-                "{}:{}:{:08}:{}:{}:{}",
+                "{}:{}:{:08x}:{}:{}:{}",
                 ha1, nonce, nc, cnonce, "auth-int", ha2
             )
         }

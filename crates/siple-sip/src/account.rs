@@ -224,8 +224,9 @@ impl WireTap for TapProxy {
 }
 
 /// Rewrites `User-Agent` on every outgoing request and response from a shared cell (hot
-/// `user_agent` change without an endpoint rebuild).
-struct UaInspector(Arc<RwLock<String>>);
+/// `user_agent` change without an endpoint rebuild), and keeps the digest response of a 2xx ACK
+/// away from hops that are not the provider (`authz::strip_foreign_ack_credentials`).
+struct UaInspector(Arc<RwLock<String>>, Arc<AuthState>);
 
 impl UaInspector {
     fn apply(&self, headers: &mut rsipstack::sip::Headers) {
@@ -240,10 +241,11 @@ impl UaInspector {
 }
 
 impl MessageInspector for UaInspector {
-    fn before_send(&self, msg: SipMessage, _dest: Option<&SipAddr>) -> SipMessage {
+    fn before_send(&self, msg: SipMessage, dest: Option<&SipAddr>) -> SipMessage {
         match msg {
             SipMessage::Request(mut r) => {
                 self.apply(&mut r.headers);
+                crate::authz::strip_foreign_ack_credentials(&self.1, &mut r, dest);
                 SipMessage::Request(r)
             }
             SipMessage::Response(mut r) => {
@@ -291,7 +293,6 @@ struct Linger {
 /// Everything built for one transport generation.
 pub(crate) struct Runtime {
     token: CancellationToken,
-    tl: TransportLayer,
     endpoint: rsipstack::transaction::Endpoint,
     target: Option<SipAddr>,
     public_host: Option<Host>,
@@ -322,6 +323,23 @@ pub(crate) struct Runtime {
     built_for: AccountConfig,
     /// The account is configured with `transport = "auto"`.
     auto: bool,
+}
+
+impl Runtime {
+    /// The endpoint's transport layer (rsipstack's `TransportLayer` is single-owner: the
+    /// endpoint holds it).
+    fn tl(&self) -> &TransportLayer {
+        &self.endpoint.inner.transport_layer
+    }
+}
+
+/// Dropping a runtime stops it. rsipstack's endpoint (and the transport layer it owns) is kept
+/// alive by its own serve and router tasks, which wait on this token, so nothing else would end
+/// them, e.g. for a runtime whose build finished after the account actor had gone.
+impl Drop for Runtime {
+    fn drop(&mut self) {
+        self.token.cancel();
+    }
 }
 
 pub(crate) fn sip_transport(t: Transport) -> SipTransport {
@@ -577,6 +595,11 @@ async fn build_inner(
         token.clone(),
         Box::new(SipDomainResolver::new(shared.dns.clone())),
     );
+    // Since 0.7.7 rsipstack closes a TCP / TLS connection after 5 min without inbound bytes.
+    // The registrar flow can legitimately be that quiet (servers that ignore CRLF pings, long
+    // re-REGISTER intervals); losing it would drop incoming calls. Liveness is ours to judge
+    // (keep-alive + flow watcher), so keep the old "never idle out" behaviour.
+    tl.set_stream_idle_timeout(Duration::ZERO);
     let tap = Arc::new(TapProxy {
         account: cfg.id.clone(),
         sink: shared.wire_sink.clone(),
@@ -631,9 +654,9 @@ async fn build_inner(
     let mut builder = EndpointBuilder::new();
     let endpoint = builder
         .with_cancel_token(token.clone())
-        .with_transport_layer(tl.clone())
+        .with_transport_layer(tl)
         .with_user_agent(&ua)
-        .with_inspector(Box::new(UaInspector(ua_cell.clone())))
+        .with_inspector(Box::new(UaInspector(ua_cell.clone(), calls.auth.clone())))
         .with_transport_inspector(Box::new(FlowWatcher { epoch, tx: int_tx }))
         .with_option(EndpointOption {
             use_sips_for_tls: cfg.use_sips_uri,
@@ -666,7 +689,6 @@ async fn build_inner(
 
     Ok(Runtime {
         token: token.clone(),
-        tl,
         endpoint,
         target: target_sock.map(|a| SipAddr::new(sip_transport(transport), a.into())),
         public_host,
@@ -1192,9 +1214,11 @@ impl Actor {
             // Ended calls (and their `RtEnv`) outlive the runtime in the call table and keep the
             // endpoint, hence the transport layer, alive; let go of the sockets explicitly so a
             // fixed `local_port` is free for the next runtime.
-            for a in rt.tl.get_addrs() {
-                rt.tl.del_transport(&a);
-                rt.tl.del_connection(&a);
+            for a in rt.tl().get_addrs() {
+                rt.tl().del_transport(&a);
+                // Address-scoped on purpose: the whole layer is being dismantled.
+                #[allow(deprecated)]
+                rt.tl().del_connection(&a);
             }
         }
         self.publish_env();
@@ -1609,8 +1633,12 @@ impl Actor {
         let close = async {
             if let Ok((conn, _)) = ep.transport_layer.lookup(&target, None).await {
                 let _ = conn.close().await;
-                ep.transport_layer.del_connection(&target);
+                // Retire it (cancels its token: dialogs stop choosing it for affinity), then drop
+                // whatever else is cached for that peer: since rsipstack 0.7.5 the cache keeps
+                // several connections per remote address, and they all share the dead path.
+                ep.transport_layer.remove_connection(&conn);
                 if let Some(remote) = conn.get_remote_addr() {
+                    #[allow(deprecated)]
                     ep.transport_layer.del_connection(remote);
                 }
             }
@@ -1708,7 +1736,8 @@ impl Actor {
                 }
             }
             if let Some(l) = reuse {
-                rt.tl.reactivate_listener(old_addr.as_ref(), l.conn.clone());
+                rt.tl()
+                    .reactivate_listener(old_addr.as_ref(), l.conn.clone());
                 moved = Some((l.addr, l.tok, l.conn));
             } else {
                 let sock = bind_udp(SocketAddr::new(now.local_ip, cfg.local_port))?;
@@ -1717,7 +1746,7 @@ impl Actor {
                 let conn = SipConnection::Udp(
                     UdpConnection::from_socket(Arc::new(sock), None, Some(tok.clone())).await?,
                 );
-                if let Err(e) = rt.tl.swap_listener(old_addr.as_ref(), conn.clone()).await {
+                if let Err(e) = rt.tl().swap_listener(old_addr.as_ref(), conn.clone()).await {
                     tok.cancel();
                     return Err(e.into());
                 }
@@ -1733,7 +1762,7 @@ impl Actor {
         {
             // (A moved registrar alone leaves the connections alone: calls may still ride the
             // old one, and REGISTER goes to the new next hop over a connection of its own.)
-            rt.tl.retire_stream_connections();
+            rt.tl().retire_stream_connections();
             rt.stream_gen += 1;
         }
         // 3. Runtime facts.
@@ -1747,7 +1776,7 @@ impl Actor {
                 .is_err()
                 .then_some(hop)
                 .filter(|h| !h.is_empty());
-            rt.tl
+            rt.tl()
                 .set_tls_config(client_tls_config(&cfg, sni, now.target)?);
         }
         if let Some((addr, tok, conn)) = moved {
@@ -2472,9 +2501,9 @@ impl Actor {
         self.trace = on;
         if let Some(rt) = &self.rt {
             if on {
-                rt.tl.set_wire_tap(rt.tap.clone());
+                rt.tl().set_wire_tap(rt.tap.clone());
             } else {
-                rt.tl.clear_wire_tap();
+                rt.tl().clear_wire_tap();
             }
         }
         tracing::info!(account = %self.id, on, "sip trace");

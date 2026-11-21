@@ -220,6 +220,25 @@ pub trait HeadersExt: HasHeaders {
         }
         Ok(entries)
     }
+    /// All Diversion header lines (RFC 5806 allows multiple lines, each
+    /// possibly holding comma-joined diversion entries).
+    fn diversion_headers(&self) -> Vec<&crate::sip::headers::untyped::Diversion> {
+        self.headers()
+            .iter()
+            .filter_map(|h| match h {
+                Header::Diversion(d) => Some(d),
+                _ => None,
+            })
+            .collect()
+    }
+    /// Flattened typed diversion entries across every Diversion header line.
+    fn diversion_entries(&self) -> Result<Vec<crate::sip::typed::DiversionEntry>, Error> {
+        let mut entries = Vec::new();
+        for d in self.diversion_headers() {
+            entries.extend(d.clone().into_typed()?.entries);
+        }
+        Ok(entries)
+    }
     fn typed_contact_headers(&self) -> Result<Vec<crate::sip::typed::Contact>, Error> {
         let mut contacts = Vec::new();
         for contact in self.contact_headers() {
@@ -514,6 +533,13 @@ impl core::convert::From<Request> for Vec<u8> {
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Response {
     pub status_code: StatusCode,
+    /// The reason phrase a parsed Status-Line carried (trimmed) when it
+    /// differs from the standard text for its code (e.g. `403 Caller
+    /// Origination Number is Invalid`); `None` for the standard phrase, an
+    /// unknown code (kept in [`StatusCode::Other`]) and every locally built
+    /// response. Never serialized: `Display` and `to_bytes` still write the
+    /// standard phrase.
+    pub wire_reason: Option<String>,
     pub version: Version,
     pub headers: Headers,
     pub body: Vec<u8>,
@@ -587,6 +613,7 @@ impl Default for Response {
     fn default() -> Self {
         Response {
             status_code: StatusCode::OK,
+            wire_reason: None,
             version: Version::V2,
             headers: Headers::default(),
             body: Vec::new(),
@@ -875,7 +902,7 @@ mod tests {
             "CSeq: 314159 INVITE\r\n",
             "Contact: <sip:bob@192.0.2.4>\r\n",
             "Content-Type: application/sdp\r\n",
-            "Content-Length: 131\r\n",
+            "Content-Length: 127\r\n",
             "\r\n",
             "v=0\r\no=bob 2890844527 2890844527 IN IP4 192.0.2.4\r\ns=-\r\nc=IN IP4 192.0.2.4\r\nt=0 0\r\nm=audio 3456 RTP/AVP 0\r\na=rtpmap:0 PCMU/8000"
         )

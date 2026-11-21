@@ -4,9 +4,12 @@ use crate::transport::{SipAddr, SipConnection};
 use core::time::Duration;
 use key::TransactionKey;
 pub use transaction::Transaction;
+mod ack_cache;
 pub mod endpoint;
+pub(crate) mod invite_usage;
 pub mod key;
 pub mod message;
+mod receipt;
 mod timer;
 pub mod transaction;
 pub use endpoint::Endpoint;
@@ -374,7 +377,7 @@ pub fn make_uuid_v4() -> String {
 }
 
 #[cfg(all(feature = "std", not(target_family = "wasm")))]
-fn fill_random_bytes(buf: &mut [u8]) {
+pub(crate) fn fill_random_bytes(buf: &mut [u8]) {
     use rand::Rng;
     rand::rng().fill_bytes(buf);
 }
@@ -383,7 +386,10 @@ fn fill_random_bytes(buf: &mut [u8]) {
 /// is what tags/branches need; hardware entropy arrives with the embassy
 /// backend (WP3) — do not rely on this for secrets.
 #[cfg(not(feature = "std"))]
-fn fill_random_bytes(buf: &mut [u8]) {
+pub(crate) fn fill_random_bytes(buf: &mut [u8]) {
+    if crate::platform::rng::try_fill(buf) {
+        return;
+    }
     use crate::platform::atomic64::AtomicU64;
     use core::sync::atomic::Ordering;
     static STATE: AtomicU64 = AtomicU64::new(0x9E37_79B9_7F4A_7C15);
@@ -402,7 +408,7 @@ fn fill_random_bytes(buf: &mut [u8]) {
 }
 
 #[cfg(target_family = "wasm")]
-fn fill_random_bytes(buf: &mut [u8]) {
+pub(crate) fn fill_random_bytes(buf: &mut [u8]) {
     for byte in buf.iter_mut() {
         *byte = (js_sys::Math::random() * 256.0) as u8;
     }
