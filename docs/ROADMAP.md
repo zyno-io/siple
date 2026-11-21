@@ -83,8 +83,8 @@ Store editions (Mac App Store, Microsoft Store, Flathub) have their own page: [S
 
 ## Platforms and packaging
 
-- Packages: Homebrew cask and `siple-cli` formula, winget, AppImage, `.deb` / `.rpm`, and the Flathub submission of the
-  Flatpak build (see [STORE.md](STORE.md#flathub)).
+- Packages: Homebrew cask and `siple-cli` formula, winget, AppImage, `.deb` / `.rpm`. The Flathub submission of the
+  Flatpak build is deferred (see [STORE.md](STORE.md#flathub)).
 - Windows arm64: libopus builds as portable C (no NEON). The `cmake` crate does not set `CMAKE_SYSTEM_PROCESSOR` with this
   toolchain file, and its default `ARM64` would not match opus's `(arm|aarch64)` check anyway. To enable NEON, set
   `CMAKE_SYSTEM_NAME Windows` and `CMAKE_SYSTEM_PROCESSOR aarch64` in `packaging/windows/static-crt.cmake` when
