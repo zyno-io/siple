@@ -76,7 +76,7 @@ secrets (`tenant`, `appId`, `password`). Rotate the secret before it expires.
 - Entitlements: only `com.apple.security.device.audio-input` (microphone). The app is not sandboxed, uses Metal
   through wgpu (no JIT), loads no third-party dylibs, and the network, Keychain and tray need no entitlement.
   Add nothing else unless a notarized build demonstrably fails without it.
-- `rcodesign` 0.27.0 is pinned by sha256 in the workflow. To bump: download the new
+- `rcodesign` 0.29.0 is pinned by sha256 in the workflow. To bump: download the new
   `apple-codesign-<v>-macos-universal.tar.gz` from the `indygreg/apple-platform-rs` release, verify it against the
   release page, update version and hash.
 

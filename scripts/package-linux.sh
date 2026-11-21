@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Builds dist/Siple-<version>-linux-x86_64.tar.gz. Run it inside rust:1.94-bookworm (glibc 2.36, so the
+# Builds dist/Siple-<version>-linux-x86_64.tar.gz. Run it inside rust:1.100-bookworm (glibc 2.36, so the
 # tarball runs on Debian 12+ / Ubuntu 23.04+): scripts/linux-box.sh package does exactly that.
 #
 #   scripts/package-linux.sh

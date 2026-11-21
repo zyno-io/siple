@@ -3,7 +3,7 @@
 #   docker build -t siple:dev --target runtime -f packaging/linux/Dockerfile .
 #   docker build -t siple-build --target build-env -f packaging/linux/Dockerfile .
 # The build context must never contain tests/interop/pbx.env (see .dockerignore).
-ARG RUST_IMAGE=rust:1.94-bookworm
+ARG RUST_IMAGE=rust:1.100-bookworm
 FROM ${RUST_IMAGE} AS build-env
 RUN apt-get update && apt-get install -y --no-install-recommends cmake pkg-config libasound2-dev \
  && rm -rf /var/lib/apt/lists/* && rustup component add clippy rustfmt
@@ -39,7 +39,7 @@ HEALTHCHECK --interval=10s --start-period=10s --start-interval=1s --timeout=5s C
 #   docker build --target speech -t siple:speech -f packaging/linux/Dockerfile .
 # = runtime + espeak-ng (apt) + whisper.cpp built from a pinned tag + the ggml-base.en model.
 FROM build-env AS whisper-build
-ARG WHISPER_TAG=v1.7.5
+ARG WHISPER_TAG=v1.9.5
 RUN git clone --depth 1 --branch ${WHISPER_TAG} https://github.com/ggml-org/whisper.cpp /whisper \
  && cd /whisper && cmake -B build -DBUILD_SHARED_LIBS=OFF -DGGML_NATIVE=OFF -DCMAKE_BUILD_TYPE=Release \
  && cmake --build build -j"$(nproc)" --target whisper-cli \

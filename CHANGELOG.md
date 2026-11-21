@@ -8,6 +8,7 @@
 - The account button's tooltip shows when it registered, the last renewal and when the registration expires. BLF key tooltips
   show when the subscription was confirmed, the last refresh and its expiry.
 - API: `blf.list` `subscription` carries `subscribed_at` and `last_refreshed_at`.
+- Dependencies updated.
 
 ## 0.1.2 (2026-11-19)
 

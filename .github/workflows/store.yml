@@ -92,7 +92,7 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           key: mas
-      - uses: taiki-e/install-action@ab49d3c64680143e184118bed66a46419fc15519 # v2.90.5
+      - uses: taiki-e/install-action@25f51f6b1bf4e18876107cece836f4f77ac17c8c # v2.90.7
         with:
           tool: cargo-about
       - name: Package (MAS bundle only)
@@ -104,7 +104,7 @@ jobs:
           COPYFILE_DISABLE=1 tar -C dist/mas -cf dist/mas/Siple-app.tar Siple.app
       - name: Verify unsigned bundle
         run: scripts/verify-macos-mas.sh --unsigned dist/mas/Siple.app
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: mas-unsigned-app
           path: dist/mas/Siple-app.tar
@@ -154,7 +154,7 @@ jobs:
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: steps.gate.outputs.ready == 'true'
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         if: steps.gate.outputs.ready == 'true'
         with:
           name: mas-unsigned-app
@@ -238,7 +238,7 @@ jobs:
           Build numbers only ever increase (CFBundleVersion encodes the tag), so a re-upload of the same tag is a
           "redundant binary": tag a new rc to ship a fix. See docs/RELEASING.md.
           DOC
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: steps.gate.outputs.ready == 'true'
         with:
           name: store-macos-appstore-${{ needs.version.outputs.label }}
@@ -296,13 +296,13 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           key: ${{ matrix.target }}-store
-      - uses: taiki-e/install-action@ab49d3c64680143e184118bed66a46419fc15519 # v2.90.5
+      - uses: taiki-e/install-action@25f51f6b1bf4e18876107cece836f4f77ac17c8c # v2.90.7
         with:
           tool: cargo-about
       - name: Package (stage only, --features store)
         shell: pwsh
         run: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-windows.ps1 -Arch ${{ matrix.arch }} -StageOnly -Store
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: msix-stage-${{ matrix.arch }}
           # Wildcard keeps the Siple-<version>-windows-<arch>-store/ directory name inside the artifact.
@@ -322,7 +322,7 @@ jobs:
       MSIX_VERSION: ${{ needs.version.outputs.msix_version }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: msix-stage-*
           merge-multiple: true
@@ -385,14 +385,14 @@ jobs:
           "result=$env:ID_DETAIL" | Add-Content -Path $env:GITHUB_OUTPUT
 
       # Unsigned: Partner Center signs it. Only for a real identity on a Store-eligible (X.Y.Z.0) version.
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: steps.identity.outputs.store_artifact == 'true'
         with:
           name: store-windows-msix-${{ needs.version.outputs.label }}
           path: dist/msix/*.msixbundle
           if-no-files-found: error
           retention-days: 90
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: sideload-windows-msix-${{ needs.version.outputs.label }}
           path: dist/msix/sideload/*
@@ -441,7 +441,7 @@ jobs:
           & $appcert reset | Out-Null
           & $appcert test -appxpackagepath $x64.FullName -reportoutputpath (Join-Path $PWD 'wack.xml')
           Write-Host "appcert exit code $LASTEXITCODE"
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always() && hashFiles('wack.xml') != ''
         with:
           name: wack-report-${{ needs.version.outputs.label }}

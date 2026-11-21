@@ -54,7 +54,7 @@ block2 = "0.6"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Threading"] }
-winreg = "0.55"
+winreg = "0.56"
 notify-rust = { version = "4", default-features = false }
 
 [target.'cfg(target_os = "linux")'.dependencies.ksni]

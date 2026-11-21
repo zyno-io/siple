@@ -9,7 +9,7 @@ publish.workspace = true
 
 [dependencies]
 anyhow = "1"
-base64 = "0.22"
+base64 = "0.23"
 rand = "0.10"
 
 # Codecs
