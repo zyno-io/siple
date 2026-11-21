@@ -7,7 +7,8 @@ needed to finish it. How the store packages are built, signed and uploaded today
 **Status.** Since 0.1.1, `.github/workflows/store.yml` builds the store packages on release tags: a Mac App Store
 `.pkg` (signed when `STORE_MAS_ENABLED` and its secrets are set) and, for final `X.Y.Z` tags only, an unsigned Microsoft
 Store `.msixbundle` (x64 + arm64); release candidates get TestFlight and the sideload bundle only. The editions exist in code (`build.channel` `mas` / `msix`,
-see [CONFIG.md](CONFIG.md#location)); neither is published yet. Flathub has not started.
+see [CONFIG.md](CONFIG.md#location)); neither is published yet. Since 0.2.0 the Flatpak edition
+(`io.zyno.siple`, `build.channel` `flatpak`) is built by `.github/workflows/flatpak.yml`; the Flathub submission is pending.
 
 ## Decisions
 
@@ -134,19 +135,28 @@ Findings from the MSIX spike (Windows 11 x64, WACK from SDK 10.0.26100):
 
 ## Flathub
 
-Not started.
+The Flatpak build exists since 0.2.0; the Flathub submission is pending. How it is built and submitted:
+[RELEASING.md](RELEASING.md#flatpak-flathub).
 
-- Flatpak manifest building from a vendored source tarball attached to each release (Flathub builds offline); the
-  `x-checker` bot with automerge for updates.
+Done:
+
+- Manifest `packaging/flatpak/io.zyno.siple.yml`, built offline from `cargo-sources.json` on the freedesktop 26.08 runtime
+  (x86_64 and aarch64). `scripts/flathub-manifest.sh` renders the Flathub copy from a release tag (git source, notices
+  checked against the signed `SHA256SUMS`). No `x-checker-data` bot or automerge: the checker cannot regenerate
+  `cargo-sources.json` or the notices checksum.
 - finish-args: network, IPC, Wayland with X11 fallback, DRI, PulseAudio, the StatusNotifier watcher (tray), notifications
   and the Secret Service.
 - A `flatpak` channel in `crates/siple-config/src/channel.rs` (detected by `/.flatpak-info`): no external programs (as in the
-  Mac App Store edition), launch at login through the Background portal, no self-update (the in-place installer already
-  refuses inside Flatpak).
+  Mac App Store edition), launch at login through the Background portal, no self-update (`disabled_reason`
+  `managed_by_flatpak`).
 - Complete `packaging/linux/io.zyno.siple.metainfo.xml`: releases, screenshots, developer, URLs, a filled OARS rating.
+- The CLI is documented: `flatpak run --command=siple-cli io.zyno.siple` (stdin/stdout only).
+
+Remaining:
+
+- Submit: a pull request against the `new-pr` branch of `flathub/flathub`, then updates through `flathub/io.zyno.siple`.
 - Verified app: `zyno.io/.well-known/org.flathub.VerifiedApps.txt`.
-- Document the CLI: `flatpak run --command=siple-cli io.zyno.siple` (stdin/stdout only).
-- A Flatpak also lifts the tarball's glibc 2.36 floor (Ubuntu 22.04).
+- Once on Flathub, the Flatpak lifts the tarball's glibc 2.36 floor (Ubuntu 22.04).
 
 ## Where agents find `siple-cli`, per edition
 

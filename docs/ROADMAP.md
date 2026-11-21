@@ -39,8 +39,8 @@ Store editions (Mac App Store, Microsoft Store, Flathub) have their own page: [S
 - **`pickup = "replaces"`** is experimental and not interop-verified.
 - **No echo cancellation or noise suppression**: a headset is assumed. **No STUN or ICE**: NAT handling is rport, Contact
   rewrite, keep-alives, `public_address` and `symmetric_rtp`.
-- **Linux tarball** needs glibc 2.36 (Debian 12, Ubuntu 23.04 and later); Ubuntu 22.04 is excluded until a Flatpak or
-  AppImage exists.
+- **Linux tarball** needs glibc 2.36 (Debian 12, Ubuntu 23.04 and later); Ubuntu 22.04 is excluded until the Flatpak is on
+  Flathub or an AppImage exists.
 - **crates.io:** the crates cannot be published while `vendor/rsipstack` carries Siple patches (path dependency).
 
 ## Desktop app
@@ -56,9 +56,7 @@ Store editions (Mac App Store, Microsoft Store, Flathub) have their own page: [S
 - Voicemail: dial the voicemail number from the MWI indicator and the tray menu (needs a per-account voicemail target, or
   the `Message-Account` from MWI).
 - Windows: a "Microphone blocked?" link to `ms-settings:privacy-microphone` when the microphone is silent.
-- Wizard: "Import from another Siple install" and "Paste a setup link" (see provisioning links below).
-- Plain-language errors: an engine catalog of stable error kinds that the UI renders and the API returns with a `hint`.
-  Prerequisite for translation.
+- Wizard: "Import from another Siple install".
 - Translation: Fluent bundles and a CJK font fallback (IBM Plex has no CJK).
 - Screen-reader audit with VoiceOver, NVDA and Orca. AccessKit is enabled; the audit has not been done. Goal: answer, hang
   up and transfer with a screen reader alone.
@@ -74,8 +72,6 @@ Store editions (Mac App Store, Microsoft Store, Flathub) have their own page: [S
   speed-dial and DND-toggle key types; a detachable Extensions window; drag a line onto a key to transfer.
 - Local three-way conference (media mixer).
 - Provider presets: files that prefill the wizard for a hosted PBX.
-- Provisioning links `siple:provision?d=<base64url JSON>`: allow-listed fields, no password by default; they prefill the
-  wizard, run `account.test`, and write only after the user confirms. Harden like the `sip:` link parser.
 
 ## Control API and agents
 
@@ -87,7 +83,8 @@ Store editions (Mac App Store, Microsoft Store, Flathub) have their own page: [S
 
 ## Platforms and packaging
 
-- Packages: Homebrew cask and `siple-cli` formula, winget, AppImage, `.deb` / `.rpm`, Flatpak (see [STORE.md](STORE.md)).
+- Packages: Homebrew cask and `siple-cli` formula, winget, AppImage, `.deb` / `.rpm`, and the Flathub submission of the
+  Flatpak build (see [STORE.md](STORE.md#flathub)).
 - Windows arm64: libopus builds as portable C (no NEON). The `cmake` crate does not set `CMAKE_SYSTEM_PROCESSOR` with this
   toolchain file, and its default `ARM64` would not match opus's `(arm|aarch64)` check anyway. To enable NEON, set
   `CMAKE_SYSTEM_NAME Windows` and `CMAKE_SYSTEM_PROCESSOR aarch64` in `packaging/windows/static-crt.cmake` when

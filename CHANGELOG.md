@@ -1,15 +1,47 @@
 <!-- siple-rename: keep (this file documents the legacy ZynoPhone names on purpose) -->
 # Changelog
 
-## Unreleased
+## 0.2.0 (2026-11-21)
+
+Plain-language errors, `siple:` setup links and a Flatpak edition.
+
+### New
+
+- Plain-language errors. A failed registration, call, busy lamp or transfer, and a failed action, now say what went wrong and
+  what to try ("Wrong username or password", "Busy", "Extension not found") instead of a bare SIP code. The server's answer
+  moves to a details line or a hover. A busy lamp whose subscription failed reads "Failed" (its tooltip and the banner above
+  the extensions name the problem). `siple-cli problems` lists the catalog (`--json`, `--markdown`).
+- Setup links: an administrator can send a `siple:provision?d=...` link that fills in an account. Clicking it (or pasting it
+  into **Paste a setup link** in the setup, or **Add from setup link** in Settings › Accounts) opens a **Check this setup
+  link** review screen that leads with the server the account would connect to. Nothing is saved or sent until the user
+  continues (Continue unlocks one second after the screen appears), types the password and runs the test. A link carries
+  only nine account fields (`username`, `domain`, `display_name`, `auth_username`, `registrar`, `outbound_proxy`,
+  `transport`, `srtp`, `profile`), never a password, and any other key is refused. A link's `display_name` may not contain
+  quotes, backslashes, angle brackets or invisible characters, and hosts may not use IPv4 shorthand (`127.1`,
+  `2130706433`); the password must be typed before Test; a new link is refused once the user has continued past Review.
+  See `website/guide/setup-links.md`.
+  - Settings › Accounts has **Copy setup link**: a link for an existing account, without its password.
+  - New `siple-cli setup-link build|parse` (offline).
+  - `siple:` is registered on every edition (Info.plist, the MSIX manifest, the `.desktop` file, and under HKCU on the
+    Windows zip, where `handle_links = false` removes it).
+- The account form of the setup and of Settings › Accounts › New account has a **Registrar** field.
+- Flatpak edition `io.zyno.siple`, in preparation for Flathub: built from source on the freedesktop 26.08 runtime
+  for x86_64 and aarch64; CI builds a test bundle. Sandboxed: network, audio (PulseAudio / PipeWire), tray,
+  notifications and the Secret Service, no access to your home folder. Settings live in
+  `~/.var/app/io.zyno.siple/config/siple/`. Flatpak updates it (no update check of its own); `[speech]` commands are
+  not available; `launch_at_login` goes through the desktop's Background portal; the CLI is
+  `flatpak run --command=siple-cli io.zyno.siple`.
+- With developer tools on, the account button's tooltip shows when it registered, the last renewal and when the registration
+  expires, and BLF key tooltips show when the subscription was confirmed, the last refresh and its expiry.
+
+### Changed
 
 - Developer tools (`[ui] developer_tools`, **Settings › Developer**) now gate the footer **Log**, **Open logs** and **Open config**
   buttons. The Settings pages, the account menu and the config-error banner keep their own Open config / Open logs buttons.
-- With developer tools on, the account button's tooltip shows when it registered, the last renewal and when the registration
-  expires, and BLF key tooltips show when the subscription was confirmed, the last refresh and its expiry.
-- API: `blf.list` `subscription` carries `subscribed_at` and `last_refreshed_at`.
-- Dependencies updated.
-- rsipstack updated to 0.8.6 (from 0.7.3). User-visible fixes it brings:
+
+### Fixed
+
+- From rsipstack 0.8.6 (updated from 0.7.3):
   - Display names in From, To and Contact are written with `"` and `\` escaped, so a name containing a quote can no
     longer break the header. Received headers, URIs and Content-Length are checked against the RFC 3261 grammar. Over
     UDP a message that fails is dropped; over TCP or TLS (where a Content-Length is now required) it closes the
@@ -27,39 +59,22 @@
   - Hanging up an outgoing call while it rings now sends the CANCEL to the same next hop as the INVITE (outbound
     proxy or registrar). Before, it went wherever the dialled address resolved, so with an outbound proxy, or a
     registrar host other than the domain, the other side could keep ringing.
-- Plain-language errors. A failed registration, call, busy lamp or transfer, and a failed action, now say what went wrong and
-  what to try ("Wrong username or password", "Busy", "Extension not found") instead of a bare SIP code. The server's answer
-  moves to a details line or a hover. A busy lamp whose subscription failed reads "Failed" (its tooltip and the banner above
-  the extensions name the problem).
-- API: a `problem {kind, title, hint}` object on failed registrations (`registration.problem`), ended calls (`end.problem`),
+
+### API
+
+- A `problem {kind, title, hint}` object on failed registrations (`registration.problem`), ended calls (`end.problem`),
   BLF subscriptions (`subscription.last_problem`), transfer errors (`last_error.problem`), `account.test` results (`problem`)
   and SIP-level JSON-RPC errors (`error.data.problem`). Existing fields keep their names and values. Kinds are stable; see
   `docs/PROBLEMS.md`.
-- `siple-cli problems` lists the catalog (`--json`, `--markdown`).
-- Setup links: an administrator can send a `siple:provision?d=...` link that fills in an account. Clicking it (or pasting it
-  into **Paste a setup link** in the setup, or **Add from setup link** in Settings › Accounts) opens a **Check this setup
-  link** review screen that leads with the server the account would connect to. Nothing is saved or sent until the user
-  continues (Continue unlocks one second after the screen appears), types the password and runs the test. A link carries
-  only nine account fields (`username`, `domain`, `display_name`, `auth_username`, `registrar`, `outbound_proxy`,
-  `transport`, `srtp`, `profile`), never a password, and any other key is refused. See `website/guide/setup-links.md`.
-  A link's `display_name` may not contain quotes, backslashes, angle brackets or invisible characters, and hosts may not use
-  IPv4 shorthand (`127.1`, `2130706433`); the password must be typed before Test; a new link is refused once the user has
-  continued past Review.
-- Settings › Accounts has **Copy setup link**: a link for an existing account, without its password.
-- API: new methods `provision.parse` and `provision.build`. `app.open_uri` now also takes `siple:provision` links (up to
+- New methods `provision.parse` and `provision.build`. `app.open_uri` now also takes `siple:provision` links (up to
   2048 bytes), opens the review screen only (no parameter skips it), reports `kind` (`dial` or `provision`), and its
   `invalid_params` errors carry `data.code` (and `data.field`) for a refused link.
-- The account form of the setup and of Settings › Accounts › New account has a **Registrar** field.
-- New `siple-cli setup-link build|parse` (offline).
-- `siple:` is registered on every edition (Info.plist, the MSIX manifest, the `.desktop` file, and under HKCU on the Windows
-  zip, where `handle_links = false` removes it).
-- Flatpak edition `io.zyno.siple`, in preparation for Flathub: built from source on the freedesktop 26.08 runtime
-  for x86_64 and aarch64; CI builds a test bundle. Sandboxed: network, audio (PulseAudio / PipeWire), tray,
-  notifications and the Secret Service, no access to your home folder. Settings live in
-  `~/.var/app/io.zyno.siple/config/siple/`. Flatpak updates it (no update check of its own); `[speech]` commands are
-  not available; `launch_at_login` goes through the desktop's Background portal; the CLI is
-  `flatpak run --command=siple-cli io.zyno.siple`.
-- API: `build.channel` can be `flatpak`; `app.update_status` `disabled_reason` can be `managed_by_flatpak`.
+- `blf.list` `subscription` carries `subscribed_at` and `last_refreshed_at`.
+- `build.channel` can be `flatpak`; `app.update_status` `disabled_reason` can be `managed_by_flatpak`.
+
+### Dependencies and packaging
+
+- Dependencies updated, and rsipstack to 0.8.6 (fixes above).
 - Linux: hicolor app icons and a complete AppStream file (releases, screenshots, content rating) in `packaging/linux/`;
   the tarball's `share/metainfo` file gains the same metadata.
 
