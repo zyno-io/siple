@@ -175,4 +175,5 @@ Target state, for `skills/siple/SKILL.md` and the agent docs:
 | zip / winget | next to `siple.exe` | none |
 | Flatpak | `flatpak run --command=siple-cli io.zyno.siple` | stdin/stdout only, no `[speech]` |
 | tarball | `bin/siple-cli` | none |
+| AppImage | `siple-cli` symlink to the AppImage, or `<file> --cli` | none |
 | Docker image | `siple-cli` on `PATH` (`/usr/local/bin` wrapper) | none |

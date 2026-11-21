@@ -61,7 +61,8 @@ cargo build --release        # target/release/siple (GUI) and siple-cli (console
 ### Packages
 
 ```sh
-scripts/package-linux.sh            # dist/Siple-<ver>-linux-x86_64.tar.gz (run in rust:1.100-bookworm)
+scripts/package-linux.sh            # dist/Siple-<ver>-linux-<arch>.tar.gz, arch x86_64 or aarch64 (native; run in rust:1.100-bookworm)
+scripts/package-appimage.sh         # dist/Siple-<ver>-linux-<arch>.AppImage (after package-linux.sh, same container)
 scripts/package-macos.sh            # dist/Siple.app (universal), dist/Siple-<ver>-macos.zip
 ```
 ```powershell
@@ -142,7 +143,7 @@ never a shell); clips and listening need nothing. See "Audio for agents" in [doc
 ALSA is a hard runtime dependency of both binaries (`libasound.so.2`); GUI libraries are loaded at runtime only by
 `siple`, the headless CLI needs nothing else.
 
-**Tarball.** `dist/Siple-<ver>-linux-x86_64.tar.gz` unpacks to `siple-<ver>/{bin,share}`. It is built in
+**Tarball.** `dist/Siple-<ver>-linux-<arch>.tar.gz` (x86_64 or aarch64, built natively on a machine of that architecture) unpacks to `siple-<ver>/{bin,share}`. It is built in
 `rust:1.100-bookworm` (glibc 2.36), so it runs on Debian 12+ and Ubuntu 23.04+. `scripts/package-linux.sh` fails if a
 binary links anything beyond libasound, libc, libm and libgcc_s, and prints the highest `GLIBC_` version used. Runtime
 packages: `libasound2` (`libasound2t64` on Ubuntu 24.04+/Debian 13), `ca-certificates` for `tls_verify = true`; for the

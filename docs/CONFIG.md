@@ -29,8 +29,9 @@ long for a unix socket it falls back to `s.sock` in the group container (never a
 `control.sock` there; for a too-long path the fallback is `$XDG_RUNTIME_DIR/app/io.zyno.siple/` (shared by every instance
 of the app and the host, never the sandbox's private `/tmp`). The sandbox sees only its own directory: files Siple reads
 (TLS files, `file:` audio) must be inside `~/.var/app/io.zyno.siple/`, or granted with
-`flatpak override --user --filesystem=/path:ro io.zyno.siple`. `status.build.channel` (`direct`, `mas`, `msix`,
-`flatpak`) tells which edition is running.
+`flatpak override --user --filesystem=/path:ro io.zyno.siple`. `status.build.channel` (`direct`, `appimage`, `mas`, `msix`,
+`flatpak`) tells which edition is running. The AppImage uses the Linux default like the tarball; the runtime's portable mode
+(`<file>.config` next to the file, `--appimage-portable-config`) moves it.
 
 Override with `--config PATH` (both binaries; also for `ctl`/`events`/`mcp`) or the `SIPLE_CONFIG` environment variable (handy with `docker exec`). Lock file, `runtime.json`, `state.toml`, the default control
 socket and the default log directory all live next to the config file, so different `--config` directories are
@@ -222,14 +223,14 @@ each key as the matching feature arrives. A key you leave out keeps its default.
 | `show_on_answer` | bool | `false` | Raise the window when a call is answered. |
 | `notifications` | bool | `true` | Desktop notifications. |
 | `handle_links` | bool | `true` | Handle `sip:`, `sips:`, `tel:`, `callto:` and `siple:` (setup) links. |
-| `launch_at_login` | bool | `false` | Start Siple when you log in (macOS LaunchAgent, Windows `Run` key, Linux XDG autostart). Combine with `start_hidden = true` to start in the tray. |
+| `launch_at_login` | bool | `false` | Start Siple when you log in (macOS LaunchAgent, Windows `Run` key, Linux XDG autostart). The AppImage edition starts the `.AppImage` file. Combine with `start_hidden = true` to start in the tray. |
 | `developer_tools` | bool | `false` | Show the Log pane and the Open logs / Open config buttons in the window footer, and the registration / subscription times (registered, last renewal, expires) in the account and BLF key tooltips. The control API and MCP stay on either way. |
 
 Desktop shell notes (tray, links, login item):
 
 - **Tray / close-to-tray.** With `tray = true` and `close_to_tray = true` closing the window hides it; only the tray menu's *Quit* (or Cmd+Q on macOS, Ctrl+Q on Windows / Linux, SIGTERM) exits. While hidden there is no Dock icon (macOS, `hide_from_taskbar`) and no taskbar button (Windows, Linux). `hide_from_taskbar = false` keeps the Dock icon on macOS and minimizes to the taskbar elsewhere. `tray = false` makes close quit. On Linux the tray is a StatusNotifierItem (KDE, XFCE, GNOME with the AppIndicator extension); without a host, closing minimizes instead so the app stays reachable. On Wayland sessions the window cannot be unmapped (winit limitation), so closing minimizes there too and `start_hidden` has no effect; start it under XWayland for full hide-to-tray: `env -u WAYLAND_DISPLAY -u WAYLAND_SOCKET siple` (winit uses Wayland whenever either variable is set).
 - **Links.** `sip:`, `sips:`, `tel:` and `callto:` links put the number in the dial field and raise the window; they never dial. `siple:provision` setup links open a review screen and change nothing until the user continues, types the password and tests the account (see [setup links guide](../website/guide/setup-links.md)). A second `siple <link>` hands the link to the running instance. Windows: Siple registers itself under HKCU as a candidate for `sip`, `sips`, `tel` and `callto` (choose it in Settings > Default apps) and registers `siple` directly, since nothing else claims it; `handle_links = false` removes both registrations. macOS and Linux register links through the app bundle / `.desktop` file at install time (Linux: `xdg-mime default io.zyno.siple.desktop x-scheme-handler/sip`, and likewise for `sips`, `tel`, `callto` and `siple`), so the key has no runtime effect there.
-- **Launch at login.** `launch_at_login = true` writes `~/Library/LaunchAgents/io.zyno.siple.plist` (macOS), `HKCU\...\Run` (Windows) or `~/.config/autostart/io.zyno.siple.desktop` (Linux) for the running executable; `false` removes it. A non-default `--config` profile has its own entry (the id plus a short hash of the config path) that starts that profile, so profiles never touch each other's entry. Pair with `start_hidden = true`. In the Mac App Store and Microsoft Store editions both `handle_links` and `launch_at_login` are no-ops (logged at info): the package manifest declares the links, and MSIX users switch the startup task on in Windows Settings > Apps > Startup. In the Flatpak edition `launch_at_login` goes through the desktop's Background portal: the desktop may ask once, the portal writes `~/.config/autostart/io.zyno.siple.desktop` on the host (`flatpak run --command=siple io.zyno.siple`), there is one entry for the app (so the profile that enabled it last wins), and `false` removes it if this profile registered it; a start with the default `false` asks nothing. `handle_links` is a no-op there, as on the Linux tarball.
+- **Launch at login.** `launch_at_login = true` writes `~/Library/LaunchAgents/io.zyno.siple.plist` (macOS), `HKCU\...\Run` (Windows) or `~/.config/autostart/io.zyno.siple.desktop` (Linux) for the running executable (the AppImage edition: the `.AppImage` file, not its temporary mount); `false` removes it. A non-default `--config` profile has its own entry (the id plus a short hash of the config path) that starts that profile, so profiles never touch each other's entry. Pair with `start_hidden = true`. In the Mac App Store and Microsoft Store editions both `handle_links` and `launch_at_login` are no-ops (logged at info): the package manifest declares the links, and MSIX users switch the startup task on in Windows Settings > Apps > Startup. In the Flatpak edition `launch_at_login` goes through the desktop's Background portal: the desktop may ask once, the portal writes `~/.config/autostart/io.zyno.siple.desktop` on the host (`flatpak run --command=siple io.zyno.siple`), there is one entry for the app (so the profile that enabled it last wins), and `false` removes it if this profile registered it; a start with the default `false` asks nothing. `handle_links` is a no-op there, as on the Linux tarball and AppImage.
 - **Notifications.** Incoming (with Answer / Decline on Linux), missed calls and transfer results appear while the window is not focused. macOS needs the signed app bundle (an unbundled binary logs once and skips them). The control API can show or hide the window (`ui.show`, `ui.hide`, `ui.state`, `ui.attention`, `app.open_uri`) when a GUI runs.
 
 `[ui.shortcuts]` maps an action name to a key chord such as `answer = "Mod+Shift+A"`; actions not listed keep their defaults. **Hot** (read every frame; Settings > Shortcuts shows the chord in effect). An unknown action name or a malformed chord is a config error.
@@ -275,7 +276,7 @@ never in argv.
 ## `[updates]`
 
 The update check: Siple tells you when a newer release exists. **Hot.** A pill in the header (and Settings > Advanced) offers it.
-Direct downloads (zip, dmg, tarball) can also **install it in place**, when you or a script or agent you run chooses to (see
+Direct downloads (zip, dmg, tarball, AppImage) can also **install it in place**, when you or a script or agent you run chooses to (see
 "In-place install" below); otherwise the pill links to the release page. The Mac App Store and Microsoft Store editions open their
 store page and never install anything themselves. Where the check looks depends on how Siple was installed. `check = false` turns
 all of it off, on every edition.
@@ -288,7 +289,7 @@ all of it off, on every edition.
 
 What is sent, by edition:
 
-- **Direct download** (zip, dmg, tarball, package manager): one anonymous HTTPS `GET https://api.github.com/repos/zyno-io/siple/releases?per_page=20`
+- **Direct download** (zip, dmg, tarball, AppImage, package manager): one anonymous HTTPS `GET https://api.github.com/repos/zyno-io/siple/releases?per_page=20`
   with the headers `User-Agent: Siple/<version>` and `Accept: application/vnd.github+json` (plus `If-None-Match` with the ETag of the
   previous answer, so an unchanged list costs almost nothing). GitHub sees your IP address, as any web server does.
 - **Mac App Store**: one anonymous HTTPS `GET https://itunes.apple.com/lookup?id=6836164262` (Apple's public lookup of Siple's own
@@ -310,7 +311,7 @@ answer) are logged and shown in Settings; they never raise a dialog. API: `app.u
 Only when you choose it (the pill's **Install and restart**, or an agent calling `app.install_update`), and only with `check` and
 `install` on, Siple downloads the new version from the project's GitHub release, over HTTPS, each request with only
 `User-Agent: Siple/<version>`: `SHA256SUMS`, `SHA256SUMS.minisig` and the one archive for your system
-(`Siple-<version>-macos.zip`, `-windows-x64.zip` / `-windows-arm64.zip`, `-linux-x86_64.tar.gz`) from
+(`Siple-<version>-macos.zip`, `-windows-x64.zip` / `-windows-arm64.zip`, `-linux-x86_64.tar.gz` / `-linux-aarch64.tar.gz`, or `-linux-x86_64.AppImage` / `-linux-aarch64.AppImage` for the AppImage edition; the one of the running CPU) from
 `https://github.com/zyno-io/siple/releases/download/v<version>/<file>`. That URL is built from the version and file names the
 release list reported, never taken from the list; GitHub redirects once to its asset hosts (at most three redirects, HTTPS only,
 GitHub hosts only). Nothing is sent that identifies you beyond the IP address any download shows.
@@ -324,8 +325,10 @@ Before anything is replaced, all of this must hold, otherwise nothing changes an
 3. The new app passes your system's check of Siple's publisher: macOS, the Developer ID code signature of the app and of
    `siple-cli` (our team) plus Apple's notarization; Windows, Authenticode with a valid timestamp from the pinned publisher
    (Signal24 LLC through Microsoft Artifact Signing); Linux, the signed list only (the files are not otherwise signed), plus a test
-   run of the new `siple` and `siple-cli` (`--version`), which must print the expected version.
-4. The archive layout is exactly what a release contains (no extra files, no paths outside the install folder, no links).
+   run of the new `siple` and `siple-cli` (`--version`), which must print the expected version (AppImage: a test run of the new
+   file, extracted without FUSE into the staging folder, as `siple` and as `siple-cli`).
+4. The archive layout is exactly what a release contains (no extra files, no paths outside the install folder, no links). The
+   AppImage download must be a type 2 AppImage of the running CPU (x86-64 or aarch64).
 
 The running copy must pass the same publisher check, so a development build or an unsigned copy never replaces itself.
 
@@ -334,14 +337,14 @@ Siple restarts into the new version only when no call, transfer or echo test is 
 never modified during a call. The GUI quits as the tray's Quit does and starts the new version, which waits for the old process
 to end (`--wait-pid`). Your config, accounts, logs and keychain entries are never touched; the app keeps its path, so the login
 item, the `sip:` handler and firewall rules keep working. Replaced files stay (macOS: the old app in a hidden temporary folder;
-Windows and Linux: `*.old-<number>` files) until the new version has run for a minute, then they are removed; if the new version
+Windows and Linux: `*.old-<number>` files; the AppImage is replaced by one rename and the old one is kept as `<name>.old-<number>` next to it) until the new version has run for a minute, then they are removed; if the new version
 does not start, the previous copy is still there. Linux keeps the folder name `siple-<old version>`.
 
 In-place install is **not possible**, and the offer opens the release page with a reason (`install.reason` of
 `app.update_status`, shown in the pill), when Siple would need more rights than yours or is not in a place it can replace:
 installed with a package manager (Homebrew, winget, Scoop, Chocolatey, Nix), in Program Files or `/usr` or another folder your
 user cannot write, owned by another user, run as root, run from a disk image or a quarantined download (macOS), in a container,
-Flatpak, Snap or AppImage, headless (no window to restart into), a development build, or `install = false`. Siple never asks for
+Flatpak, Snap, headless (no window to restart into), a development build, or `install = false`. Siple never asks for
 administrator rights. The Mac App Store, Microsoft Store and Flatpak editions contain no downloader or installer: `app.install_update`
 answers `unsupported` there.
 

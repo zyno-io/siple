@@ -11,7 +11,8 @@ coming soon.
 | Mac (Apple silicon and Intel) | macOS (`.dmg`) | macOS 12 or later |
 | Windows PC (Intel, AMD) | Windows x64 (`.zip`) | Windows 10 or later |
 | Windows on ARM (Surface Pro X / 11, Snapdragon) | Windows ARM64 (`.zip`) | Windows 11 |
-| Linux PC | Linux x86_64 (`.tar.gz`) | Debian 12+, Ubuntu 23.04+ (glibc 2.36 or later) |
+| Linux PC (Intel, AMD) | Linux x86_64 AppImage (`.AppImage`), or the tarball (`.tar.gz`) |
+| Linux on ARM (Raspberry Pi 4/5 with a 64-bit OS, ARM servers and laptops) | Linux aarch64 AppImage (`-linux-aarch64.AppImage`), or the tarball (`-linux-aarch64.tar.gz`) | Debian 12+, Ubuntu 23.04+ (glibc 2.36 or later) |
 
 <OsTabs>
 <template #mac>
@@ -40,7 +41,41 @@ Signal24 LLC; if SmartScreen still warns, choose **More info › Run anyway**.
 </template>
 <template #linux>
 
-Unpack the tarball and run Siple:
+**AppImage.** One file: download it, make it executable and run it. (On a 64-bit ARM machine use the `aarch64` file; the commands below use `x86_64` in the file names.)
+
+```sh
+chmod +x Siple-*.AppImage && ./Siple-*.AppImage
+```
+
+Keep it in a folder you own, so it can update itself, and under a fixed name (the file keeps its name across updates):
+
+```sh
+mkdir -p ~/Applications && mv ~/Downloads/Siple-*-linux-x86_64.AppImage ~/Applications/Siple.AppImage
+```
+
+For the command-line client, link the file as `siple-cli`, or run it with `--cli`:
+
+```sh
+ln -s ~/Applications/Siple.AppImage ~/.local/bin/siple-cli
+~/Applications/Siple.AppImage --cli ctl status
+```
+
+An AppImage mounts itself with FUSE 3: if you see "Cannot mount AppImage", install `fuse3` (libfuse2 is not needed). Where
+there is no FUSE (containers), start it as `Siple.AppImage --appimage-extract-and-run`; that option must come first, and it
+leaves a copy in `/tmp` until the next reboot.
+
+The AppImage does not add itself to your app launcher. Use AppImageLauncher, Gear Lever or appimaged for that, or do it by
+hand (this also makes `sip:`, `tel:` and `siple:` links work, see [Phone links](/guide/links)):
+
+```sh
+mkdir -p ~/.local/share/applications; cd "$(mktemp -d)" && ~/Applications/Siple.AppImage --appimage-extract io.zyno.siple.png
+install -Dm644 squashfs-root/io.zyno.siple.png ~/.local/share/icons/hicolor/256x256/apps/io.zyno.siple.png
+~/Applications/Siple.AppImage --appimage-extract io.zyno.siple.desktop
+sed 's|^Exec=.*|Exec='"$HOME"'/Applications/Siple.AppImage %u|' squashfs-root/io.zyno.siple.desktop \
+  > ~/.local/share/applications/io.zyno.siple.desktop
+```
+
+**Tarball.** Unpack it and run Siple:
 
 ```sh
 tar xzf Siple-<version>-linux-x86_64.tar.gz
@@ -61,6 +96,7 @@ install -Dm644 share/pixmaps/io.zyno.siple.png ~/.local/share/pixmaps/io.zyno.si
 The launcher entry runs `siple %u`, so `~/.local/bin` must be on your `PATH`. To make Siple the default for phone links, see [Phone links](/guide/links); for setup links run `xdg-mime default io.zyno.siple.desktop x-scheme-handler/siple`.
 
 ::: details Packages Siple needs on Linux
+- **The AppImage** also needs `fuse3` (or `--appimage-extract-and-run`).
 - **Sound:** `libasound2` (`libasound2t64` on Ubuntu 24.04+ and Debian 13), and `ca-certificates`.
 - **The app window:** `libxkbcommon0 libxkbcommon-x11-0 libwayland-client0 libwayland-egl1 libx11-6 libx11-xcb1 libxcursor1
   libxrandr2 libxi6`, a Vulkan or GL driver (`mesa-vulkan-drivers`, or `libegl1 libgl1-mesa-dri`) and `xdg-utils`.
@@ -69,7 +105,7 @@ The launcher entry runs `siple %u`, so `~/.local/bin` must be on your `PATH`. To
 
 ::: details Flatpak (not on Flathub yet)
 A Flatpak edition (`io.zyno.siple`) is built in CI, but it is not on Flathub yet and is not published as a download: on
-Linux, use the tarball above. When the Flatpak edition is installed:
+Linux, use the AppImage or the tarball above. When the Flatpak edition is installed:
 
 - **Updates** come from your software center or `flatpak update`. Siple makes no update check of its own.
 - **Settings folder:** `~/.var/app/io.zyno.siple/config/siple/`. To move over from the tarball, copy `config.toml` there; passwords

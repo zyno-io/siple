@@ -8,7 +8,7 @@ You need Rust 1.94 or later, CMake (it builds a static libopus) and a C compiler
 |---|---|
 | macOS 12+ | Xcode command line tools (`xcode-select --install`), then `brew install cmake` |
 | Windows 10+ | The Rust MSVC toolchain, Visual Studio with the C++ workload, and CMake |
-| Linux x86_64 | `sudo apt install cmake pkg-config libasound2-dev build-essential` (Debian, Ubuntu) |
+| Linux x86_64, aarch64 | `sudo apt install cmake pkg-config libasound2-dev build-essential` (Debian, Ubuntu) |
 
 ```sh
 git clone https://github.com/zyno-io/siple && cd siple
@@ -26,7 +26,8 @@ The release packages come from these scripts:
 | macOS | `Siple.app` (universal), `Siple-<version>-macos.dmg` and `.zip` | `scripts/package-macos.sh` |
 | Windows (x64) | `Siple-<version>-windows-x64.zip` | `scripts/package-windows.ps1` |
 | Windows (ARM) | `Siple-<version>-windows-arm64.zip` | `scripts/package-windows.ps1 -Arch arm64` |
-| Linux | `Siple-<version>-linux-x86_64.tar.gz` | `scripts/package-linux.sh` |
+| Linux (x86_64, aarch64) | `Siple-<version>-linux-<arch>.tar.gz` | `scripts/package-linux.sh` |
+| Linux (AppImage, x86_64, aarch64) | `Siple-<version>-linux-<arch>.AppImage` | `scripts/package-appimage.sh` (after `package-linux.sh`, in `rust:1.100-bookworm`) |
 
 On macOS, run the app bundle rather than the bare binary: macOS only grants the microphone to an app bundle. A build that is
 not signed and notarized is blocked by Gatekeeper the first time; right-click it and choose **Open**, or allow it under **System Settings › Privacy & Security**. Because the microphone
