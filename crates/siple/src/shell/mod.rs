@@ -34,7 +34,7 @@ use eframe::egui;
 use serde_json::{Value, json};
 use siple_core::control::{ApiError, ErrorKind};
 use siple_core::ui_host::{UiHost, UiRequest};
-use siple_core::uri::{LinkRateLimit, LinkTarget, parse_link};
+use siple_core::uri::{IncomingLink, LinkRateLimit, parse_any};
 
 use crate::actions::Actions;
 use crate::snapshot::Shared;
@@ -197,18 +197,45 @@ impl UiHost for GuiHost {
                 Ok(json!({"ok": true}))
             }
             UiRequest::OpenLink(l) => {
-                if !lock(&self.limiter).allow(Instant::now()) {
-                    return Err(ApiError::new(
-                        ErrorKind::InvalidState,
-                        "too many links in a short time; try again in a few seconds",
-                    )
-                    .with_extra(json!({"reason": "rate_limited"})));
-                }
-                let out = json!({"ok": true, "target": l.target, "scheme": l.scheme});
+                self.allow_link()?;
+                let out =
+                    json!({"ok": true, "kind": "dial", "target": l.target, "scheme": l.scheme});
                 self.tx.send(ShellMsg::Ui(UiRequest::OpenLink(l)));
                 Ok(out)
             }
+            UiRequest::OpenSetup(l) => {
+                self.allow_link()?;
+                let out = json!({
+                    "ok": true,
+                    "kind": "provision",
+                    "scheme": "siple",
+                    "next_hop": l.account.next_hop(),
+                });
+                self.tx.send(ShellMsg::Ui(UiRequest::OpenSetup(l)));
+                Ok(out)
+            }
+            // The engine refused a link: say why, unless links come in too fast.
+            UiRequest::LinkRefused(m) => {
+                if lock(&self.limiter).allow(Instant::now()) {
+                    self.tx.send(ShellMsg::Ui(UiRequest::LinkRefused(m)));
+                }
+                Ok(json!({"ok": true}))
+            }
         }
+    }
+}
+
+impl GuiHost {
+    /// Counts a link against the shared limiter (a web page can fire links in a loop).
+    fn allow_link(&self) -> Result<(), ApiError> {
+        if lock(&self.limiter).allow(Instant::now()) {
+            return Ok(());
+        }
+        Err(ApiError::new(
+            ErrorKind::InvalidState,
+            "too many links in a short time; try again in a few seconds",
+        )
+        .with_extra(json!({"reason": "rate_limited"})))
     }
 }
 
@@ -389,7 +416,7 @@ impl Shell {
     }
 
     /// Runs the shell for one frame. Returns links to prefill into the dial field.
-    pub fn logic(&mut self, ctx: &egui::Context) -> Vec<LinkTarget> {
+    pub fn logic(&mut self, ctx: &egui::Context) -> Vec<IncomingLink> {
         let snap = self.shared.snapshot();
         let ui_cfg = &snap.ui;
         let mut links = Vec::new();
@@ -696,7 +723,7 @@ impl Shell {
         msg: ShellMsg,
         ui: &siple_core::config::UiConfig,
         snap: &crate::snapshot::Snapshot,
-        links: &mut Vec<LinkTarget>,
+        links: &mut Vec<IncomingLink>,
     ) {
         match msg {
             ShellMsg::Tray(cmd) => self.on_cmd(ctx, cmd, ui, snap),
@@ -705,7 +732,15 @@ impl Shell {
             ShellMsg::Ui(UiRequest::Attention) => request_attention(ctx),
             ShellMsg::Ui(UiRequest::OpenLink(l)) => {
                 self.show_window(ctx);
-                links.push(l);
+                links.push(IncomingLink::Dial(l));
+            }
+            ShellMsg::Ui(UiRequest::OpenSetup(l)) => {
+                self.show_window(ctx);
+                links.push(IncomingLink::Setup(l));
+            }
+            ShellMsg::Ui(UiRequest::LinkRefused(m)) => {
+                self.show_window(ctx);
+                self.shared.set_notice(m);
             }
             #[cfg(not(feature = "store"))]
             ShellMsg::Ui(UiRequest::RelaunchForUpdate(spec)) => {
@@ -719,13 +754,15 @@ impl Shell {
                     raw.len()
                 );
             }
-            ShellMsg::Url(raw) => match parse_link(&raw) {
+            ShellMsg::Url(raw) => match parse_any(&raw) {
                 Ok(l) => {
                     self.show_window(ctx);
                     links.push(l);
                 }
                 Err(e) => {
-                    tracing::warn!("ignoring link: {e}");
+                    // Never log what the link contained: its kind of error and its size only.
+                    tracing::warn!(code = e.code(), len = raw.len(), "ignoring link");
+                    self.show_window(ctx);
                     self.shared.set_notice(format!("Ignored link: {e}"));
                 }
             },
@@ -875,8 +912,8 @@ impl ShellApp {
     }
 
     /// Hands a link given on the command line (cold start by URL) to the UI.
-    pub fn open_link(&mut self, l: &LinkTarget) {
-        self.inner.prefill_dial(&l.target);
+    pub fn open_link(&mut self, l: &IncomingLink) {
+        self.inner.open_incoming(l);
     }
 }
 
@@ -885,7 +922,7 @@ impl eframe::App for ShellApp {
         // Panel requests from the control API apply (and save) even while hidden.
         self.inner.sync_panels();
         for l in self.shell.logic(ctx) {
-            self.inner.prefill_dial(&l.target);
+            self.inner.open_incoming(&l);
         }
         if self.shell.take_settings_request() {
             self.inner.open_settings();

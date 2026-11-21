@@ -283,7 +283,7 @@ pub(super) fn notifications(ui: &mut egui::Ui, cx: &Cx, out: &mut Vec<UiAction>)
             out,
             "ui",
             "handle_links",
-            "Open sip:, sips:, tel: and callto: links",
+            "Open sip:, sips:, tel:, callto: and siple: setup links",
             "",
             &v,
         );

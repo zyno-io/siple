@@ -1816,6 +1816,600 @@ fn narrow_returns_to_the_stage_after_a_blf_action() {
     assert!(!h.state().ui.ext_tab);
 }
 
+// ---- setup links -------------------------------------------------------------------------------
+
+use crate::ui::wizard::{Offer, Origin, Step as WStep};
+use siple_core::config::{Profile, SrtpPolicy, Transport};
+use siple_core::provision::{SetupAccount, SetupLink};
+
+fn link_for(username: &str, domain: &str) -> SetupLink {
+    SetupLink::new(SetupAccount {
+        username: username.into(),
+        domain: domain.into(),
+        display_name: "Front desk".into(),
+        registrar: "pbx.example.test:5061".into(),
+        transport: Some(Transport::Tls),
+        srtp: Some(SrtpPolicy::Mandatory),
+        profile: Some(Profile::Yealink),
+        ..Default::default()
+    })
+}
+
+fn offer(
+    h: &mut Harness<'_, State>,
+    link: SetupLink,
+    origin: Origin,
+    at: chrono::DateTime<chrono::Utc>,
+) -> Offer {
+    let snap = h.state().snap.clone();
+    let r = h.state_mut().ui.wizard.offer_link(link, origin, &snap, at);
+    // The Review screen keeps repainting while Continue is locked.
+    h.run_steps(4);
+    r
+}
+
+fn secs(n: i64) -> chrono::Duration {
+    chrono::Duration::seconds(n)
+}
+
+#[test]
+fn a_setup_link_only_opens_the_review_and_does_nothing_by_itself() {
+    let mut h = harness_ui(wizard_snapshot(), WIDE, UiState::default());
+    h.run();
+    assert_eq!(
+        offer(
+            &mut h,
+            link_for("1001", "example.test"),
+            Origin::Opened,
+            now()
+        ),
+        Offer::Opened
+    );
+    h.run_steps(10);
+    assert!(h.query_by_label("Check this setup link").is_some());
+    assert!(h.query_by_label("Step 1 of 3").is_some());
+    // The server leads, the password is not in the link.
+    assert!(h.query_by_label("Server: pbx.example.test:5061").is_some());
+    assert!(h.query_by_label_contains("not in the link").is_some());
+    assert!(
+        take(&mut h).is_empty(),
+        "no action without a click: {:?}",
+        h.state().actions
+    );
+    // Continue is locked for a second after the screen appeared.
+    assert!(h.get_by_label("Continue").accesskit_node().is_disabled());
+    h.get_by_label("Continue").click_accesskit();
+    h.run();
+    assert!(
+        h.query_by_label("Check this setup link").is_some(),
+        "locked Continue must not act"
+    );
+    assert!(take(&mut h).is_empty());
+    assert!(h.state().ui.wizard.form.username.is_empty());
+}
+
+#[test]
+fn continue_is_enabled_once_the_delay_has_passed() {
+    let mut h = harness_ui(wizard_snapshot(), WIDE, UiState::default());
+    h.run();
+    offer(
+        &mut h,
+        link_for("1001", "example.test"),
+        Origin::Opened,
+        now() - secs(2),
+    );
+    assert!(!h.get_by_label("Continue").accesskit_node().is_disabled());
+    // Right on the edge.
+    let mut h = harness_ui(wizard_snapshot(), WIDE, UiState::default());
+    h.run();
+    offer(
+        &mut h,
+        link_for("1001", "example.test"),
+        Origin::Opened,
+        now() - chrono::Duration::milliseconds(999),
+    );
+    assert!(h.get_by_label("Continue").accesskit_node().is_disabled());
+}
+
+#[test]
+fn the_full_flow_needs_every_step_and_ends_in_the_audio_step() {
+    let mut h = harness_ui(wizard_snapshot(), WIDE, UiState::default());
+    h.run();
+    offer(
+        &mut h,
+        link_for("1001", "example.test"),
+        Origin::Opened,
+        now() - secs(2),
+    );
+    click_first(&mut h, "Continue");
+    // The form is prefilled and the advanced block shows the registrar; no password yet.
+    assert!(h.query_by_label("Welcome to Siple").is_some());
+    assert_eq!(h.state().ui.wizard.step, WStep::Account);
+    assert_eq!(h.state().ui.wizard.form.username, "1001");
+    assert_eq!(h.state().ui.wizard.form.registrar, "pbx.example.test:5061");
+    assert!(h.state().ui.wizard.form.password.is_empty());
+    assert!(h.query_by_label("Registrar").is_some());
+    assert!(
+        h.query_by_label_contains("Filled in from a setup link")
+            .is_some()
+    );
+    assert!(take(&mut h).is_empty(), "Continue sends nothing");
+    // Test needs the password step; the draft carries the link fields plus transport.
+    type_into(&mut h, "Password", "pw-typed");
+    h.get_by_label("Test & continue").click_accesskit();
+    h.run();
+    let req = only_edit(take(&mut h));
+    assert_eq!(req.method, "account.test");
+    let f = &req.params["draft"]["fields"];
+    assert_eq!(f["username"], "1001");
+    assert_eq!(f["domain"], "example.test");
+    assert_eq!(f["registrar"], "pbx.example.test:5061");
+    assert_eq!(f["transport"], "tls");
+    assert_eq!(f["srtp"], "mandatory");
+    assert_eq!(f["profile"], "yealink");
+    assert_eq!(f["display_name"], "Front desk");
+    assert_eq!(f["password"], "pw-typed");
+    assert_eq!(req.params["draft"]["id"], "1001.example.test");
+    deliver(
+        &mut h,
+        RpcTag::TestDraft,
+        Ok(json!({"diagnosis": "ok", "ok": true, "message": "Registered"})),
+    );
+    let edits = rpc::edits_of(&only_edit(take(&mut h)));
+    let [
+        ConfigEdit::AddAccount {
+            draft,
+            replace_example: true,
+        },
+    ] = &edits[..]
+    else {
+        panic!("{edits:?}")
+    };
+    assert_eq!(
+        draft.fields.get(&AccountField::Registrar),
+        Some(&EditValue::Str("pbx.example.test:5061".into()))
+    );
+    assert_eq!(
+        draft.fields.get(&AccountField::Transport),
+        Some(&EditValue::Str("tls".into()))
+    );
+    deliver(&mut h, RpcTag::WizardAdd, Ok(json!({"applied": true})));
+    assert!(h.query_by_label("Step 2 of 3").is_some());
+    assert!(h.state().ui.wizard.form.password.is_empty());
+}
+
+#[test]
+fn test_and_save_waits_for_the_password_of_a_link_account() {
+    let mut h = harness(base_snapshot(), WIDE);
+    h.run();
+    offer(
+        &mut h,
+        link_for("2001", "example.test"),
+        Origin::Opened,
+        now() - secs(2),
+    );
+    click_first(&mut h, "Continue");
+    assert!(h.get_by_label("Test & save").accesskit_node().is_disabled());
+    h.get_by_label("Test & save").click_accesskit();
+    h.run();
+    assert!(
+        take(&mut h).is_empty(),
+        "no account.test without a password"
+    );
+    type_into(&mut h, "Password", "pw");
+    assert!(!h.get_by_label("Test & save").accesskit_node().is_disabled());
+}
+
+/// First run: after Continue a new link is refused, so Cancel must exist to drop the current one.
+#[test]
+fn first_run_link_can_be_cancelled_to_open_a_corrected_one() {
+    let mut h = harness_ui(wizard_snapshot(), WIDE, UiState::default());
+    h.run();
+    offer(
+        &mut h,
+        link_for("1001", "example.test"),
+        Origin::Opened,
+        now() - secs(2),
+    );
+    click_first(&mut h, "Continue");
+    assert!(h.query_by_label("Test & continue").is_some());
+    assert!(h.query_by_label("Skip, I'll edit config.toml").is_some());
+    h.get_by_label("Cancel").click_accesskit();
+    h.run();
+    assert!(h.state().ui.wizard.link.is_none());
+    assert!(
+        h.query_by_label("Cancel").is_none(),
+        "plain form: no Cancel"
+    );
+    assert!(take(&mut h).is_empty());
+    // The corrected link opens its own Review.
+    assert_eq!(
+        offer(
+            &mut h,
+            link_for("1002", "example.test"),
+            Origin::Opened,
+            now()
+        ),
+        Offer::Opened
+    );
+    assert!(h.query_by_label("Check this setup link").is_some());
+}
+
+#[test]
+fn a_link_on_a_configured_install_is_a_short_flow_that_ends_with_close() {
+    let mut h = harness(base_snapshot(), WIDE);
+    h.run();
+    offer(
+        &mut h,
+        link_for("2001", "example.test"),
+        Origin::Opened,
+        now() - secs(2),
+    );
+    assert!(h.query_by_label("Set up an account").is_some());
+    assert!(h.query_by_label_contains("Step 1 of 3").is_none());
+    click_first(&mut h, "Continue");
+    type_into(&mut h, "Password", "pw");
+    h.get_by_label("Test & save").click_accesskit();
+    h.run();
+    assert_eq!(only_edit(take(&mut h)).method, "account.test");
+    deliver(
+        &mut h,
+        RpcTag::TestDraft,
+        Ok(json!({"diagnosis": "ok", "ok": true, "message": "Registered"})),
+    );
+    let edit = only_edit(take(&mut h));
+    assert_eq!(edit.method, "config.edit");
+    // A link account is an addition: it never takes the example account's slot.
+    assert!(matches!(
+        &rpc::edits_of(&edit)[..],
+        [ConfigEdit::AddAccount {
+            replace_example: false,
+            ..
+        }]
+    ));
+    deliver(&mut h, RpcTag::WizardAdd, Ok(json!({"applied": true})));
+    assert!(h.query_by_label("Account added").is_some());
+    assert!(h.state().ui.wizard.form.password.is_empty());
+    // A new link is not taken while the done screen is up.
+    let r = offer(
+        &mut h,
+        link_for("3001", "example.test"),
+        Origin::Opened,
+        now(),
+    );
+    assert!(matches!(r, Offer::Refused(_)));
+    h.get_by_label("Close").click_accesskit();
+    h.run();
+    assert!(h.query_by_label("Account added").is_none());
+    assert!(rail_shown(&h), "the main window is back");
+}
+
+#[test]
+fn cancel_at_review_and_at_the_form_sends_nothing_and_drops_the_password() {
+    let mut h = harness(base_snapshot(), WIDE);
+    h.run();
+    offer(
+        &mut h,
+        link_for("2001", "example.test"),
+        Origin::Opened,
+        now() - secs(2),
+    );
+    h.get_by_label("Cancel").click_accesskit();
+    h.run();
+    assert!(take(&mut h).is_empty());
+    assert!(rail_shown(&h));
+    assert!(h.state().ui.wizard.link.is_none());
+    // At the form, with a password typed.
+    offer(
+        &mut h,
+        link_for("2001", "example.test"),
+        Origin::Opened,
+        now() - secs(2),
+    );
+    click_first(&mut h, "Continue");
+    type_into(&mut h, "Password", "pw-secret");
+    h.get_by_label("Cancel").click_accesskit();
+    h.run();
+    assert!(take(&mut h).is_empty());
+    assert!(h.state().ui.wizard.form.password.is_empty());
+    assert!(h.state().ui.wizard.link.is_none());
+    assert!(rail_shown(&h));
+    // First run: Cancel at Review returns to the plain account form.
+    let mut h = harness_ui(wizard_snapshot(), WIDE, UiState::default());
+    h.run();
+    offer(
+        &mut h,
+        link_for("1001", "example.test"),
+        Origin::Opened,
+        now() - secs(2),
+    );
+    h.get_by_label("Cancel").click_accesskit();
+    h.run();
+    assert!(h.query_by_label("Add your SIP account").is_some());
+    assert!(h.state().ui.wizard.form.username.is_empty());
+    assert!(take(&mut h).is_empty());
+}
+
+#[test]
+fn a_link_for_an_account_you_already_have_cannot_be_added() {
+    let mut h = harness(base_snapshot(), WIDE);
+    h.run();
+    // desk-1001 is user 1001 at pbx.example.test (domain compared case-insensitively).
+    offer(
+        &mut h,
+        link_for("1001", "PBX.Example.Test"),
+        Origin::Opened,
+        now() - secs(2),
+    );
+    assert!(
+        h.query_by_label_contains("You already have this account")
+            .is_some()
+    );
+    assert!(h.query_by_label("Continue").is_none());
+    h.get_by_label("Open Settings").click_accesskit();
+    h.run();
+    assert!(h.state().ui.settings.open);
+    assert_eq!(h.state().ui.settings.account.as_deref(), Some("desk-1001"));
+    assert!(h.state().ui.wizard.link.is_none());
+    assert!(take(&mut h).is_empty());
+}
+
+#[test]
+fn a_link_never_replaces_work_in_progress() {
+    let mut h = harness_ui(wizard_snapshot(), WIDE, UiState::default());
+    h.run();
+    type_into(&mut h, "Password", "half-typed");
+    let before = h.state().ui.wizard.form.clone();
+    let r = offer(
+        &mut h,
+        link_for("1001", "example.test"),
+        Origin::Opened,
+        now(),
+    );
+    assert!(matches!(r, Offer::Refused(_)), "{r:?}");
+    assert_eq!(h.state().ui.wizard.form, before, "the form is unchanged");
+    assert!(h.query_by_label("Check this setup link").is_none());
+    // A pasted one is the user's own doing: it may replace the form.
+    let r = offer(
+        &mut h,
+        link_for("1001", "example.test"),
+        Origin::Pasted,
+        now(),
+    );
+    assert_eq!(r, Offer::Opened);
+    assert!(h.state().ui.wizard.form.password.is_empty());
+    // After Continue and typing a password, links are refused again.
+    let mut h = harness_ui(wizard_snapshot(), WIDE, UiState::default());
+    h.run();
+    offer(
+        &mut h,
+        link_for("1001", "example.test"),
+        Origin::Opened,
+        now() - secs(2),
+    );
+    click_first(&mut h, "Continue");
+    type_into(&mut h, "Password", "typed");
+    let r = offer(&mut h, link_for("9999", "evil.test"), Origin::Opened, now());
+    assert!(matches!(r, Offer::Refused(_)));
+    assert_eq!(h.state().ui.wizard.form.username, "1001");
+    assert_eq!(h.state().ui.wizard.form.password, "typed");
+    // Pasted links too: once continued, the form is not replaced.
+    let r = offer(&mut h, link_for("9999", "evil.test"), Origin::Pasted, now());
+    assert_eq!(
+        r,
+        Offer::Refused("Finish or cancel the current setup first")
+    );
+    assert_eq!(h.state().ui.wizard.form.username, "1001");
+    assert_eq!(h.state().ui.wizard.form.password, "typed");
+    assert_eq!(
+        h.state().ui.wizard.link.as_ref().unwrap().account.username,
+        "1001"
+    );
+    // Audio and done steps and a running test refuse too.
+    for step in [WStep::Audio, WStep::Done] {
+        h.state_mut().ui.wizard.step = step;
+        let r = offer(&mut h, link_for("9999", "evil.test"), Origin::Pasted, now());
+        assert!(matches!(r, Offer::Refused(_)), "{step:?}");
+    }
+    h.state_mut().ui.wizard.step = WStep::Account;
+    h.run();
+    h.get_by_label("Test & continue").click_accesskit();
+    h.run();
+    take(&mut h);
+    let r = offer(&mut h, link_for("9999", "evil.test"), Origin::Pasted, now());
+    assert!(matches!(r, Offer::Refused(_)), "a test is running");
+    assert_eq!(h.state().ui.wizard.form.username, "1001");
+}
+
+#[test]
+fn replacing_the_link_restarts_the_delay_and_warns() {
+    let mut h = harness_ui(wizard_snapshot(), WIDE, UiState::default());
+    h.run();
+    offer(
+        &mut h,
+        link_for("1001", "example.test"),
+        Origin::Opened,
+        now() - secs(2),
+    );
+    assert!(!h.get_by_label("Continue").accesskit_node().is_disabled());
+    assert!(h.query_by_label_contains("link changed").is_none());
+    let r = offer(
+        &mut h,
+        link_for("1001", "other.test"),
+        Origin::Opened,
+        now(),
+    );
+    assert_eq!(r, Offer::Replaced);
+    assert!(h.get_by_label("Continue").accesskit_node().is_disabled());
+    assert!(
+        h.query_by_label_contains("The setup link changed")
+            .is_some()
+    );
+    assert!(h.query_by_label("Server: pbx.example.test:5061").is_some());
+    assert_eq!(
+        h.state().ui.wizard.link.as_ref().unwrap().account.domain,
+        "other.test"
+    );
+}
+
+#[test]
+fn a_window_that_was_away_starts_the_delay_again() {
+    let mut h = harness_ui(wizard_snapshot(), WIDE, UiState::default());
+    h.run();
+    offer(
+        &mut h,
+        link_for("1001", "example.test"),
+        Origin::Opened,
+        now(),
+    );
+    // Drawn, then not drawn for a while, while Continue was still locked: the delay starts again.
+    h.state_mut().ui.wizard.review_seen = Some(now() - secs(30));
+    h.state_mut().ui.wizard.review_at = Some(now() - chrono::Duration::milliseconds(900));
+    h.run_steps(2);
+    assert_eq!(h.state().ui.wizard.review_at, Some(now()));
+    assert!(h.get_by_label("Continue").accesskit_node().is_disabled());
+}
+
+#[test]
+fn the_wizard_paste_field_opens_the_review_or_says_what_is_wrong() {
+    let mut h = harness_ui(wizard_snapshot(), WIDE, UiState::default());
+    h.run();
+    h.get_by_label("Paste a setup link").click_accesskit();
+    h.run();
+    type_into(&mut h, "Setup link", "https://example.test/not-a-link");
+    h.get_by_label("Review link").click_accesskit();
+    h.run();
+    assert!(h.state().ui.wizard.paste_error.is_some());
+    assert!(h.query_by_label("Check this setup link").is_none());
+    let good = link_for("1001", "example.test").encode().unwrap();
+    h.state_mut().ui.wizard.paste = Some(format!("<{good}>"));
+    h.run();
+    h.get_by_label("Review link").click_accesskit();
+    h.run();
+    assert!(h.query_by_label("Check this setup link").is_some());
+    assert!(h.state().ui.wizard.paste.is_none());
+    assert!(take(&mut h).is_empty());
+    // A call link is not a setup link.
+    let mut h = harness_ui(wizard_snapshot(), WIDE, UiState::default());
+    h.run();
+    h.state_mut().ui.wizard.paste = Some("sip:bob@example.test".into());
+    h.run();
+    h.get_by_label("Review link").click_accesskit();
+    h.run();
+    assert!(
+        h.state()
+            .ui
+            .wizard
+            .paste_error
+            .as_deref()
+            .unwrap()
+            .contains("call link")
+    );
+}
+
+#[test]
+fn settings_copy_setup_link_asks_for_a_link_without_a_password() {
+    let mut h = settings_harness(base_snapshot(), Section::Accounts, WIDE);
+    h.get_by_label("Copy setup link").click_accesskit();
+    h.run();
+    let req = only_edit(take(&mut h));
+    assert_eq!(req.method, "provision.build");
+    assert_eq!(req.params, json!({"account": "desk-1001"}));
+    assert_eq!(req.tag, RpcTag::ShareLink("desk-1001".into()));
+    deliver(
+        &mut h,
+        RpcTag::ShareLink("desk-1001".into()),
+        Ok(
+            json!({"link": "siple:provision?d=e30", "length": 21, "fields": {}, "omitted": ["password", "bind_address"]}),
+        ),
+    );
+    assert_eq!(
+        h.state().ui.settings.copy_pending,
+        None,
+        "copied on the frame after the reply"
+    );
+    assert!(
+        h.query_by_label_contains("Setup link copied. It has no password.")
+            .is_some()
+    );
+    assert!(
+        h.query_by_label_contains("Not included: password, bind_address")
+            .is_some()
+    );
+    // Unsaved edits disable it, like Test.
+    h.state_mut().ui.settings.set_field(
+        "desk-1001",
+        AccountField::AutoAnswer,
+        &EditValue::Bool(false),
+        EditValue::Bool(true),
+        "hash-0",
+    );
+    h.run();
+    assert!(
+        h.get_by_label("Copy setup link")
+            .accesskit_node()
+            .is_disabled()
+    );
+}
+
+#[test]
+fn settings_add_from_setup_link_opens_the_link_only_wizard() {
+    let mut h = settings_harness(base_snapshot(), Section::Accounts, WIDE);
+    h.get_by_label("Add from setup link").click_accesskit();
+    h.run();
+    let good = link_for("2001", "example.test").encode().unwrap();
+    type_into(&mut h, "Setup link", &good);
+    h.get_by_label("Review link").click_accesskit();
+    h.run();
+    assert!(h.query_by_label("Check this setup link").is_some());
+    assert!(h.state().ui.wizard.link_only);
+    assert_eq!(
+        h.state().ui.settings.select_after.as_deref(),
+        Some("2001.example.test")
+    );
+    assert!(take(&mut h).is_empty());
+    // Cancel returns to Settings.
+    h.get_by_label("Cancel").click_accesskit();
+    h.run();
+    assert!(h.query_by_label("Check this setup link").is_none());
+    assert!(
+        h.query_by_label("Run setup again").is_some(),
+        "Settings is back"
+    );
+}
+
+#[test]
+fn an_unparsable_config_blocks_continue() {
+    let mut snap = wizard_snapshot();
+    snap.config_unparsable = true;
+    let mut h = harness_ui(snap, WIDE, UiState::default());
+    h.run();
+    offer(
+        &mut h,
+        link_for("1001", "example.test"),
+        Origin::Opened,
+        now() - secs(2),
+    );
+    assert!(
+        h.query_by_label_contains("Fix the config file first")
+            .is_some()
+    );
+    assert!(h.get_by_label("Continue").accesskit_node().is_disabled());
+}
+
+#[test]
+fn a_notice_is_visible_while_the_wizard_is_up() {
+    let mut h = harness_ui(wizard_snapshot(), WIDE, UiState::default());
+    h.state_mut().notice = Some(crate::snapshot::Notice::plain(
+        "Ignored link: this is not a Siple setup link",
+    ));
+    h.run();
+    assert!(
+        h.query_by_label_contains("Ignored link: this is not a Siple setup link")
+            .is_some()
+    );
+}
+
 // ---- review fixes -----------------------------------------------------------------------------
 
 fn consult_with(phase: TransferPhase, select: &str) -> Harness<'static, State> {
@@ -3242,6 +3836,21 @@ fn passwords_are_dropped_when_the_wizard_ends_or_the_add_form_is_left() {
     h.get_by_label_contains("Skip").click_accesskit();
     h.run();
     assert!(h.state().ui.wizard.form.password.is_empty());
+    // Ending a link flow also drops the password and the link.
+    let mut h = harness(base_snapshot(), WIDE);
+    h.run();
+    offer(
+        &mut h,
+        link_for("2001", "example.test"),
+        Origin::Opened,
+        now() - secs(2),
+    );
+    click_first(&mut h, "Continue");
+    type_into(&mut h, "Password", "pw-from-link-flow");
+    h.get_by_label("Cancel").click_accesskit();
+    h.run();
+    let w = &h.state().ui.wizard;
+    assert!(w.form.password.is_empty() && w.link.is_none() && !w.link_only);
     let mut h = settings_harness(base_snapshot(), Section::Accounts, WIDE);
     h.get_by_label("New account").click_accesskit();
     h.run();

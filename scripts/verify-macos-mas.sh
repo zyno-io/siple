@@ -59,6 +59,10 @@ enc="$(plist_get "$IP" ITSAppUsesNonExemptEncryption)"
 [ -n "$enc" ] && pass "ITSAppUsesNonExemptEncryption=$enc" || fail "ITSAppUsesNonExemptEncryption missing"
 check "PrivacyInfo.xcprivacy present and valid" plutil -lint "$APP/Contents/Resources/PrivacyInfo.xcprivacy"
 check "NSMicrophoneUsageDescription present" "$PB" -c "Print :NSMicrophoneUsageDescription" "$IP"
+urltypes="$("$PB" -c "Print :CFBundleURLTypes" "$IP" 2>&1)"
+for scheme in sip sips tel callto siple; do
+  grep -qxE "[[:space:]]*$scheme" <<<"$urltypes" && pass "URL scheme $scheme declared" || fail "CFBundleURLTypes does not declare the $scheme scheme"
+done
 
 echo "== build: binaries (SDK >= 26.0, minos 13.0, both architectures) =="
 for bin in "$GUI" "$CLI"; do

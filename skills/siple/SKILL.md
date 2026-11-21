@@ -107,6 +107,7 @@ siple-cli ctl call.wait_for "{\"call_id\":\"$call\",\"state\":\"active\",\"since
 | Test an account | `account.test {account}` |
 | Change settings | `config.edit` (typed edits; comments in config.toml are kept), e.g. `move_account {id, index}` |
 | Set a password | `account.set_password {account, password}` (never put passwords in `config.edit` output you show) |
+| Add an account from a setup link | `provision.parse {link}`, then `account.test` with its `draft` plus a `password` in `draft.fields`, then `config.edit add_account` with the same draft (a link never carries a password; ask the user for it) |
 
 ## Rules
 

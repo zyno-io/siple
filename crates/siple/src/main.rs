@@ -45,8 +45,10 @@ struct Cli {
     /// the instance lock and control socket free. A permanent part of the command line.
     #[arg(long, hide = true, value_name = "PID")]
     wait_pid: Option<u32>,
-    /// A `sip:`, `sips:`, `tel:` or `callto:` link passed by the OS URL handler. Validated, then
-    /// put into the dial field of the running (or this) instance; it never dials by itself.
+    /// A `sip:`, `sips:`, `tel:`, `callto:` or `siple:` link passed by the OS URL handler.
+    /// Validated, then handed to the running (or this) instance. A call link is put into the
+    /// dial field and never dials by itself; a `siple:provision` setup link opens a review
+    /// screen and changes nothing until the user confirms every step.
     #[arg(hide = true)]
     uri: Option<String>,
 }
@@ -113,17 +115,18 @@ fn main() -> ExitCode {
 
     // A second launch (or a link click) forwards to the running instance instead of failing.
     let config_dir = config::config_dir_for(&config_path);
-    let link = cli
+    let link: Option<Result<siple_core::uri::IncomingLink, String>> = cli.uri.as_deref().map(|u| {
+        siple_core::uri::parse_any(u).map_err(|e| {
+            eprintln!("ignoring link argument: {e}");
+            e.to_string()
+        })
+    });
+    // Forward the raw argument whenever it is one of our schemes, even if it did not parse here:
+    // the running instance validates it again and tells the user why it was refused.
+    let link_arg = cli
         .uri
-        .as_deref()
-        .and_then(|u| match siple_core::uri::parse_link(u) {
-            Ok(l) => Some(l),
-            Err(e) => {
-                eprintln!("ignoring link argument: {e}");
-                None
-            }
-        });
-    let link_arg = cli.uri.clone().filter(|_| link.is_some());
+        .clone()
+        .filter(|u| link.as_ref().is_some_and(Result::is_ok) || siple_core::uri::known_scheme(u));
     // Ask a running instance first: before the config is parsed (a broken file must not stop a
     // link click) and before keyring reads.
     if !matches!(
@@ -250,7 +253,7 @@ fn hand_off_to_running(
 fn run_gui(
     rt: tokio::runtime::Runtime,
     app: Arc<App>,
-    link: Option<siple_core::uri::LinkTarget>,
+    link: Option<Result<siple_core::uri::IncomingLink, String>>,
     login_config: Option<PathBuf>,
 ) -> ExitCode {
     if app.created_config() {
@@ -354,8 +357,11 @@ fn run_gui(
                 login_config,
             );
             let mut shell_app = shell::ShellApp::new(phone, sh);
-            if let Some(l) = &link {
-                shell_app.open_link(l);
+            match &link {
+                Some(Ok(l)) => shell_app.open_link(l),
+                // Why the link on the command line was refused (shown once, no value echoed).
+                Some(Err(why)) => shared.set_notice(format!("Ignored link: {why}")),
+                None => {}
             }
             Ok(Box::new(shell_app))
         }

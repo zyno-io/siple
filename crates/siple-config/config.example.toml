@@ -84,7 +84,7 @@ start_hidden = false
 show_on_incoming = true               # raise the window on an incoming call
 show_on_answer = false
 notifications = true
-handle_links = true                   # handler for sip:/sips:/tel:/callto: links
+handle_links = true                   # handler for sip:/sips:/tel:/callto:/siple: links
 launch_at_login = false              # start Siple when you log in (use with start_hidden)
 developer_tools = false               # show the Log pane and Open logs / Open config in the footer (API stays on)
 

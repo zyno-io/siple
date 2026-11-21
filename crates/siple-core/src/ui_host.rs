@@ -12,7 +12,8 @@ use serde_json::{Value, json};
 use crate::backend::AppBackend;
 use crate::control::methods::{MethodInfo, parse_params};
 use crate::control::{ApiError, ErrorKind};
-use crate::uri::{LinkTarget, OpenUriParams, parse_link};
+use crate::provision::SetupLink;
+use crate::uri::{IncomingLink, LinkTarget, OpenUriParams, parse_any};
 
 /// Names served by [`AppBackend::ui_method`].
 pub const UI_METHODS: &[&str] = &[
@@ -54,6 +55,11 @@ pub enum UiRequest {
     Attention,
     /// Prefill the dial field with a validated link and raise the window. Never dials.
     OpenLink(LinkTarget),
+    /// Open the Review screen of a validated `siple:provision` link and raise the window.
+    /// Nothing is tested or saved until the user continues, types the password and tests.
+    OpenSetup(SetupLink),
+    /// A link that was refused: the GUI shows `String` (fixed text, no submitted values).
+    LinkRefused(String),
     /// Quit (as the tray's Quit does) and start the new version of the installed update. Only the
     /// updater sends it, after the files were swapped and no call is active.
     #[cfg(not(feature = "store"))]
@@ -111,8 +117,11 @@ pub fn ui_methods() -> Vec<MethodInfo> {
         ),
         MethodInfo::new(
             "app.open_uri",
-            "Hand a `sip:`, `sips:`, `tel:` or `callto:` link to the GUI, as the OS URL handler does: it is validated (URI headers and parameters other than `transport` are dropped; control characters and links over 256 bytes are refused), put into the dial field and the window is raised. It never dials: the user confirms with Call. Result {ok, target, scheme}. Errors: invalid_params for a refused link; invalid_state `no GUI` when headless.",
-            json!({"type":"object","properties":{"uri":{"type":"string","maxLength":crate::uri::MAX_LINK_LEN,"description":"The link, e.g. sip:1001@pbx.example.test or tel:+15551234567."}},"required":["uri"],"additionalProperties":false}),
+            &format!(
+                "Hand a `sip:`, `sips:`, `tel:`, `callto:` or `siple:` link to the GUI, as the OS URL handler does, and raise the window. Dial links (`sip:`, `sips:`, `tel:`, `callto:`) are validated (URI headers and parameters other than `transport` are dropped; control characters and links over 256 bytes are refused), put into the dial field, and never dial: the user confirms with Call. A `siple:provision` setup link (up to {} bytes, the same checks as `provision.parse`) opens the Review screen; nothing is tested or saved until the user reads it, continues, types the password and runs Test, and no parameter skips that. If the user is already past another link's Review or a test runs, the GUI keeps that setup and shows a notice. Result {{ok, kind: dial|provision, scheme, target? (dial), next_hop? (provision)}}. Errors: invalid_params for a refused link, with data {{reason: \"invalid_link\", code, field?}} (the GUI also shows why, rate-limited); invalid_state `rate_limited`; invalid_state `no GUI` when headless.",
+                crate::provision::MAX_LINK_LEN
+            ),
+            json!({"type":"object","properties":{"uri":{"type":"string","maxLength":crate::provision::MAX_LINK_LEN,"description":"The link, e.g. sip:1001@pbx.example.test, tel:+15551234567 or siple:provision?d=..."}},"required":["uri"],"additionalProperties":false}),
         ),
     ]
 }
@@ -149,9 +158,16 @@ impl AppBackend {
             "ui.attention" => UiRequest::Attention,
             "app.open_uri" => {
                 let p: OpenUriParams = parse_params(params)?;
-                let link =
-                    parse_link(&p.uri).map_err(|e| ApiError::invalid_params(e.to_string()))?;
-                UiRequest::OpenLink(link)
+                match parse_any(&p.uri) {
+                    Ok(IncomingLink::Dial(l)) => UiRequest::OpenLink(l),
+                    Ok(IncomingLink::Setup(l)) => UiRequest::OpenSetup(l),
+                    Err(e) => {
+                        if let Ok(host) = self.ui_host() {
+                            let _ = host.request(UiRequest::LinkRefused(e.to_string()));
+                        }
+                        return Err(e.to_api_error());
+                    }
+                }
             }
             other => return Err(ApiError::method_not_found(other)),
         };

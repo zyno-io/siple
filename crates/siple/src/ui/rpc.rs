@@ -25,6 +25,8 @@ pub enum RpcTag {
     AddAccount,
     /// `config.edit` add_account of the wizard.
     WizardAdd,
+    /// `provision.build` of the account ("Copy setup link").
+    ShareLink(String),
     /// `account.set_password` (keyring accounts) for the account.
     SetPassword(String),
     /// `audio.echo_test`.

@@ -46,6 +46,32 @@ enum Command {
     /// Print the agent skill (SKILL.md) for this version: how an LLM agent drives Siple with
     /// `siple-cli`. Save it as `<skills dir>/siple/SKILL.md`.
     Skill,
+    /// Build or check a `siple:provision` setup link (offline; no instance needed).
+    SetupLink(SetupLinkArgs),
+}
+
+#[derive(Args)]
+struct SetupLinkArgs {
+    #[command(subcommand)]
+    action: SetupLinkAction,
+}
+
+#[derive(Subcommand)]
+enum SetupLinkAction {
+    /// Print the setup link for account fields given as JSON (`provision.build`'s `fields`):
+    /// username, domain and optionally display_name, auth_username, registrar, outbound_proxy,
+    /// transport, srtp, profile. A link never carries a password. The JSON is inline, `@file.json`
+    /// or `-` (stdin).
+    Build {
+        /// The account fields as a JSON object.
+        json: String,
+    },
+    /// Check a setup link and print what it would set up (`provision.parse`, without the
+    /// `existing` check, which needs a running instance).
+    Parse {
+        /// The `siple:provision?d=...` link.
+        link: String,
+    },
 }
 
 /// The agent skill, kept in the repository at `skills/siple/SKILL.md`.
@@ -195,9 +221,51 @@ async fn main() -> Result<ExitCode> {
             print!("{SKILL_MD}");
             Ok(ExitCode::SUCCESS)
         }
+        Command::SetupLink(args) => Ok(setup_link(&args.action)),
         Command::Mcp(args) => {
             mcp::run(args).await?;
             Ok(ExitCode::SUCCESS)
+        }
+    }
+}
+
+/// `setup-link build|parse`: pure; prints the result, or a one-line error and exit status 2.
+fn setup_link(action: &SetupLinkAction) -> ExitCode {
+    match setup_link_run(action, &mut std::io::stdin().lock()) {
+        Ok(out) => {
+            println!("{out}");
+            ExitCode::SUCCESS
+        }
+        Err(e) => {
+            eprintln!("{e}");
+            ExitCode::from(2)
+        }
+    }
+}
+
+fn setup_link_run(
+    action: &SetupLinkAction,
+    stdin: &mut dyn std::io::Read,
+) -> std::result::Result<String, String> {
+    use siple_core::provision::{SetupLink, account_from_fields, parse};
+    match action {
+        SetupLinkAction::Build { json } => {
+            let v = parse_json_arg_from(Some(json), stdin).map_err(|e| e.to_string())?;
+            let Value::Object(mut m) = v else {
+                return Err("the account fields must be a JSON object".into());
+            };
+            // Also accept the wrapper forms (`{"fields": {...}}`, `{"account": {...}}`).
+            if m.len() == 1
+                && let Some(Value::Object(inner)) = m.get("fields").or_else(|| m.get("account"))
+            {
+                m = inner.clone();
+            }
+            let account = account_from_fields(&m).map_err(|e| e.to_string())?;
+            SetupLink::new(account).encode().map_err(|e| e.to_string())
+        }
+        SetupLinkAction::Parse { link } => {
+            let l = parse(link).map_err(|e| e.to_string())?;
+            Ok(serde_json::to_string_pretty(&l.report()).unwrap_or_default())
         }
     }
 }
@@ -1069,6 +1137,53 @@ mod tests {
             Cli::try_parse_from(["siple-cli", "ctl", "ping", "--socket", "/a", "--pipe", "b"])
                 .is_err()
         );
+    }
+
+    #[test]
+    fn setup_link_build_and_parse_offline() {
+        let mut empty = std::io::empty();
+        let link = setup_link_run(
+            &SetupLinkAction::Build {
+                json: r#"{"username":"1001","domain":"Example.Test","transport":"tls"}"#.into(),
+            },
+            &mut empty,
+        )
+        .unwrap();
+        assert!(link.starts_with("siple:provision?d="), "{link}");
+        let out =
+            setup_link_run(&SetupLinkAction::Parse { link: link.clone() }, &mut empty).unwrap();
+        let v: Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(v["account"]["domain"], "example.test");
+        assert_eq!(v["next_hop"], "example.test");
+        assert!(v.get("existing").is_none());
+        // stdin and the wrapper form.
+        let mut stdin: &[u8] =
+            br#"{"fields":{"username":"1001","domain":"example.test","transport":"tls"}}"#;
+        let again =
+            setup_link_run(&SetupLinkAction::Build { json: "-".into() }, &mut stdin).unwrap();
+        assert_eq!(again, link.replace("Example.Test", "example.test"));
+        // A password, a bad link and non-objects are refused with a message.
+        let e = setup_link_run(
+            &SetupLinkAction::Build {
+                json: r#"{"username":"a","domain":"b.test","password":"x"}"#.into(),
+            },
+            &mut empty,
+        )
+        .unwrap_err();
+        assert!(e.contains("password") && !e.contains("\"x\""), "{e}");
+        assert!(
+            setup_link_run(&SetupLinkAction::Build { json: "[1]".into() }, &mut empty).is_err()
+        );
+        assert!(
+            setup_link_run(
+                &SetupLinkAction::Parse {
+                    link: "sip:a@b.test".into()
+                },
+                &mut empty
+            )
+            .is_err()
+        );
+        assert!(Cli::try_parse_from(["siple-cli", "setup-link", "parse", "x"]).is_ok());
     }
 
     #[test]

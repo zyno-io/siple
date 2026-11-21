@@ -14,6 +14,7 @@ pub mod events;
 pub mod instance;
 pub mod logging;
 pub mod media;
+pub mod provision;
 pub mod reconfig;
 pub mod redact;
 pub mod sip_trace;

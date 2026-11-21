@@ -806,6 +806,57 @@ fn visual_wizard_done() {
     });
 }
 
+/// A setup link whose registrar is outside its domain (the Review screen warns about it).
+pub(crate) fn setup_link_outside() -> siple_core::provision::SetupLink {
+    use siple_core::config::{Profile, SrtpPolicy, Transport};
+    use siple_core::provision::{SetupAccount, SetupLink};
+    SetupLink::new(SetupAccount {
+        username: "1001".into(),
+        domain: "example.test".into(),
+        display_name: "Front desk".into(),
+        registrar: "pbx.vendor-hosting.test:5061".into(),
+        transport: Some(Transport::Tls),
+        srtp: Some(SrtpPolicy::Mandatory),
+        profile: Some(Profile::Yealink),
+        ..Default::default()
+    })
+}
+
+#[test]
+fn visual_setup_review() {
+    use crate::ui::wizard::Origin;
+    render_wn("setup_review", wizard_snapshot, |h| {
+        let snap = h.state().snap.clone();
+        // Seen for two seconds already: Continue is enabled.
+        h.state_mut().state.wizard.offer_link(
+            setup_link_outside(),
+            Origin::Opened,
+            &snap,
+            now() - Duration::seconds(2),
+        );
+    });
+}
+
+#[test]
+fn visual_setup_account_from_link() {
+    use crate::ui::draft::DraftForm;
+    use crate::ui::wizard::{Origin, Step};
+    render_wn("setup_account_from_link", base_snapshot, |h| {
+        let snap = h.state().snap.clone();
+        let link = setup_link_outside();
+        let w = &mut h.state_mut().state.wizard;
+        w.offer_link(
+            link.clone(),
+            Origin::Opened,
+            &snap,
+            now() - Duration::seconds(2),
+        );
+        // What Continue does.
+        w.form = DraftForm::from_link(&link.account);
+        w.step = Step::Account;
+    });
+}
+
 // ---- store screenshots -------------------------------------------------------------------------
 
 /// A healthy variant of a scene for the store listings: both accounts registered, no errors,

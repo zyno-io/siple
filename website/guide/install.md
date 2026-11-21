@@ -49,7 +49,7 @@ cd siple-<version>
 ./bin/siple-cli run --headless # or: no window, for servers and automation
 ```
 
-**Add it to your app launcher** (and let it open `sip:` and `tel:` links):
+**Add it to your app launcher** (and let it open `sip:`, `tel:` and `siple:` links):
 
 ```sh
 mkdir -p ~/.local/bin
@@ -58,7 +58,7 @@ install -Dm644 share/applications/io.zyno.siple.desktop ~/.local/share/applicati
 install -Dm644 share/pixmaps/io.zyno.siple.png ~/.local/share/pixmaps/io.zyno.siple.png
 ```
 
-The launcher entry runs `siple %u`, so `~/.local/bin` must be on your `PATH`. To make Siple the default for phone links, see [Phone links](/guide/links).
+The launcher entry runs `siple %u`, so `~/.local/bin` must be on your `PATH`. To make Siple the default for phone links, see [Phone links](/guide/links); for setup links run `xdg-mime default io.zyno.siple.desktop x-scheme-handler/siple`.
 
 ::: details Packages Siple needs on Linux
 - **Sound:** `libasound2` (`libasound2t64` on Ubuntu 24.04+ and Debian 13), and `ca-certificates`.

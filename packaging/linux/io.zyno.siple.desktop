@@ -7,5 +7,5 @@ Exec=siple %u
 Icon=io.zyno.siple
 Terminal=false
 Categories=Network;Telephony;AudioVideo;
-MimeType=x-scheme-handler/sip;x-scheme-handler/sips;x-scheme-handler/tel;x-scheme-handler/callto;
+MimeType=x-scheme-handler/sip;x-scheme-handler/sips;x-scheme-handler/tel;x-scheme-handler/callto;x-scheme-handler/siple;
 StartupWMClass=io.zyno.siple

@@ -36,6 +36,23 @@
   and SIP-level JSON-RPC errors (`error.data.problem`). Existing fields keep their names and values. Kinds are stable; see
   `docs/PROBLEMS.md`.
 - `siple-cli problems` lists the catalog (`--json`, `--markdown`).
+- Setup links: an administrator can send a `siple:provision?d=...` link that fills in an account. Clicking it (or pasting it
+  into **Paste a setup link** in the setup, or **Add from setup link** in Settings › Accounts) opens a **Check this setup
+  link** review screen that leads with the server the account would connect to. Nothing is saved or sent until the user
+  continues (Continue unlocks one second after the screen appears), types the password and runs the test. A link carries
+  only nine account fields (`username`, `domain`, `display_name`, `auth_username`, `registrar`, `outbound_proxy`,
+  `transport`, `srtp`, `profile`), never a password, and any other key is refused. See `website/guide/setup-links.md`.
+  A link's `display_name` may not contain quotes, backslashes, angle brackets or invisible characters, and hosts may not use
+  IPv4 shorthand (`127.1`, `2130706433`); the password must be typed before Test; a new link is refused once the user has
+  continued past Review.
+- Settings › Accounts has **Copy setup link**: a link for an existing account, without its password.
+- API: new methods `provision.parse` and `provision.build`. `app.open_uri` now also takes `siple:provision` links (up to
+  2048 bytes), opens the review screen only (no parameter skips it), reports `kind` (`dial` or `provision`), and its
+  `invalid_params` errors carry `data.code` (and `data.field`) for a refused link.
+- The account form of the setup and of Settings › Accounts › New account has a **Registrar** field.
+- New `siple-cli setup-link build|parse` (offline).
+- `siple:` is registered on every edition (Info.plist, the MSIX manifest, the `.desktop` file, and under HKCU on the Windows
+  zip, where `handle_links = false` removes it).
 
 ## 0.1.2 (2026-11-19)
 

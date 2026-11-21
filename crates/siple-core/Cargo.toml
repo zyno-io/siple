@@ -39,6 +39,7 @@ rubato = "5"
 siple-media = { path = "../siple-media" }
 anyhow = "1"
 base64 = "0.23"
+unicode-general-category = "1"
 tempfile = "3"
 crossbeam-channel = "0.5"
 hound = "3.5"

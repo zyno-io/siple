@@ -121,6 +121,15 @@ pub struct SettingsState {
     job: Option<ApplyJob>,
     /// The keychain password of the account the add form is creating.
     pub(super) add_pw: Option<(String, Secret)>,
+    /// "Add from setup link": the open paste field and what was wrong with the last try.
+    pub paste: Option<String>,
+    pub paste_error: Option<String>,
+    /// An account to select once it appears in the list (added from a setup link).
+    pub select_after: Option<String>,
+    /// A setup link built for "Copy setup link", copied to the clipboard on the next frame.
+    pub copy_pending: Option<String>,
+    /// What "Copy setup link" did for an account: `(id, text)`.
+    pub link_note: Option<(String, String)>,
 }
 
 /// One Apply: keychain writes that must precede the edit, the edit, and keychain writes that
@@ -468,6 +477,21 @@ impl SettingsState {
                 }
             }
             (RpcTag::Echo, Err(e)) => self.notice = Some(e.message),
+            (RpcTag::ShareLink(id), Ok(v)) => {
+                let omitted: Vec<&str> = v["omitted"]
+                    .as_array()
+                    .map(|a| a.iter().filter_map(serde_json::Value::as_str).collect())
+                    .unwrap_or_default();
+                let mut note = "Setup link copied. It has no password.".to_string();
+                if !omitted.is_empty() {
+                    note.push_str(&format!(" Not included: {}.", omitted.join(", ")));
+                }
+                self.copy_pending = v["link"].as_str().map(str::to_string);
+                self.link_note = Some((id, note));
+            }
+            (RpcTag::ShareLink(id), Err(e)) => {
+                self.link_note = Some((id, format!("Cannot build a setup link: {}", e.message)));
+            }
             (RpcTag::CheckUpdates, _) => self.update_checking = false,
             _ => {}
         }
@@ -507,6 +531,10 @@ fn show(ui: &mut egui::Ui, cx: &Cx, st: &mut UiState, out: &mut Vec<UiAction>) {
     let p = cx.p;
     let snap = cx.vm.snap;
     let narrow = ui.available_width() < 640.0;
+    // "Copy setup link": the link built for the account is put on the clipboard once.
+    if let Some(link) = st.settings.copy_pending.take() {
+        ui.ctx().copy_text(link);
+    }
     st.settings.observe(&snap.config_hash);
     egui::Panel::top("settings_top")
         .frame(
