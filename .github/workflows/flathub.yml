@@ -1,0 +1,197 @@
+# Flathub update PR: when a final release is published, renders the Flathub manifest and cargo-sources.json for its tag
+# (scripts/flathub-manifest.sh) and opens (or refreshes) the update pull request in flathub/io.zyno.siple.
+#
+#   release published (final, not pre-release)   render -> lint -> branch update-<version> + PR
+#   workflow_dispatch from a tag (--ref vX.Y.Z)  the same; tag input must equal that tag
+#   workflow_dispatch from a branch              dry run: render + lint only (the `release` environment refuses branches)
+#
+# Its own run, separate from flatpak.yml (which has no secrets and runs on every tag push, including release candidates).
+# The token (FLATHUB_TOKEN, environment `release`) is only in `publish`, which never runs cargo, the generator or any script
+# from the repository: it copies the two rendered files from an artifact and runs git and gh. Without the secret, or before
+# flathub/io.zyno.siple exists, `publish` ends with a notice. docs/RELEASING.md, "Flatpak (Flathub)".
+name: Flathub
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Final release tag (vX.Y.Z). Dispatch from that tag to open the PR; from a branch it is a dry run.
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: flathub-${{ github.event.release.tag_name || inputs.tag }}
+  cancel-in-progress: false
+
+env:
+  TAG: ${{ github.event.release.tag_name || inputs.tag }}
+  FLATHUB_REPO: flathub/io.zyno.siple
+
+jobs:
+  render:
+    name: Render the Flathub manifest
+    if: github.event_name == 'workflow_dispatch' || !github.event.release.prerelease
+    runs-on: ubuntu-24.04 # python3 3.12 (the cargo-sources generator needs >= 3.11)
+    outputs:
+      version: ${{ steps.tag.outputs.version }}
+      commit: ${{ steps.render.outputs.commit }}
+    steps:
+      - name: Tag is a final vX.Y.Z
+        id: tag
+        run: |
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::'$TAG' is not a final vX.Y.Z tag"; exit 1; }
+          if [ "$GITHUB_REF_TYPE" = tag ] && [ "$GITHUB_REF_NAME" != "$TAG" ]; then
+            echo "::error::dispatched from tag $GITHUB_REF_NAME but the tag input is $TAG"; exit 1
+          fi
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: refs/tags/${{ env.TAG }}
+          persist-credentials: false
+      - name: Install minisign 0.12 (pinned sha256)
+        run: |
+          url=https://github.com/jedisct1/minisign/releases/download/0.12/minisign-0.12-linux.tar.gz
+          sha=9a599b48ba6eb7b1e80f12f36b94ceca7c00b7a5173c95c3efc88d9822957e73
+          curl -fsSL "$url" -o "$RUNNER_TEMP/minisign.tar.gz"
+          echo "$sha  $RUNNER_TEMP/minisign.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/minisign.tar.gz" -C "$RUNNER_TEMP"
+          install -Dm755 "$RUNNER_TEMP/minisign-linux/x86_64/minisign" "$RUNNER_TEMP/bin/minisign"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      - name: Render (verifies SHA256SUMS with minisign, regenerates cargo-sources.json from the tag's Cargo.lock)
+        id: render
+        run: |
+          scripts/flathub-manifest.sh "$TAG" "$RUNNER_TEMP/flathub"
+          echo "commit=$(git rev-parse "$TAG^{commit}")" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: flathub-${{ env.TAG }}
+          path: |
+            ${{ runner.temp }}/flathub/io.zyno.siple.yml
+            ${{ runner.temp }}/flathub/cargo-sources.json
+          if-no-files-found: error
+          retention-days: 30
+
+  lint:
+    name: Lint like Flathub
+    needs: render
+    runs-on: ubuntu-latest
+    container:
+      # Same image and digest as flatpak.yml. Bump: docs/RELEASING.md, "Flatpak (Flathub)".
+      image: ghcr.io/flathub-infra/flatpak-github-actions:freedesktop-26.08@sha256:6ed6921bb5a9e1a916989971844f159b854b7b225880c381fa34f7a158863039
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: flathub-${{ env.TAG }}
+          path: flathub
+      # --exceptions: only the exceptions Flathub has granted io.zyno.siple (none in the repository).
+      - run: flatpak-builder-lint --exceptions manifest flathub/io.zyno.siple.yml
+
+  publish:
+    name: Open the update PR in flathub/io.zyno.siple
+    needs: [render, lint]
+    # The `release` environment only serves v* tag refs: a dispatch from a branch stops after lint (dry run).
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    environment: release
+    permissions: {} # everything below uses FLATHUB_TOKEN, not GITHUB_TOKEN
+    env:
+      VERSION: ${{ needs.render.outputs.version }}
+      BRANCH: update-${{ needs.render.outputs.version }}
+    steps:
+      - name: Token and repository available
+        id: gate
+        env:
+          GH_TOKEN: ${{ secrets.FLATHUB_TOKEN }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::notice::FLATHUB_TOKEN is not set in the 'release' environment: no Flathub PR (docs/RELEASING.md, Flatpak (Flathub))"
+            echo "go=false" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          login="$(gh api user --jq .login)" || { echo "::error::FLATHUB_TOKEN is not a valid token"; exit 1; }
+          # A pending collaborator invitation to the app repository is accepted here (best effort: needs the token's
+          # repo:invite scope; without it, accept the invitation once in the web UI as the bot).
+          inv="$(gh api user/repository_invitations --jq ".[] | select(.repository.full_name == \"$FLATHUB_REPO\") | .id" 2>/dev/null || true)"
+          if [ -n "$inv" ]; then
+            gh api --silent --method PATCH "user/repository_invitations/$inv" && echo "accepted the invitation to $FLATHUB_REPO" \
+              || echo "::warning::could not accept the invitation to $FLATHUB_REPO (token lacks repo:invite?)"
+          fi
+          if ! push="$(gh api "repos/$FLATHUB_REPO" --jq .permissions.push 2>&1)"; then
+            case "$push" in
+              *"(HTTP 404)"*)
+                echo "::notice::$FLATHUB_REPO does not exist yet (initial submission not accepted): no Flathub PR"
+                echo "go=false" >> "$GITHUB_OUTPUT"; exit 0 ;;
+            esac
+            echo "::error::cannot read $FLATHUB_REPO: $push"; exit 1
+          fi
+          [ "$push" = true ] || { echo "::error::$login has no write access to $FLATHUB_REPO"; exit 1; }
+          echo "go=true" >> "$GITHUB_OUTPUT"
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        if: steps.gate.outputs.go == 'true'
+        with:
+          name: flathub-${{ env.TAG }}
+          path: ${{ runner.temp }}/rendered
+      - name: Push branch and open or update the PR
+        if: steps.gate.outputs.go == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.FLATHUB_TOKEN }}
+          RENDERED: ${{ runner.temp }}/rendered
+          COMMIT_SHA: ${{ needs.render.outputs.commit }}
+        run: |
+          set -euo pipefail
+          # The artifact is data: exactly the two files, for this tag and commit.
+          [ "$(cd "$RENDERED" && find . -type f | sort | tr '\n' ' ')" = "./cargo-sources.json ./io.zyno.siple.yml " ] \
+            || { echo "::error::unexpected files in the artifact"; ls -laR "$RENDERED"; exit 1; }
+          if ! grep -qxF "        tag: $TAG" "$RENDERED/io.zyno.siple.yml" || ! grep -qxF "        commit: $COMMIT_SHA" "$RENDERED/io.zyno.siple.yml"; then
+            echo "::error::the rendered manifest is not for $TAG ($COMMIT_SHA)"; exit 1
+          fi
+
+          gh auth setup-git
+          login="$(gh api user --jq .login)"; id="$(gh api user --jq .id)"
+          base="$(gh api "repos/$FLATHUB_REPO" --jq .default_branch)"
+          git clone --quiet --branch "$base" "https://github.com/$FLATHUB_REPO.git" "$RUNNER_TEMP/app"
+          cd "$RUNNER_TEMP/app"
+          git config user.name "$login"
+          git config user.email "$id+$login@users.noreply.github.com"
+
+          same() { cmp -s "$RENDERED/io.zyno.siple.yml" io.zyno.siple.yml && cmp -s "$RENDERED/cargo-sources.json" cargo-sources.json; }
+          if same; then echo "::notice::$base already has $TAG: nothing to update"; exit 0; fi
+          # Never propose an older release than the one the default branch has (a re-run of an old tag).
+          base_tag="$(sed -n 's/^        tag: \(v[0-9][0-9.]*\)$/\1/p' io.zyno.siple.yml 2>/dev/null | head -1)"
+          if [ -n "$base_tag" ] && [ "$(printf '%s\n%s\n' "${base_tag#v}" "$VERSION" | sort -V | tail -1)" = "${base_tag#v}" ]; then
+            echo "::notice::$base is at $base_tag, not older than $TAG: nothing to update"; exit 0
+          fi
+
+          if git ls-remote --exit-code origin "refs/heads/$BRANCH" >/dev/null; then
+            # Re-run for the same tag: the render is byte-identical, so the branch must already hold these files.
+            # Never overwrite commits a maintainer added to it.
+            git fetch --quiet origin "refs/heads/$BRANCH"
+            git checkout --quiet -B "$BRANCH" FETCH_HEAD
+            same || { echo "::error::$BRANCH exists in $FLATHUB_REPO with different files; resolve it by hand"; exit 1; }
+            echo "branch $BRANCH already holds these files"
+          else
+            git checkout --quiet -b "$BRANCH"
+            cp "$RENDERED/io.zyno.siple.yml" "$RENDERED/cargo-sources.json" .
+            git add io.zyno.siple.yml cargo-sources.json
+            git commit --quiet -m "Update to $VERSION" \
+              -m "Rendered by scripts/flathub-manifest.sh $TAG (commit $COMMIT_SHA) in $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID."
+            git push --quiet origin "$BRANCH"
+          fi
+
+          pr="$(gh pr list --repo "$FLATHUB_REPO" --head "$BRANCH" --state open --json url,isCrossRepository \
+            --jq 'map(select(.isCrossRepository | not))[0].url // empty')"
+          if [ -z "$pr" ]; then
+            body="Siple $VERSION: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/tag/$TAG
+
+          Source: tag \`$TAG\`, commit \`$COMMIT_SHA\`. \`cargo-sources.json\` regenerated from that tag's \`Cargo.lock\`;
+          the notices checksum comes from the release's minisign-signed \`SHA256SUMS\`."
+            pr="$(gh pr create --repo "$FLATHUB_REPO" --base "$base" --head "$BRANCH" --title "Update to $VERSION" --body "$body")"
+            echo "opened $pr"
+          else
+            echo "PR already open: $pr"
+          fi
+          echo "### Flathub: $pr" >> "$GITHUB_STEP_SUMMARY"

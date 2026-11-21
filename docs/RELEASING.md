@@ -18,7 +18,7 @@ You review the draft and publish it by hand.
    the generated notes, publish.
 
 `workflow_dispatch` (Actions tab, "Release") builds **unsigned** dev packages as `unsigned-*` run artifacts. It uses
-no secrets, signs nothing and publishes nothing. A tag without all secrets below fails (it never ships unsigned).
+no secrets, signs nothing and publishes nothing. A tag without all signing secrets below fails (it never ships unsigned); `FLATHUB_TOKEN` is optional.
 
 ## How it is laid out
 
@@ -31,7 +31,8 @@ no secrets, signs nothing and publishes nothing. A tag without all secrets below
 | `release` | ubuntu | `release` env | `SHA256SUMS`, attestations, `gh release create --draft` |
 
 `flatpak.yml` (no secrets) is a separate run, like `store.yml`: it builds, lints and smoke-tests the Flatpak bundles as workflow
-artifacts and never blocks `release.yml`. See "Flatpak (Flathub)".
+artifacts and never blocks `release.yml`. `flathub.yml` runs when a final release is **published** and opens the update pull
+request in `flathub/io.zyno.siple`; its token is only in a job that runs git and gh. See "Flatpak (Flathub)".
 
 Secrets are only in jobs that never run `cargo` (a malicious build script cannot read them). macOS is signed on a
 macOS runner because the bundle is built there, `rcodesign` runs natively, and `hdiutil` (dmg) and `xcrun stapler` /
@@ -53,6 +54,7 @@ is listed in that file.
 | `APPLE_CERTIFICATE_PASSWORD` | the password set on that export |
 | `APP_STORE_CONNECT_API_KEY` | base64 of the JSON `{"issuer_id": "...", "key_id": "...", "private_key": "-----BEGIN PRIVATE KEY-----\n..."}` |
 | `AZURE_TENANT_ID`, `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET` | service principal allowed to sign with the Artifact Signing profile |
+| `FLATHUB_TOKEN` | classic PAT of `signal24-bot`, scope `public_repo` (optional: `repo:invite`). Used by `flathub.yml` only; see "Flathub update pull requests" |
 
 **Developer ID certificate.** In Keychain Access, "My Certificates", select `Developer ID Application: <Team>` (expand it
 to include the key), File > Export Items > `.p12`, set a password. `base64 -i cert.p12 | pbcopy` (macOS) is the secret
@@ -277,16 +279,85 @@ The notices need `cargo-about` on the host; without it the local build uses a pl
 1. When `CHANGELOG.md` gets the version heading, add the `<release version="X.Y.Z" date="YYYY-MM-DD">` entry (newest first) to
    `packaging/linux/io.zyno.siple.metainfo.xml`. CI enforces it (`scripts/flatpak-check-release.sh`); the screenshot URLs there point
    at the goldens of an earlier tag and stay valid.
-2. After the GitHub Release is published, run `scripts/flathub-manifest.sh vX.Y.Z`. It writes `dist/flathub/io.zyno.siple.yml` (git
-   `tag` + `commit` source, the notices from the release with the sha256 of the signed `SHA256SUMS`) and `cargo-sources.json`
-   (regenerated from the tag's `Cargo.lock`). Open a pull request with both in `flathub/io.zyno.siple`. The script needs `minisign`
-   to verify the release's `SHA256SUMS` signature and fails without it; `--no-verify` skips that check with a loud warning (the
-   notices checksum is then unauthenticated: never submit such output).
+2. Publish the GitHub Release. `.github/workflows/flathub.yml` then renders the Flathub manifest and opens the update pull request
+   in `flathub/io.zyno.siple` (below). Flathub's bot test-builds it; install the test build it links, try it, and merge. The
+   official build is published within a few hours.
 
-The first submission is a pull request against the `new-pr` branch of `flathub/flathub`, with the finish-args justifications from
-the comments in the manifest in the description. Flathub verification needs the token Flathub gives published at
-`https://zyno.io/.well-known/org.flathub.VerifiedApps.txt`. Release candidates are not for Flathub stable. There is no
-`x-checker-data` or automerge: the checker cannot regenerate `cargo-sources.json` or the notices checksum.
+By hand (the same thing the workflow does): `scripts/flathub-manifest.sh vX.Y.Z` writes `dist/flathub/io.zyno.siple.yml` (git
+`tag` + `commit` source, the notices from the release with the sha256 of the signed `SHA256SUMS`) and `cargo-sources.json`
+(regenerated from the tag's `Cargo.lock`). The script needs `minisign` to verify the release's `SHA256SUMS` signature and fails
+without it; `--no-verify` skips that check with a loud warning (the notices checksum is then unauthenticated: never submit such
+output).
+
+Release candidates are not for Flathub stable (`flathub.yml` skips pre-releases). There is no `x-checker-data` or automerge: the
+checker cannot regenerate `cargo-sources.json` or the notices checksum.
+
+### Flathub policy constraints
+
+Flathub's [Generative AI policy](https://docs.flathub.org/docs/for-app-authors/requirements#generative-ai-policy) applies to
+everything sent to Flathub: manifests must not contain AI-generated or AI-assisted content (disclosure does not exempt them), the
+submission pull request, its description, commit messages and review replies must not be written or automated by AI tools, and
+AI-generated material elsewhere in the app must be disclosed in the submission. The manifest Flathub receives is
+`packaging/flatpak/io.zyno.siple.yml` with its source block replaced mechanically by `scripts/flathub-manifest.sh`, so that file
+must be human-authored. Other Flathub rules that matter here: a meaningful development history
+([requirements](https://docs.flathub.org/docs/for-app-authors/requirements#insufficient-development-history)), the latest runtime
+at submission, permissions reviewed separately by Flathub moderators, and `project_license` matching the source
+(`FSL-1.1-ALv2`, redistributable).
+
+### First submission (by hand)
+
+[Submission guide](https://docs.flathub.org/docs/for-app-authors/submission):
+
+1. `gh repo fork flathub/flathub --clone` (all branches), `git checkout -b io.zyno.siple origin/new-pr`.
+2. Add `io.zyno.siple.yml` and `cargo-sources.json` from `scripts/flathub-manifest.sh vX.Y.Z`, plus `flathub.json` with
+   `{"disable-external-data-checker": true}` (Flathub asks apps that open update PRs from their own workflow to opt out of the
+   global checker). No arch restriction: Flathub builds x86_64 and aarch64 by default.
+3. Open the pull request against **`new-pr`**, titled `Add io.zyno.siple`, filling in Flathub's template yourself: the finish-args
+   justifications, a video of the Flatpak, the AI disclosure. Under "additional maintainers", list `signal24-bot` (the update
+   workflow's account).
+4. When review comments are resolved, comment `bot, build` for a test build.
+5. On acceptance Flathub creates `flathub/io.zyno.siple` and invites the submitter (2FA required, accept within a week).
+
+Verification (after the app is published): log in at flathub.org, Developer Portal > the app > Verification. It shows a token;
+publish it at `https://zyno.io/.well-known/org.flathub.VerifiedApps.txt` (HTTPS; redirects are followed; one token per line, `#`
+comments allowed), or as a TXT record at `_flathub.zyno.io`, then press verify there.
+
+### Flathub update pull requests (`flathub.yml`)
+
+On `release: published` (final releases only; pre-releases are skipped), three jobs:
+
+| Job | Secrets | What |
+| --- | --- | --- |
+| `render` | no | checks out the tag, installs minisign 0.12 (pinned sha256), runs `scripts/flathub-manifest.sh <tag>`, uploads the two files |
+| `lint` | no | `flatpak-builder-lint --exceptions manifest` in the same pinned Flathub image as `flatpak.yml` (only exceptions Flathub granted) |
+| `publish` | `release` env: `FLATHUB_TOKEN` | git and gh only: pushes `update-<version>` to `flathub/io.zyno.siple` and opens the PR `Update to <version>` against its default branch |
+
+`publish` ends with a notice, not a failure, when `FLATHUB_TOKEN` is unset or `flathub/io.zyno.siple` does not exist yet (before the
+first submission is accepted). It is idempotent: when the default branch already has the files it does nothing; when the branch
+exists with the same files it only makes sure a PR is open; when the branch holds different files (someone pushed to it) it fails
+instead of overwriting. The bot pushes the branch to `flathub/io.zyno.siple` itself, no fork: maintainers can push any branch except
+the protected `master` and `beta`, and Flathub's maintenance guide describes update PRs sent from an external repository with a
+token that has write access to the Flathub repository. The PR body is mechanical (release link, tag, commit).
+
+Run it again or for an older release: Actions > Flathub > Run workflow, **from the tag** (`gh workflow run flathub.yml --ref vX.Y.Z
+-f tag=vX.Y.Z`): the `release` environment serves `v*` tags only, and a dispatch from a branch is a dry run (render and lint only).
+The workflow file must exist at that tag, so it applies to releases after the one that added it.
+
+One-time setup, after `flathub/io.zyno.siple` exists:
+
+1. Bot account `signal24-bot` with 2FA on (Flathub requires it for collaborators).
+2. Write access for it on `flathub/io.zyno.siple`: list it as an additional maintainer in the submission PR, or afterwards open an
+   issue at [flathub/flathub](https://github.com/flathub/flathub/issues) asking the admins to add `signal24-bot` as a collaborator of
+   `flathub/io.zyno.siple` (say it is the upstream release bot and link this workflow; admins decide case by case). As
+   `signal24-bot`, accept the invitation (github.com/notifications or the repository page) within a week.
+3. Token: a **classic** personal access token of `signal24-bot`, scope `public_repo` (add `repo:invite` if the workflow should
+   accept invitations itself). Not a fine-grained token: those are scoped to one resource owner and need that organization's
+   approval, and `flathub/io.zyno.siple` belongs to the `flathub` organization, where the bot is only an outside collaborator.
+   The `public_repo` PAT `signal24-bot` already has for WinGet (`WINGET_TOKEN` in zyno-io/sp2p) can be reused. Give it an expiry and a calendar reminder.
+4. Store it as the secret `FLATHUB_TOKEN` in the **`release` environment** of this repository (Settings > Environments > release),
+   not as a repository secret: like the signing secrets it is then only available to `v*` tag refs.
+5. Check: `gh workflow run flathub.yml --ref main -f tag=vX.Y.Z` is a dry run (render and lint, no token). The first release
+   whose tag contains `flathub.yml` is the first real run.
 
 ### Bumping the pins
 
@@ -296,7 +367,10 @@ the comments in the manifest in the description. Flathub verification needs the 
   fails, see `scripts/flatpak-cargo-sources.sh --self-test`). Its Python dependencies are hash-pinned in
   `scripts/flatpak-cargo-requirements.txt` (regenerate with `uv pip compile --generate-hashes`, see the header of that file).
 - **Build image**: take the new digest of the `freedesktop-<runtime>` tag (`docker buildx imagetools inspect`) and change it in
-  `.github/workflows/flatpak.yml` and `scripts/flatpak-local.sh`.
+  `.github/workflows/flatpak.yml`, `.github/workflows/flathub.yml` and `scripts/flatpak-local.sh`.
+- **minisign** (`.github/workflows/flathub.yml`): download the new `minisign-<v>-linux.tar.gz` and its `.minisig`, verify it with
+  `minisign -Vm minisign-<v>-linux.tar.gz -P RWQf6LRCGA9i53mlYecO4IzT51TGPpvWucNSCh1CBM0QTaLn73Y7GFO3` (the author's key), then set
+  the URL and sha256.
 - **Runtime** (`runtime-version` and the `rust-stable` extension in the manifest): yearly; the linter's `eolruntime` check warns
   when it is time. Keep the build image tag in step.
 
@@ -330,5 +404,5 @@ gh attestation verify SHA256SUMS --repo zyno-io/siple
 
 ## Not covered yet
 
-- Linux packages are not signed beyond checksums + attestations (no `.deb`/`.rpm`/AppImage yet). The Flathub listing is pending (see "Flatpak (Flathub)").
+- Linux packages are not signed beyond checksums + attestations (no `.deb`/`.rpm`/AppImage yet). The Flathub listing is pending (see "Flatpak (Flathub)"); once it is accepted, updates are pull requests opened by `flathub.yml`.
 - The Windows zip is signed inside (exes); the zip itself is covered by `SHA256SUMS` and the attestation.

@@ -1,6 +1,12 @@
 <!-- siple-rename: keep (this file documents the legacy ZynoPhone names on purpose) -->
 # Changelog
 
+## Unreleased
+
+### Dependencies and packaging
+
+- CI opens the Flathub update PR on each release (`.github/workflows/flathub.yml`, once Siple is on Flathub).
+
 ## 0.2.0 (2026-11-21)
 
 Plain-language errors, `siple:` setup links and a Flatpak edition.

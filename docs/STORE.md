@@ -144,6 +144,8 @@ Done:
   (x86_64 and aarch64). `scripts/flathub-manifest.sh` renders the Flathub copy from a release tag (git source, notices
   checked against the signed `SHA256SUMS`). No `x-checker-data` bot or automerge: the checker cannot regenerate
   `cargo-sources.json` or the notices checksum.
+- Updates: `.github/workflows/flathub.yml` opens the update pull request in `flathub/io.zyno.siple` (as `signal24-bot`, secret
+  `FLATHUB_TOKEN` in the `release` environment) when a final release is published; it is a no-op until that repository exists.
 - finish-args: network, IPC, Wayland with X11 fallback, DRI, PulseAudio, the StatusNotifier watcher (tray), notifications
   and the Secret Service.
 - A `flatpak` channel in `crates/siple-config/src/channel.rs` (detected by `/.flatpak-info`): no external programs (as in the
@@ -154,8 +156,18 @@ Done:
 
 Remaining:
 
-- Submit: a pull request against the `new-pr` branch of `flathub/flathub`, then updates through `flathub/io.zyno.siple`.
-- Verified app: `zyno.io/.well-known/org.flathub.VerifiedApps.txt`.
+- Flathub's Generative AI policy: the manifest sent to Flathub must be human-authored (no AI-assisted content, disclosure does
+  not exempt it), the submission PR and its text must not be AI-written, and AI-generated material in the app must be
+  disclosed. Decide how to meet this before submitting
+  ([RELEASING.md](RELEASING.md#flathub-policy-constraints)).
+- Development history: the public history starts at 0.1.0 (2026-11-15); Flathub generally rejects very new apps, exceptions
+  case by case.
+- Submit: a pull request against the `new-pr` branch of `flathub/flathub`, by hand
+  ([RELEASING.md](RELEASING.md#first-submission-by-hand)). List `signal24-bot` as an additional maintainer.
+- After acceptance: write access for `signal24-bot` on `flathub/io.zyno.siple` and the `FLATHUB_TOKEN` secret
+  ([RELEASING.md](RELEASING.md#flathub-update-pull-requests-flathubyml)).
+- Verified app, after it is published: the Developer Portal's token at `zyno.io/.well-known/org.flathub.VerifiedApps.txt`
+  (or a TXT record at `_flathub.zyno.io`).
 - Once on Flathub, the Flatpak lifts the tarball's glibc 2.36 floor (Ubuntu 22.04).
 
 ## Where agents find `siple-cli`, per edition
