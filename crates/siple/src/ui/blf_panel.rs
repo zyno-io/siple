@@ -17,7 +17,7 @@ use super::{
     truncate_galley,
 };
 use crate::snapshot::{
-    blf_dialog_lines, blf_health_lines, blf_state_text, blf_title, format_duration,
+    blf_dialog_lines, blf_health_lines, blf_state_text, blf_time_lines, blf_title, format_duration,
 };
 use crate::theme::{
     self, FS_BODY, FS_MICRO, FS_SMALL, Palette, R_LG, R_MD, R_SM, SP_S, Tone, icon as ic,
@@ -1094,6 +1094,7 @@ fn finish(
     let mut tip = vec![format!("{} ({})", b.uri, b.account), state];
     tip.extend(blf_dialog_lines(b));
     tip.extend(blf_health_lines(b));
+    tip.extend(blf_time_lines(b));
     tip.push(
         if b.pickup_offered()
             && snap.ui.blf_click_ringing == BlfClickRinging::Pickup

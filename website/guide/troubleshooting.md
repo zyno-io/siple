@@ -124,8 +124,8 @@ What to do:
 Siple keeps an application log and, for each account, a SIP trace. The SIP trace shows every message sent to and from your
 server.
 
-1. Select **Log** at the bottom of the window to read recent log lines in place.
-2. Select **Open logs** to open the log folder. The same button is under **Settings › Logging & privacy**.
+1. Select **Log** at the bottom of the window to read recent log lines in place (turn on **Settings › Developer › Show developer tools** first).
+2. Select **Open logs** to open the log folder. The same button is under **Settings › Logging & privacy**; the one at the bottom of the window needs **Show developer tools**.
 3. To get more detail, change **Log level** under **Settings › Logging & privacy** (for example to **Debug**). Change it back
    afterwards.
 4. Send the files with your report. To report a problem, open an issue on

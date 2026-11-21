@@ -7,7 +7,9 @@ use siple_core::update::UpdateAction;
 use siple_sip::AccountStatus;
 
 use super::{Cx, LayoutMode, UiAction, UiState, reg_pill_label, reg_tone, rpc, short_time};
-use crate::snapshot::{ConfigErrorView, RegClass, mwi_label, reg_class, reg_label, reg_tooltip};
+use crate::snapshot::{
+    ConfigErrorView, RegClass, mwi_label, reg_class, reg_label, reg_time_lines, reg_tooltip,
+};
 use crate::theme::{
     self, FS_BODY, FS_MICRO, FS_SMALL, FS_TITLE, Palette, R_LG, R_MD, SP_XS, icon as ic,
 };
@@ -528,9 +530,14 @@ fn account_chip(
         if a.dnd { ", do not disturb" } else { "" }
     );
     resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, label.clone()));
+    let mut tip = label;
+    for l in reg_time_lines(a) {
+        tip.push('\n');
+        tip.push_str(&l);
+    }
     let resp = resp
         .on_hover_cursor(egui::CursorIcon::PointingHand)
-        .on_hover_text(label);
+        .on_hover_text(tip);
     egui::Popup::from_toggle_button_response(&resp)
         .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
         .show(|ui| account_menu(ui, cx, a, out));

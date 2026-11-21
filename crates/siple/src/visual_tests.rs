@@ -119,6 +119,8 @@ pub(crate) fn blf(uri: &str, label: &str, state: BlfState) -> BlfStatus {
             last_code: (state == BlfState::Failed).then_some(404),
             last_reason: (state == BlfState::Failed).then(|| "Not Found".to_string()),
             expires_at: None,
+            subscribed_at: None,
+            last_refreshed_at: None,
             retry_at: None,
         },
         stale: false,
