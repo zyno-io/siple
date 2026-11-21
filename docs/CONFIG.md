@@ -21,11 +21,16 @@ Store editions keep their data somewhere else, fixed by the OS sandbox or packag
 |---|---|
 | Mac App Store | `~/Library/Group Containers/VUDU4KEQ99.io.zyno.siple/Siple/` (the app group shared with the bundled CLI; the real home from the account database, never the sandbox `$HOME`) |
 | Microsoft Store (MSIX) | `%LOCALAPPDATA%\Packages\<package family name>\LocalState\Siple\` |
+| Flatpak (Flathub) | `~/.var/app/io.zyno.siple/config/siple/` (Flatpak's per-app `$XDG_CONFIG_HOME`; the same path inside the sandbox and on the host) |
 
 In the Mac App Store edition the control socket is `control.sock` in that directory; if the path would be too
 long for a unix socket it falls back to `s.sock` in the group container (never a temporary directory), and
-`[control] tcp_listen` is the way out when even that is too long. `status.build.channel` (`direct`, `mas`,
-`msix`) tells which edition is running.
+`[control] tcp_listen` is the way out when even that is too long. In the Flatpak edition the control socket is also
+`control.sock` there; for a too-long path the fallback is `$XDG_RUNTIME_DIR/app/io.zyno.siple/` (shared by every instance
+of the app and the host, never the sandbox's private `/tmp`). The sandbox sees only its own directory: files Siple reads
+(TLS files, `file:` audio) must be inside `~/.var/app/io.zyno.siple/`, or granted with
+`flatpak override --user --filesystem=/path:ro io.zyno.siple`. `status.build.channel` (`direct`, `mas`, `msix`,
+`flatpak`) tells which edition is running.
 
 Override with `--config PATH` (both binaries; also for `ctl`/`events`/`mcp`) or the `SIPLE_CONFIG` environment variable (handy with `docker exec`). Lock file, `runtime.json`, `state.toml`, the default control
 socket and the default log directory all live next to the config file, so different `--config` directories are
@@ -224,7 +229,7 @@ Desktop shell notes (tray, links, login item):
 
 - **Tray / close-to-tray.** With `tray = true` and `close_to_tray = true` closing the window hides it; only the tray menu's *Quit* (or Cmd+Q on macOS, Ctrl+Q on Windows / Linux, SIGTERM) exits. While hidden there is no Dock icon (macOS, `hide_from_taskbar`) and no taskbar button (Windows, Linux). `hide_from_taskbar = false` keeps the Dock icon on macOS and minimizes to the taskbar elsewhere. `tray = false` makes close quit. On Linux the tray is a StatusNotifierItem (KDE, XFCE, GNOME with the AppIndicator extension); without a host, closing minimizes instead so the app stays reachable. On Wayland sessions the window cannot be unmapped (winit limitation), so closing minimizes there too and `start_hidden` has no effect; start it under XWayland for full hide-to-tray: `env -u WAYLAND_DISPLAY -u WAYLAND_SOCKET siple` (winit uses Wayland whenever either variable is set).
 - **Links.** `sip:`, `sips:`, `tel:` and `callto:` links put the number in the dial field and raise the window; they never dial. `siple:provision` setup links open a review screen and change nothing until the user continues, types the password and tests the account (see [setup links guide](../website/guide/setup-links.md)). A second `siple <link>` hands the link to the running instance. Windows: Siple registers itself under HKCU as a candidate for `sip`, `sips`, `tel` and `callto` (choose it in Settings > Default apps) and registers `siple` directly, since nothing else claims it; `handle_links = false` removes both registrations. macOS and Linux register links through the app bundle / `.desktop` file at install time (Linux: `xdg-mime default io.zyno.siple.desktop x-scheme-handler/sip`, and likewise for `sips`, `tel`, `callto` and `siple`), so the key has no runtime effect there.
-- **Launch at login.** `launch_at_login = true` writes `~/Library/LaunchAgents/io.zyno.siple.plist` (macOS), `HKCU\...\Run` (Windows) or `~/.config/autostart/io.zyno.siple.desktop` (Linux) for the running executable; `false` removes it. A non-default `--config` profile has its own entry (the id plus a short hash of the config path) that starts that profile, so profiles never touch each other's entry. Pair with `start_hidden = true`. In the Mac App Store and Microsoft Store editions both `handle_links` and `launch_at_login` are no-ops (logged at info): the package manifest declares the links, and MSIX users switch the startup task on in Windows Settings > Apps > Startup.
+- **Launch at login.** `launch_at_login = true` writes `~/Library/LaunchAgents/io.zyno.siple.plist` (macOS), `HKCU\...\Run` (Windows) or `~/.config/autostart/io.zyno.siple.desktop` (Linux) for the running executable; `false` removes it. A non-default `--config` profile has its own entry (the id plus a short hash of the config path) that starts that profile, so profiles never touch each other's entry. Pair with `start_hidden = true`. In the Mac App Store and Microsoft Store editions both `handle_links` and `launch_at_login` are no-ops (logged at info): the package manifest declares the links, and MSIX users switch the startup task on in Windows Settings > Apps > Startup. In the Flatpak edition `launch_at_login` goes through the desktop's Background portal: the desktop may ask once, the portal writes `~/.config/autostart/io.zyno.siple.desktop` on the host (`flatpak run --command=siple io.zyno.siple`), there is one entry for the app (so the profile that enabled it last wins), and `false` removes it if this profile registered it; a start with the default `false` asks nothing. `handle_links` is a no-op there, as on the Linux tarball.
 - **Notifications.** Incoming (with Answer / Decline on Linux), missed calls and transfer results appear while the window is not focused. macOS needs the signed app bundle (an unbundled binary logs once and skips them). The control API can show or hide the window (`ui.show`, `ui.hide`, `ui.state`, `ui.attention`, `app.open_uri`) when a GUI runs.
 
 `[ui.shortcuts]` maps an action name to a key chord such as `answer = "Mod+Shift+A"`; actions not listed keep their defaults. **Hot** (read every frame; Settings > Shortcuts shows the chord in effect). An unknown action name or a malformed chord is a config error.
@@ -250,7 +255,7 @@ Typing: digits, `*` and `#` send DTMF while the stage shows an Active line and n
 
 Optional external text-to-speech and speech-to-text commands, used by `call.say`, `call.listen{transcribe}` and
 `speech.*`. **Hot** (each job snapshots the section when it starts). Off by default; nothing is bundled.
-The Mac App Store edition cannot run external commands: the section is still accepted (with a warning in the log),
+The Mac App Store and Flatpak editions cannot run external commands: the section is still accepted (with a warning in the log),
 but those methods fail with `unsupported` and Settings shows "not available in this edition".
 
 | Option | Type | Default | Description |
@@ -293,6 +298,7 @@ What is sent, by edition:
 - **Microsoft Store**: Siple asks Windows' Store service whether an update of its own package is waiting. Windows contacts Microsoft as
   it does for the Store's own updates; Siple adds nothing and sends no request of its own. The Store does not name a version, so the
   pill reads "Update". A copy that was not installed from the Store (sideloaded) does not check.
+- **Flatpak**: nothing. Flatpak updates Siple from Flathub (`disabled_reason: managed_by_flatpak`).
 
 Nothing else is sent: no identifier, account, install ID or usage data, and no cookies. Failures (offline, rate limited, odd
 answer) are logged and shown in Settings; they never raise a dialog. API: `app.update_status` (with `source`, `action`, `store_url`,
@@ -336,7 +342,7 @@ In-place install is **not possible**, and the offer opens the release page with 
 installed with a package manager (Homebrew, winget, Scoop, Chocolatey, Nix), in Program Files or `/usr` or another folder your
 user cannot write, owned by another user, run as root, run from a disk image or a quarantined download (macOS), in a container,
 Flatpak, Snap or AppImage, headless (no window to restart into), a development build, or `install = false`. Siple never asks for
-administrator rights. The Mac App Store and Microsoft Store editions contain no downloader or installer: `app.install_update`
+administrator rights. The Mac App Store, Microsoft Store and Flatpak editions contain no downloader or installer: `app.install_update`
 answers `unsupported` there.
 
 ## `[[account]]`

@@ -972,6 +972,7 @@ mod tests {
         assert!(msg.contains("Developer ID") && msg.contains("Homebrew"));
         assert!(run_refusal(&Channel::DIRECT).is_none());
         assert!(run_refusal(&Channel::msix("a_b", None)).is_none());
+        assert!(run_refusal(&Channel::FLATPAK).is_none());
     }
     use clap::CommandFactory;
 

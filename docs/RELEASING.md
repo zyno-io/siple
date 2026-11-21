@@ -30,6 +30,9 @@ no secrets, signs nothing and publishes nothing. A tag without all secrets below
 | `windows-sign` | windows | `release` env | per arch: Azure Artifact Signing of `siple.exe` + `siple-cli.exe`, verify, then zip |
 | `release` | ubuntu | `release` env | `SHA256SUMS`, attestations, `gh release create --draft` |
 
+`flatpak.yml` (no secrets) is a separate run, like `store.yml`: it builds, lints and smoke-tests the Flatpak bundles as workflow
+artifacts and never blocks `release.yml`. See "Flatpak (Flathub)".
+
 Secrets are only in jobs that never run `cargo` (a malicious build script cannot read them). macOS is signed on a
 macOS runner because the bundle is built there, `rcodesign` runs natively, and `hdiutil` (dmg) and `xcrun stapler` /
 `spctl` (verification) need macOS.
@@ -93,7 +96,8 @@ A tag for another version is ignored. Packaging scripts need no change.
 
 Where the update check looks is decided at run time from how the process was installed (`[updates]` in `docs/CONFIG.md`; detection
 only): direct-download builds read the GitHub releases list, the Mac App Store edition asks Apple's lookup of its listing, the
-Microsoft Store edition asks Windows' Store service. Releases that should be offered on GitHub must be **published** (drafts are
+Microsoft Store edition asks Windows' Store service; the Flatpak is a store build (`--features store`) that makes no check at all
+(Flatpak updates it, `disabled_reason: managed_by_flatpak`). Releases that should be offered on GitHub must be **published** (drafts are
 skipped), tagged `v<semver>`; release candidates `v<semver>-rc.N` are marked as GitHub pre-releases and are only offered to users on the
 `prerelease` channel (the default for someone already running a release candidate).
 
@@ -245,6 +249,57 @@ so TestFlight builds do not wait at "Missing Compliance".
 
 What is left before the store editions are listed: [STORE.md](STORE.md).
 
+## Flatpak (Flathub)
+
+`.github/workflows/flatpak.yml` runs on `v*` tags, on `workflow_dispatch`, weekly (runtime, Rust extension and linter drift) and on
+pull requests that touch the packaging files. It is its own run (it never blocks `release.yml`) and has no secrets. It builds
+`packaging/flatpak/io.zyno.siple.yml` on x86_64 and aarch64 natively, inside Flathub's build image
+(`ghcr.io/flathub-infra/flatpak-github-actions:freedesktop-26.08`, pinned by digest), like Flathub does (screenshot mirroring;
+without `--sandbox`, which refuses the manifest's local `type: dir` source: the Flathub-rendered manifest uses a git source and
+builds with it), with `--features store`. It runs `desktop-file-validate`, `appstreamcli validate`, `flatpak-builder-lint`
+on the manifest and the repo, checks that the binaries carry no updater markers, and smoke-tests the bundle in the container.
+
+Output is **workflow artifacts only**: `flatpak-x86_64` and `flatpak-aarch64` (`Siple-<version>-<arch>.flatpak`, for test installs
+with `flatpak install --user ./Siple-*.flatpak`) and `flatpak-sources`. A bundle never updates itself, so it is never attached to
+a release and is not part of the updater's asset contract.
+
+Local build, on a Linux host with docker (no flatpak needed; everything runs in containers):
+
+```sh
+scripts/flatpak-local.sh            # cargo-sources.json, notices, build, lint, smoke test -> dist/flatpak/
+scripts/flatpak-local.sh --clean    # remove flatpak-work/, dist/flatpak/ and the docker volume
+```
+
+The notices need `cargo-about` on the host; without it the local build uses a placeholder.
+
+### Release checklist
+
+1. When `CHANGELOG.md` gets the version heading, add the `<release version="X.Y.Z" date="YYYY-MM-DD">` entry (newest first) to
+   `packaging/linux/io.zyno.siple.metainfo.xml`. CI enforces it (`scripts/flatpak-check-release.sh`); the screenshot URLs there point
+   at the goldens of an earlier tag and stay valid.
+2. After the GitHub Release is published, run `scripts/flathub-manifest.sh vX.Y.Z`. It writes `dist/flathub/io.zyno.siple.yml` (git
+   `tag` + `commit` source, the notices from the release with the sha256 of the signed `SHA256SUMS`) and `cargo-sources.json`
+   (regenerated from the tag's `Cargo.lock`). Open a pull request with both in `flathub/io.zyno.siple`. The script needs `minisign`
+   to verify the release's `SHA256SUMS` signature and fails without it; `--no-verify` skips that check with a loud warning (the
+   notices checksum is then unauthenticated: never submit such output).
+
+The first submission is a pull request against the `new-pr` branch of `flathub/flathub`, with the finish-args justifications from
+the comments in the manifest in the description. Flathub verification needs the token Flathub gives published at
+`https://zyno.io/.well-known/org.flathub.VerifiedApps.txt`. Release candidates are not for Flathub stable. There is no
+`x-checker-data` or automerge: the checker cannot regenerate `cargo-sources.json` or the notices checksum.
+
+### Bumping the pins
+
+- **Generator** (`scripts/flatpak-cargo-sources.sh`): choose a commit of `flatpak/flatpak-builder-tools`, read
+  `cargo/flatpak-cargo-generator.py` there, then set `GEN_COMMIT` and `GEN_SHA256` (`shasum -a 256`). The script verifies the
+  generated sources against `Cargo.lock` crate by crate (archives, per-crate checksum files and the cargo config; anything else
+  fails, see `scripts/flatpak-cargo-sources.sh --self-test`). Its Python dependencies are hash-pinned in
+  `scripts/flatpak-cargo-requirements.txt` (regenerate with `uv pip compile --generate-hashes`, see the header of that file).
+- **Build image**: take the new digest of the `freedesktop-<runtime>` tag (`docker buildx imagetools inspect`) and change it in
+  `.github/workflows/flatpak.yml` and `scripts/flatpak-local.sh`.
+- **Runtime** (`runtime-version` and the `rust-stable` extension in the manifest): yearly; the linter's `eolruntime` check warns
+  when it is time. Keep the build image tag in step.
+
 ## Verify a download
 
 macOS:
@@ -275,5 +330,5 @@ gh attestation verify SHA256SUMS --repo zyno-io/siple
 
 ## Not covered yet
 
-- Linux packages are not signed beyond checksums + attestations (no `.deb`/`.rpm`/AppImage yet).
+- Linux packages are not signed beyond checksums + attestations (no `.deb`/`.rpm`/AppImage yet). The Flathub listing is pending (see "Flatpak (Flathub)").
 - The Windows zip is signed inside (exes); the zip itself is covered by `SHA256SUMS` and the attestation.

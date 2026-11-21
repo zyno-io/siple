@@ -42,6 +42,7 @@ In one file, `config.toml`, in your user folder:
 | macOS | `~/Library/Application Support/Siple/config.toml` |
 | Windows | `%APPDATA%\Siple\config.toml` |
 | Linux | `$XDG_CONFIG_HOME/siple/config.toml` |
+| Linux (Flatpak) | `~/.var/app/io.zyno.siple/config/siple/config.toml` |
 
 Choose **Open config** in **Settings › Advanced** to open it (or at the bottom of the window, after turning on **Settings › Developer › Show developer tools**). The settings pages and the file change the same thing, and
 Siple picks up edits while it runs. For everything in the file, see the

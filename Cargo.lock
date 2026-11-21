@@ -4790,6 +4790,7 @@ dependencies = [
  "dirs",
  "eframe",
  "egui_kittest",
+ "futures-util",
  "ksni",
  "libc",
  "notify-rust",
@@ -4809,6 +4810,7 @@ dependencies = [
  "winit",
  "winreg",
  "winresource",
+ "zbus 5.19.0",
 ]
 
 [[package]]

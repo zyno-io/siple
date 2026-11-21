@@ -37,6 +37,13 @@ then restart Claude Desktop:
 
 Any client that can launch a stdio command works: the command is `siple-cli` and the argument is `mcp`.
 
+The Flatpak edition has no `siple-cli` on your `PATH`; the command is `flatpak run` with `--command=siple-cli io.zyno.siple mcp`
+as its arguments:
+
+```sh
+claude mcp add siple -- flatpak run --command=siple-cli io.zyno.siple mcp
+```
+
 ## A non-default instance
 
 `siple-cli mcp` finds the instance through `runtime.json` in the config directory. For an instance started with another config,

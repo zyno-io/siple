@@ -8,7 +8,7 @@ license.workspace = true
 publish.workspace = true
 
 [features]
-# Store builds (Mac App Store, Microsoft Store): no GitHub update source (the store check and its
+# Store builds (Mac App Store, Microsoft Store, Flatpak): no GitHub update source (the store check and its
 # store-link offer stay). See docs/RELEASING.md.
 store = ["siple-core/store"]
 
@@ -35,6 +35,10 @@ egui_kittest = { version = "0.35", features = ["wgpu", "snapshot", "eframe"] }
 [target.'cfg(target_os = "linux")'.dependencies]
 winit = { version = "0.30", default-features = false, features = ["wayland-dlopen", "wayland-csd-adwaita-notitle"] }
 notify-rust = { version = "4", default-features = false, features = ["z"] }
+# Background portal (Flatpak launch at login). Both are already in Cargo.lock (zbus 5.19 via ksni / secret-service,
+# futures-util via ksni): no new crates, so cargo-sources.json and cargo-deny are unaffected.
+zbus = { version = "5", default-features = false, features = ["tokio"] }
+futures-util = { version = "0.3", default-features = false }
 
 # Tray icon + native menus (NSStatusItem / Shell_NotifyIcon). Not used on Linux: its tray backend
 # links GTK + libappindicator, which breaks the "no GUI libraries linked" rule; Linux uses ksni

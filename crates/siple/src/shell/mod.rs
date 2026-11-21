@@ -21,6 +21,8 @@ mod macos;
 #[cfg(target_os = "macos")]
 mod macos_notify;
 #[cfg(target_os = "linux")]
+mod portal_background;
+#[cfg(target_os = "linux")]
 mod tray_linux;
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 mod tray_native;
@@ -249,19 +251,20 @@ enum TrayBackend {
 /// Login-item / link-registration work, run in order by one thread so quick toggles cannot
 /// interleave (the last request always lands last).
 enum OsJob {
-    LaunchAtLogin(bool, Option<std::path::PathBuf>),
+    /// (enabled, `--config` of a non-default profile, the profile's config dir)
+    LaunchAtLogin(bool, Option<std::path::PathBuf>, std::path::PathBuf),
     Links(bool),
 }
 
-fn os_worker() -> Sender<OsJob> {
+fn os_worker(rt: tokio::runtime::Handle) -> Sender<OsJob> {
     let (tx, rx) = channel::<OsJob>();
     let _ = std::thread::Builder::new()
         .name("siple-os-entries".into())
         .spawn(move || {
             while let Ok(job) = rx.recv() {
                 match job {
-                    OsJob::LaunchAtLogin(on, config) => {
-                        match autostart::apply(on, config.as_deref()) {
+                    OsJob::LaunchAtLogin(on, config, dir) => {
+                        match autostart::apply(on, config.as_deref(), &dir, &rt) {
                             Ok(()) => tracing::info!(enabled = on, "launch at login updated"),
                             Err(e) => tracing::warn!("cannot update launch at login: {e}"),
                         }
@@ -370,7 +373,7 @@ impl Shell {
             status,
             limiter,
             config_arg,
-            os_jobs: os_worker(),
+            os_jobs: os_worker(rt.clone()),
             tracker: EventTracker::default(),
             visible: true,
             dock_dropped: false,
@@ -580,6 +583,7 @@ impl Shell {
             let _ = self.os_jobs.send(OsJob::LaunchAtLogin(
                 ui.launch_at_login,
                 self.config_arg.clone(),
+                self.config_dir.clone(),
             ));
         }
         if self.applied_links != Some(ui.handle_links) {
