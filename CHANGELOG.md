@@ -1,6 +1,14 @@
 <!-- siple-rename: keep (this file documents the legacy ZynoPhone names on purpose) -->
 # Changelog
 
+## Unreleased
+
+- Developer tools (`[ui] developer_tools`, **Settings › Developer**) now gate the footer **Log**, **Open logs** and **Open config**
+  buttons. The Settings pages, the account menu and the config-error banner keep their own Open config / Open logs buttons.
+- The account button's tooltip shows when it registered, the last renewal and when the registration expires. BLF key tooltips
+  show when the subscription was confirmed, the last refresh and its expiry.
+- API: `blf.list` `subscription` carries `subscribed_at` and `last_refreshed_at`.
+
 ## 0.1.2 (2026-11-19)
 
 - Store editions now tell you about updates. The Mac App Store edition asks Apple's public lookup of Siple's listing about

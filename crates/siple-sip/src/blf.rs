@@ -510,6 +510,14 @@ pub struct BlfSubscription {
     pub last_reason: Option<String>,
     /// When the subscription lapses unless refreshed.
     pub expires_at: Option<DateTime<Utc>>,
+    /// When the current subscription was first confirmed, i.e. the first 2xx to SUBSCRIBE of its
+    /// dialog. In-dialog refreshes keep it; a failure, a termination, a rebuild or a new dialog
+    /// (resubscribe, including after a 481 to a refresh) resets it, and the next 2xx sets it
+    /// again. `None` while nothing is confirmed.
+    pub subscribed_at: Option<DateTime<Utc>>,
+    /// When a SUBSCRIBE (initial or refresh) last succeeded (2xx) for the current subscription.
+    /// Reset together with `subscribed_at`, so it is `None` after a failure too.
+    pub last_refreshed_at: Option<DateTime<Utc>>,
     /// When the next attempt happens (`retrying` only).
     pub retry_at: Option<DateTime<Utc>>,
 }
@@ -878,6 +886,8 @@ mod tests {
             last_code: None,
             last_reason: None,
             expires_at: expires_in.map(|s| Utc::now() + chrono::Duration::seconds(s)),
+            subscribed_at: None,
+            last_refreshed_at: None,
             retry_at: None,
         }
     }

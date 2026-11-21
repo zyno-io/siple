@@ -428,7 +428,10 @@ pub(super) fn advanced(ui: &mut egui::Ui, cx: &Cx, st: &mut UiState, out: &mut V
                 info_row(ui, p, &a.id, &set.join(", "));
             }
         }
-        if small_button(ui, p, "Open config", true).clicked() {
+        if small_button(ui, p, "Open config", true)
+            .on_hover_text(cx.vm.config_path.display().to_string())
+            .clicked()
+        {
             out.push(UiAction::OpenConfig);
         }
     });
@@ -711,7 +714,7 @@ pub(super) fn developer(ui: &mut egui::Ui, cx: &Cx, out: &mut Vec<UiAction>) {
             "ui",
             "developer_tools",
             "Show developer tools",
-            "",
+            "Show the log pane and the Open config / Open logs buttons in the footer",
             &v,
         );
         ui.horizontal(|ui| {

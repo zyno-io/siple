@@ -41,7 +41,7 @@ Pressing <Keys combo="Esc" /> only closes popovers and the transfer panel. It ne
 
 **Settings › Shortcuts** lists every shortcut and marks the ones you changed as **(custom)**. It also lists **Shortcut
 problems**, such as two actions sharing one key. To change a key, edit `config.toml`: choose **Open config** in
-**Settings › Advanced**, or in the bar at the bottom of the window. Changes apply while Siple runs.
+**Settings › Advanced**, or in the bar at the bottom of the window (turn on **Settings › Developer › Show developer tools**). Changes apply while Siple runs.
 
 ::: details In config.toml
 Override any action in `[ui.shortcuts]`, using the action names from the tables above:

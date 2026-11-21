@@ -218,7 +218,7 @@ each key as the matching feature arrives. A key you leave out keeps its default.
 | `notifications` | bool | `true` | Desktop notifications. |
 | `handle_links` | bool | `true` | Handle `sip:`, `sips:`, `tel:` and `callto:` links. |
 | `launch_at_login` | bool | `false` | Start Siple when you log in (macOS LaunchAgent, Windows `Run` key, Linux XDG autostart). Combine with `start_hidden = true` to start in the tray. |
-| `developer_tools` | bool | `false` | Show developer tools in the GUI. The control API and MCP stay on either way. |
+| `developer_tools` | bool | `false` | Show the Log pane and the Open logs / Open config buttons in the window footer. The control API and MCP stay on either way. |
 
 Desktop shell notes (tray, links, login item):
 
@@ -522,8 +522,8 @@ pickup_target = ""      # optional: dial this instead of <prefix><ext>
 
 ### BLF subscription health
 
-`blf.list` (and `status`) report per entry `subscription {phase, last_code, last_reason, expires_at, retry_at}` and
-`stale`. `phase` is `pending`, `active`, `retrying` (an attempt is scheduled at `retry_at`) or `failed` (refused for
+`blf.list` (and `status`) report per entry `subscription {phase, last_code, last_reason, expires_at, subscribed_at, last_refreshed_at, retry_at}` and
+`stale`. `subscribed_at` is when the current subscription was first confirmed (a 2xx to SUBSCRIBE); refreshes keep it, while a failure, a termination or a new dialog (resubscribe, also after a 481 to a refresh) resets it. `last_refreshed_at` is the last 2xx SUBSCRIBE of that dialog; both are `null` until confirmed and after a failure. `phase` is `pending`, `active`, `retrying` (an attempt is scheduled at `retry_at`) or `failed` (refused for
 good, `last_code` is the SIP status). `stale` is true while retrying (the last known `state` stays and `retry_at` says when the next attempt runs) and when neither a NOTIFY nor a refresh arrived
 within 30 s after `expires_at`; the last known `state` is kept. With many entries consider a longer `blf_expires`: each
 entry is its own SUBSCRIBE dialog.

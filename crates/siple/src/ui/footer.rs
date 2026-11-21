@@ -41,6 +41,12 @@ pub(super) fn show(ui: &mut egui::Ui, cx: &Cx, st: &mut UiState, out: &mut Vec<U
     let p = cx.p;
     let vm = cx.vm;
     ui.spacing_mut().item_spacing.y = SP_XS;
+    let dev = vm.snap.ui.developer_tools;
+    if !dev && st.show_logs {
+        // Developer tools went off while the pane was open: close it and stop log capture.
+        st.show_logs = false;
+        out.push(UiAction::LogsVisible(false));
+    }
     if let Some(n) = vm.notice {
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 6.0;
@@ -75,29 +81,31 @@ pub(super) fn show(ui: &mut egui::Ui, cx: &Cx, st: &mut UiState, out: &mut Vec<U
         ui.spacing_mut().item_spacing.x = 2.0;
         // Right-to-left so the buttons keep their size and the status text truncates.
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            let log_btn = egui::Button::new((
-                icon(ic::TERMINAL_WINDOW, FS_ICON).color(if st.show_logs {
-                    p.accent
-                } else {
-                    p.muted
-                }),
-                RichText::new("Log").size(FS_SMALL).color(p.text),
-            ))
-            .selected(st.show_logs)
-            .frame_when_inactive(st.show_logs)
-            .corner_radius(CornerRadius::same(R_MD));
-            if ui.add(log_btn).clicked() {
-                st.show_logs = !st.show_logs;
-                out.push(UiAction::LogsVisible(st.show_logs));
-            }
-            if vm.has_log_dir && ghost_button(ui, p, ic::FOLDER_OPEN, "Open logs").clicked() {
-                out.push(UiAction::OpenLogs);
-            }
-            if ghost_button(ui, p, ic::FILE_TEXT, "Open config")
-                .on_hover_text(vm.config_path.display().to_string())
-                .clicked()
-            {
-                out.push(UiAction::OpenConfig);
+            if dev {
+                let log_btn = egui::Button::new((
+                    icon(ic::TERMINAL_WINDOW, FS_ICON).color(if st.show_logs {
+                        p.accent
+                    } else {
+                        p.muted
+                    }),
+                    RichText::new("Log").size(FS_SMALL).color(p.text),
+                ))
+                .selected(st.show_logs)
+                .frame_when_inactive(st.show_logs)
+                .corner_radius(CornerRadius::same(R_MD));
+                if ui.add(log_btn).clicked() {
+                    st.show_logs = !st.show_logs;
+                    out.push(UiAction::LogsVisible(st.show_logs));
+                }
+                if vm.has_log_dir && ghost_button(ui, p, ic::FOLDER_OPEN, "Open logs").clicked() {
+                    out.push(UiAction::OpenLogs);
+                }
+                if ghost_button(ui, p, ic::FILE_TEXT, "Open config")
+                    .on_hover_text(vm.config_path.display().to_string())
+                    .clicked()
+                {
+                    out.push(UiAction::OpenConfig);
+                }
             }
             let audio_btn = egui::Button::new((
                 icon(ic::SPEAKER_HIGH, FS_ICON).color(if st.audio_open {
