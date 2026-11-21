@@ -1,4 +1,4 @@
-//! Regression tests for the Phase 1-4 review findings (runtime leaks, unregister races, flow
+//! Regression tests for review findings (runtime leaks, unregister races, flow
 //! loss, Contact parsing, disable with calls, SNI scope, hot User-Agent, tls_fingerprint, ...).
 //! No PBX: peer-mode accounts over loopback and a scripted fake registrar.
 

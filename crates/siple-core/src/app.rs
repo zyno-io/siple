@@ -428,7 +428,7 @@ impl Inner {
     }
 
     /// Writes a device choice into `[audio]` of the config file through the ConfigActor, which
-    /// reloads and applies it (D3: the config is the only home of settings).
+    /// reloads and applies it (the config is the only home of settings).
     pub(crate) async fn set_user_devices(
         &self,
         sel: &PartialSelection,

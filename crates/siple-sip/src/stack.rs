@@ -751,7 +751,7 @@ impl SipStack {
         self.send(id, Cmd::SetTrace(on))
     }
 
-    /// Tells the account how many calls are active (Phase 5 hook): rebuilds deferred by
+    /// Tells the account how many calls are active: rebuilds deferred by
     /// [`UpdateOutcome::RebuildDeferred`] run when this drops to zero.
     pub fn set_active_calls(&self, id: &str, calls: usize) -> Result<()> {
         self.send(id, Cmd::CallsChanged(calls))

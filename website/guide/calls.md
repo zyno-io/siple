@@ -24,7 +24,7 @@ An incoming call shows three buttons:
 - **Answer** picks up. Keyboard: <Keys combo="Mod+Shift+A" />.
 - **Reject** turns the caller away. It is called **Decline** while another call is live (see
   [Answer a second call](#answer-a-second-call)).
-- **Silence** hides the ringing banner. The call keeps ringing until it is answered, declined or ends.
+- **Silence** marks the banner "Silenced". It does not stop the ringtone yet; the call keeps ringing until it is answered, declined or ends.
 
 A call you did not answer is listed as **Missed**, with a **Call back** button.
 

@@ -35,7 +35,7 @@ ENTRYPOINT ["/usr/bin/tini","--","siple-cli"]
 CMD ["run","--headless","--no-audio"]
 HEALTHCHECK --interval=10s --start-period=10s --start-interval=1s --timeout=5s CMD ["siple-cli","ctl","ping"]
 
-# Optional (B6 speech hooks; user-built, never published):
+# Optional (speech hooks; user-built, never published):
 #   docker build --target speech -t siple:speech -f packaging/linux/Dockerfile .
 # = runtime + espeak-ng (apt) + whisper.cpp built from a pinned tag + the ggml-base.en model.
 FROM build-env AS whisper-build

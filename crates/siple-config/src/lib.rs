@@ -1677,7 +1677,7 @@ session_timers = false
         assert_eq!(c.ui.shortcuts["answer"], "Mod+Shift+A");
         assert_eq!(c.calls.decline_code, 603);
         assert!(c.logging.redact_credentials);
-        // Defaults per plan 4.5.
+        // Defaults as documented in docs/CONFIG.md, [ui].
         let d = UiConfig::default();
         assert_eq!(d.blf_click, BlfClick::Dial);
         assert_eq!(d.blf_click_in_call, BlfClickInCall::Menu);

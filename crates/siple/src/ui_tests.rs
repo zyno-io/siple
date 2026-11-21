@@ -1097,7 +1097,7 @@ fn clicking_the_other_leg_in_a_consult_swaps_the_session() {
 
 // ---- BLF --------------------------------------------------------------------------------------
 
-/// D5: a click on a BLF key places a call to it on its owning account (`blf.dial`); the dial box
+/// A click on a BLF key places a call to it on its owning account (`blf.dial`); the dial box
 /// is left alone.
 #[test]
 fn blf_click_dials_the_key_on_its_owning_account() {
@@ -1141,7 +1141,7 @@ fn blf_click_prefill_fills_the_dial_field_instead() {
     assert_eq!(h.state().ui.dial_account.as_deref(), Some("desk-1001"));
 }
 
-/// D7: a ringing key whose pickup is configured picks up (key or "Pick up" button); every other
+/// A ringing key whose pickup is configured picks up (key or "Pick up" button); every other
 /// key still dials. `blf_click_ringing = "call"` makes the key itself dial.
 #[test]
 fn ringing_blf_with_pickup_configured_picks_up() {

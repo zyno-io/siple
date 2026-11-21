@@ -44,8 +44,6 @@ is listed in that file.
 
 ## Secrets (environment `release`)
 
-Same names and formats as `sp2p`, so the same values work if the owner allows reuse (see open questions in the PR).
-
 | Secret | Value |
 | --- | --- |
 | `APPLE_CERTIFICATE_P12` | base64 of the "Developer ID Application" certificate + private key, exported as `.p12` |
@@ -240,14 +238,12 @@ produce a Store-eligible bundle for a first Partner Center certification test.
 | `scripts/install-test.ps1` | trust the test certificate and install / uninstall the sideload bundle |
 | `python scripts/make-icons.py --msix-only` | regenerate `packaging/windows/msix-assets/` (checked in) |
 
-### Open items
+### Export compliance and remaining work
 
-- **Export compliance (`ITSAppUsesNonExemptEncryption`).** Owner decision pending. `package-macos.sh` sets it to `true` on one
-  commented line (the conservative answer); `true` may leave each TestFlight build at "Missing Compliance" until answered
-  in App Store Connect.
-- The MAS and MSIX builds depend on the channel, gating and CLI Info.plist code (plan tasks T2 to T5); `verify-macos-mas.sh`
-  fails until the CLI embeds its Info.plist.
-- Cost: each tag adds one universal macOS build (billed at 10x while the repository is private).
+Export compliance: `MAS=1 scripts/package-macos.sh` sets `ITSAppUsesNonExemptEncryption = false` (standard algorithms only),
+so TestFlight builds do not wait at "Missing Compliance".
+
+What is left before the store editions are listed: [STORE.md](STORE.md).
 
 ## Verify a download
 

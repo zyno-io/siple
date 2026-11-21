@@ -39,7 +39,7 @@
           Square310x310Logo="Assets\LargeTile.png" ShortName="Siple"/>
       </uap:VisualElements>
       <Extensions>
-        <!-- Parameters mirror the unpackaged HKCU command (siple.exe, then the dash-dash separator, then the URI); verify the argv interactively (spike row e). -->
+        <!-- Parameters mirror the unpackaged HKCU command (siple.exe, then the dash-dash separator, then the URI); protocol activation argv is not yet verified in an interactive session (docs/STORE.md). -->
         <uap3:Extension Category="windows.protocol" Executable="siple.exe" EntryPoint="Windows.FullTrustApplication">
           <uap3:Protocol Name="sip" Parameters="-- &quot;%1&quot;"><uap:DisplayName>SIP link</uap:DisplayName></uap3:Protocol>
         </uap3:Extension>

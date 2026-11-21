@@ -4,7 +4,7 @@
 //! Order of dispatch for every incoming server transaction:
 //! 1. in-dialog request (To-tag): [`CallHandler::on_in_dialog`] first (early dialogs, registration
 //!    races), then `dialog.handle(tx)` for a known dialog;
-//! 2. new INVITE -> [`CallHandler::on_invite`] (Phase 5 plugs in here);
+//! 2. new INVITE -> [`CallHandler::on_invite`];
 //! 3. out-of-dialog OPTIONS / MESSAGE / NOTIFY / SUBSCRIBE -> answered here + [`SipEvent`];
 //! 4. anything with a To-tag that matched no dialog -> 481; everything else -> 405.
 
@@ -313,8 +313,8 @@ impl Router {
             }
             Method::Notify => {
                 // Unsolicited (e.g. FreeSWITCH message-summary after REGISTER) or for a
-                // subscription nobody registered yet: always 200. Phase 6 intercepts
-                // subscription NOTIFYs by Call-ID before they get here.
+                // subscription nobody registered yet: always 200. NOTIFYs of a subscription
+                // are intercepted by Call-ID before they get here.
                 let _ = tx.reply(StatusCode::OK).await;
                 let event = header_text(&req, |h| matches!(h, Header::Event(_)));
                 let body = String::from_utf8_lossy(&req.body).into_owned();
