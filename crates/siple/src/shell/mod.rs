@@ -748,8 +748,9 @@ impl Shell {
             }
             #[cfg(not(feature = "store"))]
             ShellMsg::Ui(UiRequest::RelaunchForUpdate(spec)) => {
-                // A minimized window is still `visible`: only the tray-hidden state is "hidden".
-                crate::relaunch::request(spec, self.visible);
+                // Only an unmapped (tray-hidden) window restarts hidden; a minimized one keeps its
+                // taskbar / Dock button.
+                crate::relaunch::request(spec, policy::relaunch_shown(self.visible, self.unmapped));
                 self.quit(ctx);
             }
             ShellMsg::Ui(UiRequest::State | UiRequest::SetPanels { .. }) => {}

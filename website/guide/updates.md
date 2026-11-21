@@ -115,7 +115,7 @@ When you choose **Install and restart**, Siple does this:
    the publisher: on macOS the Developer ID signature and Apple's notarization; on Windows the Authenticode signature of Signal24 LLC.
    On Linux the signed list is the check. If anything is wrong, nothing is changed and the pill offers the release page.
 3. It replaces the app as late as possible and restarts, never during a call. The new version opens its window if it was open
-   when you installed, even with `start_hidden`; if Siple was hidden in the tray it starts hidden again.
+   when it restarted, even with `start_hidden`; if Siple was hidden in the tray it starts hidden again.
 
 ## Details
 

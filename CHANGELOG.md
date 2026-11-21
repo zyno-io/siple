@@ -5,7 +5,7 @@
 
 ### Fixed
 
-- After an in-place update, Siple reopens its window if it was open when the update was installed, even with `start_hidden`.
+- After an in-place update, Siple reopens its window if it was open when the update restarted it, even with `start_hidden` (minimized to the taskbar counts as open).
   If it was hidden in the tray, it starts hidden again (when a tray is available).
 
 ## 0.2.0 (2026-11-21)

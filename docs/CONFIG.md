@@ -217,7 +217,7 @@ each key as the matching feature arrives. A key you leave out keeps its default.
 | `tray` | bool | `true` | Tray / menu-bar mode. |
 | `close_to_tray` | bool | `true` | Closing the window hides it. |
 | `hide_from_taskbar` | bool | `true` | No taskbar button / Dock icon while hidden. |
-| `start_hidden` | bool | `false` | Start with the window hidden. An in-place update restart ignores this and restores the window state from when the update was installed (hidden only if there is a tray). |
+| `start_hidden` | bool | `false` | Start with the window hidden. An in-place update restart ignores this and restores the window state at the moment of the restart: hidden only if it was hidden to the tray (and a tray exists), otherwise shown. |
 | `show_on_incoming` | bool | `true` | Raise the window on an incoming call. |
 | `show_on_answer` | bool | `false` | Raise the window when a call is answered. |
 | `notifications` | bool | `true` | Desktop notifications. |

@@ -276,9 +276,26 @@ pub fn tray_click(
     }
 }
 
+/// Whether an update restart reopens the window shown. Only an unmapped (tray-hidden) window
+/// counts as hidden: a window minimized to the taskbar or Dock (`hide_from_taskbar = false`, no
+/// tray host, Wayland) keeps its button after the restart.
+#[cfg_attr(feature = "store", allow(dead_code))]
+pub fn relaunch_shown(visible: bool, unmapped: bool) -> bool {
+    visible || !unmapped
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_a_tray_hidden_window_restarts_hidden() {
+        assert!(relaunch_shown(true, false));
+        // Closed to the taskbar (minimized, not unmapped): keep the button.
+        assert!(relaunch_shown(false, false));
+        // Hidden to the tray.
+        assert!(!relaunch_shown(false, true));
+    }
 
     fn ui(f: impl FnOnce(&mut UiConfig)) -> UiConfig {
         let mut u = UiConfig::default();

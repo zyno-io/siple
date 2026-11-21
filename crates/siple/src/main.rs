@@ -29,7 +29,7 @@ use siple_core::events::EventFilter;
 use siple_core::instance::InstanceError;
 use siple_core::{App, AppError, AppOptions, config};
 
-/// The window state a relaunch restores (`--window`).
+/// The window state a relaunch restores (`--window`). Permanent: never rename or remove a value.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, clap::ValueEnum)]
 pub enum WindowArg {
     Shown,
@@ -61,6 +61,9 @@ struct Cli {
     wait_pid: Option<u32>,
     /// Window state to restore after an in-place update; overrides `[ui] start_hidden`. `hidden`
     /// only applies when there is a tray. Passed by the relaunch, never by users.
+    /// A permanent contract like `--wait-pid`: older versions pass it to newer ones on every
+    /// update restart, so never remove or rename the flag or its values (an unknown argument
+    /// would make the new version exit instead of coming back).
     #[arg(long, hide = true, value_enum, value_name = "STATE")]
     window: Option<WindowArg>,
     /// A `sip:`, `sips:`, `tel:`, `callto:` or `siple:` link passed by the OS URL handler.
@@ -712,6 +715,9 @@ mod tests {
         let c = Cli::try_parse_from(["siple", "--wait-pid", "4", "--window", "shown"]).unwrap();
         assert_eq!(c.window, Some(WindowArg::Shown));
         assert!(Cli::try_parse_from(["siple", "--window", "bogus"]).is_err());
+        // Wired: a parsed `--window shown` beats `start_hidden`.
+        let c = Cli::try_parse_from(["siple", "--window", "shown"]).unwrap();
+        assert!(!start_hidden(true, true, false, c.window));
         let help = Cli::command().render_help().to_string();
         assert!(!help.contains("--window"));
     }

@@ -45,8 +45,8 @@ pub fn set_carried(config: Option<PathBuf>, no_audio: bool) {
     let _ = CARRIED.set(v);
 }
 
-/// Remembers what to start once this process has shut down, and whether the window is shown now
-/// (a minimized window counts as shown).
+/// Remembers what to start once this process has shut down, and whether the window should come
+/// back shown (see `shell::policy::relaunch_shown`: only a tray-hidden window comes back hidden).
 pub fn request(spec: RelaunchSpec, window_shown: bool) {
     *PENDING.lock().unwrap_or_else(|e| e.into_inner()) =
         Some((spec, WindowArg::from_shown(window_shown)));
