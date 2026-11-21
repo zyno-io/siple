@@ -1,0 +1,16 @@
+#!/bin/sh
+# Siple AppImage entry point. The AppImage runtime sets APPDIR (the mounted or extracted image),
+# APPIMAGE (the .AppImage file) and ARGV0 (the name it was started as).
+#   Siple.AppImage [args]          the app (usr/bin/siple)
+#   Siple.AppImage --cli <args>    the command-line client (usr/bin/siple-cli)
+#   siple-cli <args>               the same, through a symlink named siple-cli to the AppImage
+# Nothing is added to the environment: Siple bundles no libraries.
+here="${APPDIR:-$(dirname "$(readlink -f "$0")")}"
+case "${ARGV0##*/}" in
+  siple-cli) exec "$here/usr/bin/siple-cli" "$@" ;;
+esac
+if [ "${1-}" = "--cli" ]; then
+  shift
+  exec "$here/usr/bin/siple-cli" "$@"
+fi
+exec "$here/usr/bin/siple" "$@"

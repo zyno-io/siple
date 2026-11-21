@@ -1,5 +1,6 @@
 # Siple CI: rustfmt, clippy (also with the `store` feature) and tests on Linux, macOS and Windows;
-# visual snapshots on macOS; cargo-deny; an MSRV check. Packages are built by release.yml and store.yml.
+# visual snapshots on macOS; cargo-deny; an MSRV check; a self-test of the AppImage packaging.
+# Packages are built by release.yml and store.yml.
 name: CI
 
 on:
@@ -120,3 +121,16 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - name: cargo check
         run: cargo check --workspace --all-targets --locked
+
+  appimage:
+    name: AppImage packaging (self-test, ${{ matrix.runner }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-latest, ubuntu-24.04-arm]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq squashfs-tools
+      - name: Stub binaries, pinned runtime, layout and AppRun dispatch
+        run: scripts/package-appimage.sh --self-test
