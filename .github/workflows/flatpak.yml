@@ -42,7 +42,11 @@ jobs:
       - name: The metainfo lists the release being prepared or tagged
         run: scripts/flatpak-check-release.sh "${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}"
       - name: Screenshot URLs resolve
-        run: grep -o 'https://raw.githubusercontent.com/[^<]*' packaging/linux/io.zyno.siple.metainfo.xml | xargs -n1 curl -fsSIL -o /dev/null
+        # Only the <image> elements: comments may hold a base URL that is not a file.
+        run: |
+          urls=$(sed -n 's|.*<image>\(https://[^<]*\)</image>.*|\1|p' packaging/linux/io.zyno.siple.metainfo.xml)
+          test -n "$urls"
+          for u in $urls; do curl -fsSIL -o /dev/null "$u"; done
       - uses: taiki-e/install-action@25f51f6b1bf4e18876107cece836f4f77ac17c8c # v2.90.7
         with:
           tool: cargo-about
