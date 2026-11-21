@@ -162,13 +162,14 @@ async fn test_client_dialog_state_transitions() -> crate::Result<()> {
     // Transition to Trying (after sending INVITE)
     client_dialog
         .inner
-        .transition(DialogState::Trying(dialog_id.clone()))?;
+        .transition(DialogState::Trying(dialog_id.clone()));
     let state = client_dialog.inner.state.lock().clone();
     assert!(matches!(state, DialogState::Trying(_)));
 
     // Transition to Early (after receiving 1xx)
     let ringing_resp = Response {
         status_code: StatusCode::Ringing,
+        wire_reason: None,
         version: crate::sip::Version::V2,
         headers: vec![
             Via::new("SIP/2.0/UDP alice.example.com:5060;branch=z9hG4bKnashds").into(),
@@ -184,7 +185,7 @@ async fn test_client_dialog_state_transitions() -> crate::Result<()> {
 
     client_dialog
         .inner
-        .transition(DialogState::Early(dialog_id.clone(), ringing_resp.clone()))?;
+        .transition(DialogState::Early(dialog_id.clone(), ringing_resp.clone()));
     let state = client_dialog.inner.state.lock().clone();
     assert!(matches!(state, DialogState::Early(_, _)));
 
@@ -193,7 +194,7 @@ async fn test_client_dialog_state_transitions() -> crate::Result<()> {
     // Transition to Confirmed (after receiving 200 OK and sending ACK)
     client_dialog
         .inner
-        .transition(DialogState::Confirmed(dialog_id.clone(), final_resp))?;
+        .transition(DialogState::Confirmed(dialog_id.clone(), final_resp));
     let state = client_dialog.inner.state.lock().clone();
     assert!(matches!(state, DialogState::Confirmed(_, _)));
     assert!(client_dialog.inner.is_confirmed());
@@ -235,7 +236,7 @@ async fn test_client_dialog_termination_scenarios() -> crate::Result<()> {
     client_dialog_1.inner.transition(DialogState::Terminated(
         dialog_id_1.clone(),
         TerminatedReason::UasBusy,
-    ))?;
+    ));
 
     let state = client_dialog_1.inner.state.lock().clone();
     assert!(matches!(
@@ -271,14 +272,14 @@ async fn test_client_dialog_termination_scenarios() -> crate::Result<()> {
     client_dialog_2.inner.transition(DialogState::Confirmed(
         dialog_id_2.clone(),
         Response::default(),
-    ))?;
+    ));
     assert!(client_dialog_2.inner.is_confirmed());
 
     // Then terminate normally
     client_dialog_2.inner.transition(DialogState::Terminated(
         dialog_id_2.clone(),
         TerminatedReason::UacBye,
-    ))?;
+    ));
     let state = client_dialog_2.inner.state.lock().clone();
     assert!(matches!(
         state,
@@ -422,6 +423,7 @@ async fn test_route_set_updates_from_200_ok_response() -> crate::Result<()> {
 
     let success_resp = Response {
         status_code: StatusCode::OK,
+        wire_reason: None,
         version: crate::sip::Version::V2,
         headers: headers.into(),
         body: vec![],
@@ -517,6 +519,7 @@ async fn test_confirmed_dialog_bye_keeps_contact_uri_with_outbound_route() -> cr
 
     let success_resp = Response {
         status_code: StatusCode::OK,
+        wire_reason: None,
         version: crate::sip::Version::V2,
         headers: headers.into(),
         body: vec![],
@@ -623,7 +626,7 @@ async fn test_cancel_conforms_to_rfc3261_section_9_1() -> crate::Result<()> {
 
     client_dialog
         .inner
-        .transition(DialogState::Trying(client_dialog.id()))?;
+        .transition(DialogState::Trying(client_dialog.id()));
     let dialog_clone = client_dialog.clone();
     tokio::spawn(async move { dialog_clone.cancel().await });
 
@@ -764,7 +767,6 @@ async fn test_ack_sent_to_domain_name_from_contact() -> crate::Result<()> {
         .with_transport_layer(uas_transport_layer)
         .build();
 
-    uas_endpoint.inner.transport_layer.serve_listens().await?;
     let uas_endpoint_inner = uas_endpoint.inner.clone();
     tokio::spawn(async move {
         let _ = uas_endpoint_inner.serve().await;
@@ -805,7 +807,6 @@ async fn test_ack_sent_to_domain_name_from_contact() -> crate::Result<()> {
         .transport_layer
         .add_transport(uac_udp.into());
 
-    uac_endpoint.inner.transport_layer.serve_listens().await?;
     let uac_endpoint_inner = uac_endpoint.inner.clone();
     tokio::spawn(async move {
         let _ = uac_endpoint_inner.serve().await;
@@ -988,7 +989,6 @@ async fn test_ack_sent_to_websocket_channel_via_locator() -> crate::Result<()> {
         .with_target_locator(locator)
         .build();
 
-    uac_endpoint.inner.transport_layer.serve_listens().await?;
     let uac_endpoint_inner = uac_endpoint.inner.clone();
     tokio::spawn(async move {
         let _ = uac_endpoint_inner.serve().await;
@@ -1038,6 +1038,7 @@ async fn test_ack_sent_to_websocket_channel_via_locator() -> crate::Result<()> {
 
     let ok_response = Response {
         status_code: StatusCode::OK,
+        wire_reason: None,
         version: crate::sip::Version::V2,
         headers: vec![
             invite_req.via_header()?.clone().into(),
@@ -1140,7 +1141,6 @@ async fn test_drop_polls_invite_after_cancel_success() -> crate::Result<()> {
     .await?;
     let uac_port = udp.get_addr().addr.port.map(|p| u16::from(p)).unwrap_or(0);
     endpoint.inner.transport_layer.add_transport(udp.into());
-    endpoint.inner.transport_layer.serve_listens().await?;
 
     let endpoint_inner = endpoint.inner.clone();
     tokio::spawn(async move {
@@ -1390,7 +1390,6 @@ async fn test_drop_cleans_up_after_cancel_failure_impl() -> crate::Result<()> {
     .await?;
     let uac_port = udp.get_addr().addr.port.map(|p| u16::from(p)).unwrap_or(0);
     endpoint.inner.transport_layer.add_transport(udp.into());
-    endpoint.inner.transport_layer.serve_listens().await?;
 
     let endpoint_inner = endpoint.inner.clone();
     tokio::spawn(async move {
@@ -1543,7 +1542,6 @@ async fn test_drop_unconfirmed_dialog_before_provisional_stops_requests() -> cra
     .await?;
     let uac_port = udp.get_addr().addr.port.map(u16::from).unwrap_or(0);
     endpoint.inner.transport_layer.add_transport(udp.into());
-    endpoint.inner.transport_layer.serve_listens().await?;
 
     let endpoint_inner = endpoint.inner.clone();
     tokio::spawn(async move {
@@ -1652,7 +1650,6 @@ async fn test_cancel_returns_error_on_transaction_timeout() -> crate::Result<()>
     .await?;
     let uac_port = udp.get_addr().addr.port.map(u16::from).unwrap_or(0);
     endpoint.inner.transport_layer.add_transport(udp.into());
-    endpoint.inner.transport_layer.serve_listens().await?;
 
     let endpoint_inner = endpoint.inner.clone();
     tokio::spawn(async move {
@@ -1683,7 +1680,7 @@ async fn test_cancel_returns_error_on_transaction_timeout() -> crate::Result<()>
         "CANCEL must not be sent before a provisional response"
     );
 
-    dialog.inner.transition(DialogState::Trying(dialog.id()))?;
+    dialog.inner.transition(DialogState::Trying(dialog.id()));
 
     let error = tokio::time::timeout(std::time::Duration::from_secs(1), dialog.cancel())
         .await

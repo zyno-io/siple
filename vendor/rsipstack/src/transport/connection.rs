@@ -24,6 +24,7 @@ use crate::Result;
 use core::net::SocketAddr;
 #[cfg(feature = "platform-tokio")]
 use core::net::{IpAddr, Ipv4Addr};
+use core::time::Duration;
 #[cfg(feature = "platform-tokio")]
 use if_addrs::IfAddr;
 #[cfg(feature = "platform-tokio")]
@@ -161,6 +162,10 @@ pub const MAX_UDP_BUF_SIZE: usize = 8192;
 pub enum SipConnection {
     Channel(ChannelConnection),
     Udp(UdpConnection),
+    /// TLS client dialled through the `platform::tls` connector seam (embedded
+    /// backends: embassy-net + embedded-tls etc.). Always compiled; host builds
+    /// use [`SipConnection::Tls`] instead.
+    TlsPlatform(crate::transport::tls_platform::PlatformTlsConnection),
     #[cfg(feature = "platform-tokio")]
     Tcp(TcpConnection),
     #[cfg(feature = "platform-tokio")]
@@ -183,6 +188,7 @@ impl SipConnection {
     pub fn transport(&self) -> Transport {
         match self {
             SipConnection::Udp(_) => Transport::Udp,
+            SipConnection::TlsPlatform(_) => Transport::Tls,
             #[cfg(feature = "platform-tokio")]
             SipConnection::Tcp(_) | SipConnection::TcpListener(_) => Transport::Tcp,
             #[cfg(feature = "rustls")]
@@ -202,7 +208,6 @@ impl SipConnection {
         !matches!(self, SipConnection::Udp(_))
     }
 
-    /// Whether this is a connection-oriented stream (TCP, TLS or WebSocket).
     /// siple: install (or clear) a raw wire tap on this connection.
     /// Channel/WebSocket/listener variants are not tapped.
     pub fn set_wire_tap(&self, tap: Option<alloc::sync::Arc<dyn super::wire_tap::WireTap>>) {
@@ -216,8 +221,10 @@ impl SipConnection {
         }
     }
 
+    /// Whether this is a connection-oriented stream (TCP, TLS or WebSocket).
     pub(crate) fn is_stream(&self) -> bool {
         match self {
+            SipConnection::TlsPlatform(_) => true,
             #[cfg(feature = "platform-tokio")]
             SipConnection::Tcp(_) => true,
             #[cfg(all(feature = "platform-tokio", feature = "rustls"))]
@@ -232,6 +239,8 @@ impl SipConnection {
     /// WebSocket) connection. Always false for other connection types.
     pub(crate) fn is_same_stream(&self, other: &SipConnection) -> bool {
         match (self, other) {
+            (SipConnection::Channel(a), SipConnection::Channel(b)) => a.ptr_eq(b),
+            (SipConnection::TlsPlatform(a), SipConnection::TlsPlatform(b)) => a.ptr_eq(b),
             #[cfg(feature = "platform-tokio")]
             (SipConnection::Tcp(a), SipConnection::Tcp(b)) => {
                 std::sync::Arc::ptr_eq(&a.inner, &b.inner)
@@ -250,6 +259,7 @@ impl SipConnection {
         match self {
             SipConnection::Channel(transport) => transport.cancel_token(),
             SipConnection::Udp(transport) => transport.cancel_token(),
+            SipConnection::TlsPlatform(transport) => transport.cancel_token(),
             #[cfg(feature = "platform-tokio")]
             SipConnection::Tcp(transport) => transport.cancel_token(),
             #[cfg(feature = "rustls")]
@@ -268,6 +278,7 @@ impl SipConnection {
         match self {
             SipConnection::Channel(transport) => transport.get_addr(),
             SipConnection::Udp(transport) => transport.get_addr(),
+            SipConnection::TlsPlatform(transport) => transport.get_addr(),
             #[cfg(feature = "platform-tokio")]
             SipConnection::Tcp(transport) => transport.get_addr(),
             #[cfg(feature = "platform-tokio")]
@@ -291,6 +302,7 @@ impl SipConnection {
         match self {
             SipConnection::Channel(transport) => transport.get_remote_addr(),
             SipConnection::Udp(transport) => transport.get_remote_addr(),
+            SipConnection::TlsPlatform(transport) => Some(transport.get_remote_addr()),
             #[cfg(feature = "platform-tokio")]
             SipConnection::Tcp(transport) => Some(transport.get_remote_addr()),
             #[cfg(feature = "platform-tokio")]
@@ -314,6 +326,7 @@ impl SipConnection {
         match self {
             SipConnection::Channel(transport) => transport.send(msg).await,
             SipConnection::Udp(transport) => transport.send(msg, destination).await,
+            SipConnection::TlsPlatform(transport) => transport.send_message(msg).await,
             #[cfg(feature = "platform-tokio")]
             SipConnection::Tcp(transport) => transport.send_message(msg).await,
             #[cfg(feature = "platform-tokio")]
@@ -339,12 +352,16 @@ impl SipConnection {
             }
         }
     }
-    pub async fn serve_loop(&self, sender: TransportSender) -> Result<()> {
+    pub async fn serve_loop(&self, sender: TransportSender, idle_timeout: Duration) -> Result<()> {
+        let _ = idle_timeout;
         match self {
             SipConnection::Channel(transport) => transport.serve_loop(sender).await,
             SipConnection::Udp(transport) => transport.serve_loop(sender).await,
+            // Platform TLS backend has no in-crate read loop to bound; the
+            // idle timeout applies to the tokio stream transports only.
+            SipConnection::TlsPlatform(transport) => transport.serve_loop(sender).await,
             #[cfg(feature = "platform-tokio")]
-            SipConnection::Tcp(transport) => transport.serve_loop(sender).await,
+            SipConnection::Tcp(transport) => transport.serve_loop(sender, idle_timeout).await,
             #[cfg(feature = "platform-tokio")]
             SipConnection::TcpListener(_) => {
                 debug!("SipConnection::serve_loop: TcpListener does not have serve_loop");
@@ -352,7 +369,7 @@ impl SipConnection {
             }
             #[cfg(feature = "rustls")]
             #[cfg(all(feature = "platform-tokio", feature = "rustls"))]
-            SipConnection::Tls(transport) => transport.serve_loop(sender).await,
+            SipConnection::Tls(transport) => transport.serve_loop(sender, idle_timeout).await,
             #[cfg(feature = "rustls")]
             SipConnection::TlsListener(_) => {
                 debug!("SipConnection::serve_loop: TlsListener does not have serve_loop");
@@ -360,7 +377,7 @@ impl SipConnection {
             }
             #[cfg(feature = "websocket")]
             #[cfg(all(feature = "platform-tokio", feature = "websocket"))]
-            SipConnection::WebSocket(transport) => transport.serve_loop(sender).await,
+            SipConnection::WebSocket(transport) => transport.serve_loop(sender, idle_timeout).await,
             #[cfg(feature = "websocket")]
             SipConnection::WebSocketListener(_) => {
                 debug!("SipConnection::serve_loop: WebSocketListener does not have serve_loop");
@@ -373,6 +390,7 @@ impl SipConnection {
         match self {
             SipConnection::Channel(transport) => transport.close().await,
             SipConnection::Udp(_) => Ok(()), // UDP has no connection state
+            SipConnection::TlsPlatform(transport) => transport.close().await,
             #[cfg(feature = "platform-tokio")]
             SipConnection::Tcp(transport) => transport.close().await,
             #[cfg(feature = "platform-tokio")]
@@ -500,14 +518,12 @@ impl SipConnection {
                 typed_via.params.push(Param::Transport(transport));
             }
 
-            let received_str = match addr {
-                SocketAddr::V6(_) => format!("[{}]", received.host),
-                _ => received.host.to_string(),
-            };
+            // RFC 3261 §20.42: `received` is a bare address, also for IPv6
+            // (no brackets; `Host`'s Display would add them).
             typed_via
                 .params
                 .push(Param::Received(crate::sip::param::Received::new(
-                    received_str,
+                    addr.ip().to_string(),
                 )));
             typed_via.params.push(Param::Rport(Some(addr.port())));
             Ok(typed_via.into())
@@ -552,6 +568,7 @@ impl core::fmt::Display for SipConnection {
         match self {
             SipConnection::Channel(t) => write!(f, "{}", t),
             SipConnection::Udp(t) => write!(f, "UDP {}", t),
+            SipConnection::TlsPlatform(t) => write!(f, "{}", t),
             #[cfg(feature = "platform-tokio")]
             SipConnection::Tcp(t) => write!(f, "TCP {}", t),
             #[cfg(feature = "platform-tokio")]

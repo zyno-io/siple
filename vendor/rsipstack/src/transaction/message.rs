@@ -2,9 +2,7 @@ use super::{endpoint::EndpointInner, make_call_id};
 use crate::prelude::*;
 use crate::sip::{
     prelude::{HeadersExt, ToTypedHeader},
-    typed::Route as TypedRoute,
-    uri::ParamsExt,
-    Error, Header, Request, Response, StatusCode, UriWithParams,
+    Error, Header, Request, Response, StatusCode,
 };
 use crate::sip::{CallId, Method};
 use crate::sip_header;
@@ -113,7 +111,13 @@ impl EndpointInner {
             Header::CallId(call_id),
             Header::From(from.into()),
             Header::To(to.into()),
-            Header::CSeq(crate::sip::typed::CSeq { seq, method }.into()),
+            Header::CSeq(
+                crate::sip::typed::CSeq {
+                    seq,
+                    method: method.clone(),
+                }
+                .into(),
+            ),
             Header::MaxForwards(70.into()),
             Header::UserAgent(self.user_agent.clone().into()),
         ];
@@ -246,15 +250,52 @@ impl EndpointInner {
         headers.unique_push(Header::UserAgent(self.user_agent.clone().into()));
         Response {
             status_code,
+            wire_reason: None,
             version: *req.version(),
             headers,
             body: body.unwrap_or_default(),
         }
     }
 
+    /// A response to a CANCEL, with the To header (and tag) of the INVITE's
+    /// last response when there is one (RFC 3261 §9.2).
+    pub(crate) fn make_cancel_response(
+        &self,
+        cancel: &Request,
+        status_code: StatusCode,
+        invite_response: Option<&Response>,
+    ) -> Response {
+        let mut resp = self.make_response(cancel, status_code, None);
+        if let Some(to) = invite_response.and_then(|r| r.to_header().ok()) {
+            for header in resp.headers.iter_mut() {
+                if let Header::To(t) = header {
+                    *t = to.clone();
+                }
+            }
+        }
+        // Every final response has a To tag (§8.2.6.2), including a 481
+        // for a CANCEL that did not match an original transaction.
+        if let Ok(to) = resp.to_header_mut() {
+            if to.tag().ok().flatten().is_none() {
+                to.mut_tag(super::make_tag()).ok();
+            }
+        }
+        resp
+    }
+
     // make ack from response, for ack to non-200 reponse, should pass the original invite
     pub fn make_ack(&self, invite: &Request, resp: &Response) -> Result<Request> {
+        self.make_ack_with_route_set(invite, resp, None)
+    }
+
+    pub(crate) fn make_ack_with_route_set(
+        &self,
+        invite: &Request,
+        resp: &Response,
+        route_set: Option<&[crate::sip::Route]>,
+    ) -> Result<Request> {
         let mut headers = resp.headers.clone();
+        headers.retain(|h| !matches!(h, Header::Route(_)));
         let request_uri;
         if resp.status_code.kind() != crate::sip::StatusCodeKind::Successful {
             // Non-2xx ACK stays in the original INVITE transaction.
@@ -281,56 +322,24 @@ impl EndpointInner {
                     Ok(typed_via.into())
                 });
             }
-            let mut route_set: Vec<UriWithParams> = Vec::new();
-            for header in resp.headers.iter() {
-                if let Header::RecordRoute(record_route) = header {
-                    for typed in
-                        crate::sip::typed::RecordRoute::parse_header_list(record_route.value())
-                            .unwrap_or_default()
-                    {
-                        route_set.push(typed.uri);
-                    }
-                }
-            }
-            route_set.reverse();
+            let routes = crate::sip::routing::ack_routes(invite, resp, route_set)?;
+            let (uri, routes) =
+                crate::sip::routing::encode(resp.contact_header()?.typed()?.uri, &routes)?;
+            request_uri = uri;
+            headers.extend(routes.into_iter().map(Header::Route).collect());
 
-            let contact = resp.contact_header()?;
-
-            let remote_target_uri = contact.typed()?.uri;
-
-            let route_headers = match route_set.as_slice() {
-                [] => {
-                    request_uri = remote_target_uri;
-                    Vec::new()
-                }
-                [head, rest @ ..] => {
-                    // loose routing
-                    if head.has_lr() {
-                        request_uri = remote_target_uri;
-                        route_set
-                    } else {
-                        // Strict routing promotes the first route URI into the Request-URI
-                        // and appends the remote target as the last Route value.
-                        let mut request_uri_value = head.clone();
-                        request_uri_value.headers.clear();
-                        request_uri = request_uri_value;
-
-                        let mut strict_routes = rest.to_vec();
-                        strict_routes.push(remote_target_uri.clone());
-
-                        strict_routes
-                    }
-                }
-            };
-
+            // RFC 3261 §13.2.2.4: the 2xx ACK carries the INVITE's credentials.
             headers.extend(
-                route_headers
+                invite
+                    .headers
                     .iter()
-                    .cloned()
-                    .map(|route| {
-                        let typed_route = TypedRoute::from(route);
-                        Header::Route(typed_route.into())
+                    .filter(|header| {
+                        matches!(
+                            header,
+                            Header::Authorization(_) | Header::ProxyAuthorization(_)
+                        )
                     })
+                    .cloned()
                     .collect::<Vec<_>>(),
             );
         }
@@ -345,6 +354,8 @@ impl EndpointInner {
                     | Header::CSeq(_)
                     | Header::Route(_)
                     | Header::SessionId(_)
+                    | Header::Authorization(_)
+                    | Header::ProxyAuthorization(_)
             )
         });
         // RFC 7989 §6/§10.1: the ACK is sent by the INVITE originator, so its

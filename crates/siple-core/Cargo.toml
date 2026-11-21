@@ -81,6 +81,6 @@ objc2-av-foundation = { version = "0.3", features = ["AVCaptureDevice", "AVMedia
 objc2-foundation = "0.3"
 
 [dev-dependencies]
-rsipstack = { path = "../../vendor/rsipstack", default-features = false, features = ["platform-tokio", "rustls", "srv_lookup"] }
+rsipstack = { path = "../../vendor/rsipstack", default-features = false, features = ["platform-tokio", "rustls-ring", "srv_lookup"] }
 keyring-core = "1"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "test-util"] }

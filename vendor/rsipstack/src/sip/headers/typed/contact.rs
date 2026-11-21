@@ -29,26 +29,32 @@ impl Contact {
         }
 
         let trimmed = s.trim();
-        let (display_name, uri_part, header_params_part) = if let Some(start) = trimmed.find('<') {
+        let has_angle_brackets;
+        let (display_name, uri_part, header_params_part) = if let Some(start) =
+            super::parse_helpers::find_unquoted_lt(trimmed)?
+        {
+            has_angle_brackets = true;
             let end = trimmed[start..]
                 .find('>')
                 .map(|offset| start + offset)
                 .ok_or_else(|| Error::ParseError("invalid Contact header: missing '>'".into()))?;
-            let display = trimmed[..start].trim();
-            let display_name = if display.is_empty() {
-                None
-            } else {
-                Some(display.trim_matches('"').to_string())
-            };
+            let display_name = super::parse_helpers::validate_display_name(&trimmed[..start])?;
             let uri = &trimmed[start + 1..end];
+            if uri.is_empty() || uri.chars().any(char::is_whitespace) {
+                return Err(Error::ParseError("invalid Contact URI in <>".into()));
+            }
             let params = trimmed[end + 1..].trim();
             (display_name, uri, params)
         } else {
+            has_angle_brackets = false;
             let (uri, params) = split_uri_and_header_params(trimmed);
             (None, uri, params)
         };
 
         let mut uri = crate::sip::parse_uri(uri_part)?;
+        if !has_angle_brackets && (!uri.headers.is_empty() || uri.scheme.is_none()) {
+            return Err(Error::ParseError("invalid unbracketed Contact URI".into()));
+        }
         uri.params.retain(|param| {
             !matches!(
                 param,
@@ -94,10 +100,7 @@ impl core::fmt::Display for Contact {
                 return write!(f, "*");
             }
         }
-        match &self.display_name {
-            Some(name) => write!(f, "\"{}\" <{}>", name, self.uri)?,
-            None => write!(f, "<{}>", self.uri)?,
-        }
+        super::parse_helpers::write_display_name_addr(f, &self.display_name, &self.uri)?;
         for p in &self.params {
             write!(f, "{}", p)?;
         }
@@ -144,9 +147,20 @@ fn split_contact_header_values(line: &str) -> Result<Vec<String>, Error> {
     let mut values = Vec::new();
     let mut current = String::new();
     let mut in_quotes = false;
+    let mut escaped = false;
     let mut angle_depth = 0usize;
 
     for ch in trimmed.chars() {
+        if escaped {
+            escaped = false;
+            current.push(ch);
+            continue;
+        }
+        if in_quotes && ch == '\\' {
+            escaped = true;
+            current.push(ch);
+            continue;
+        }
         match ch {
             '"' => {
                 in_quotes = !in_quotes;
@@ -162,23 +176,25 @@ fn split_contact_header_values(line: &str) -> Result<Vec<String>, Error> {
             }
             ',' if !in_quotes && angle_depth == 0 => {
                 let value = current.trim();
-                if !value.is_empty() {
-                    values.push(value.to_string());
+                if value.is_empty() {
+                    return Err(Error::ParseError("empty Contact header entry".into()));
                 }
+                values.push(value.to_string());
                 current.clear();
             }
             _ => current.push(ch),
         }
     }
 
-    let value = current.trim();
-    if !value.is_empty() {
-        values.push(value.to_string());
+    if in_quotes || angle_depth != 0 {
+        return Err(Error::ParseError("unbalanced Contact header".into()));
     }
 
-    if values.is_empty() {
-        return Err(Error::ParseError("empty Contact header".into()));
+    let value = current.trim();
+    if value.is_empty() {
+        return Err(Error::ParseError("empty Contact header entry".into()));
     }
+    values.push(value.to_string());
 
     Ok(values)
 }
@@ -197,12 +213,19 @@ fn parse_contact_header_params(input: &str) -> Result<Vec<Param>, Error> {
     if trimmed.is_empty() {
         return Ok(Vec::new());
     }
-    crate::sip::parse_params(trimmed.trim_start_matches(';'))
+    let rest = trimmed
+        .strip_prefix(';')
+        .ok_or_else(|| Error::ParseError("invalid Contact header parameters".into()))?;
+    if rest.trim().is_empty() {
+        return Err(Error::ParseError("empty Contact parameter".into()));
+    }
+    crate::sip::parse_params(rest)
 }
 
 #[cfg(test)]
 mod tests {
     use super::Contact;
+    use crate::sip::headers::typed::To;
     use crate::sip::{HeadersExt, Param, Response};
 
     #[test]
@@ -230,10 +253,120 @@ mod tests {
         assert!(contacts[0].params.iter().any(|param| matches!(param, Param::Other(name, Some(value)) if name.value().eq_ignore_ascii_case("+sip.instance") && value.value() == "\"<urn:uuid:aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee>\"")));
     }
 
+    // siple: backport of upstream #259 (021e308).
+    #[test]
+    fn quoted_contact_params_may_contain_semicolons() {
+        // A Kamailio registrar with `received_avp` answers a REGISTER over
+        // TCP or TLS with the observed flow as a quoted URI, which has its
+        // own `;transport=` (RFC 3261 contact-extension / gen-value).
+        let response: Response = concat!(
+            "SIP/2.0 200 OK\r\n",
+            "Via: SIP/2.0/TLS 192.0.2.10:47522;rport=47522;received=192.0.2.10;alias;branch=z9hG4bK-test\r\n",
+            "From: <sip:1002@example.com>;tag=from-tag\r\n",
+            "To: <sip:1002@example.com>;tag=to-tag\r\n",
+            "CSeq: 2 REGISTER\r\n",
+            "Call-ID: test-call-id@example.com\r\n",
+            "Contact: <sip:1002@192.0.2.10:47522;transport=TLS>;q=1;expires=600;received=\"sip:192.0.2.10:47522;transport=tls\";+sip.instance=\"<urn:uuid:aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee>\";reg-id=1\r\n",
+            "Content-Length: 0\r\n",
+            "\r\n"
+        )
+        .try_into()
+        .unwrap();
+
+        let contacts = response.typed_contact_headers().unwrap();
+        assert_eq!(contacts.len(), 1);
+        let contact = &contacts[0];
+        assert_eq!(contact.expires(), Some(600));
+        let received = contact.params.iter().find_map(|param| match param {
+            Param::Received(value) => Some(value.value()),
+            _ => None,
+        });
+        assert_eq!(received, Some("\"sip:192.0.2.10:47522;transport=tls\""));
+        let reg_id = contact.params.iter().find_map(|param| match param {
+            Param::Other(name, Some(value)) if name.value() == "reg-id" => Some(value.value()),
+            _ => None,
+        });
+        assert_eq!(reg_id, Some("1"));
+
+        // A quoted value that never closes is still refused.
+        let unterminated = "<sip:bob@example.com>;received=\"sip:192.0.2.1;transport=tls";
+        assert!(Contact::parse(unterminated).is_err());
+
+        // The parsed header prints back to the same header.
+        let printed = contact.to_string();
+        assert_eq!(&Contact::parse(&printed).unwrap(), contact);
+    }
+
     #[test]
     fn record_style_contact_without_brackets_splits_header_params() {
         let contact = Contact::parse("sip:alice@restsend.com;expires=120").unwrap();
         assert_eq!(contact.uri.to_string(), "sip:alice@restsend.com");
         assert_eq!(contact.expires(), Some(120));
+    }
+
+    #[test]
+    fn rejects_malformed_name_addr_contact_and_via() {
+        use crate::sip::headers::typed::{From, To, Via};
+
+        // Unbalanced quotes (quotbal), unquoted non-token display name (baddn),
+        // whitespace inside <...> (badaspec), missing semicolon after > (regbadct),
+        // and empty parameters (badinv01).
+        assert!(To::parse("\"Mr. J. <sip:j@example.com>").is_err());
+        assert!(From::parse("Bob, Smith <sip:bob@example.com>;tag=1").is_err());
+        assert!(To::parse("Bob < sip:bob@example.com>").is_err());
+        assert!(Contact::parse("<sip:bob@example.com>expires=3600").is_err());
+        assert!(Contact::parse("<sip:bob@example.com>;;;;").is_err());
+        assert!(Via::parse("SIP/7.0/UDP example.com;branch=z9hG4bK1").is_err());
+    }
+
+    #[test]
+    fn wildcard_contact_is_still_accepted() {
+        let contact = Contact::parse("*").unwrap();
+        assert_eq!(contact.to_string(), "*");
+    }
+
+    // ── issue #258: stray '>' must be rejected, printed output must re-parse ──────
+
+    #[test]
+    fn stray_angle_bracket_in_addr_spec_is_rejected() {
+        use crate::sip::headers::typed::{From as TypedFrom, Route};
+
+        assert!(Contact::parse("sip:bob@example.com>x").is_err());
+        assert!(Contact::parse("<sip:bob@example.com>x>").is_err());
+        assert!(To::parse("sip:bob@example.com>x").is_err());
+        assert!(TypedFrom::parse("sip:bob@example.com>x").is_err());
+        assert!(Route::parse("sip:proxy.example.com>lr").is_err());
+    }
+
+    #[test]
+    fn display_name_with_escaped_quotes_round_trips() {
+        let raw = "\"He said \\\"hi\\\"\" <sip:bob@example.com>";
+        let to = To::parse(raw).unwrap();
+        assert_eq!(to.display_name.as_deref(), Some("He said \"hi\""));
+        let printed = to.to_string();
+        assert_eq!(printed, raw);
+        assert_eq!(To::parse(&printed).unwrap(), to);
+    }
+
+    #[test]
+    fn parsed_name_addr_prints_back_parseable_output() {
+        for raw in [
+            "\"Alice Smith\" <sip:alice@example.com>",
+            "<sip:alice@example.com>;tag=xyz",
+            "sip:bob@example.com;tag=1",
+            "<sips:alice@pbx.example.com;transport=tls>",
+        ] {
+            let header = To::parse(raw).unwrap().to_string();
+            // Printed output always uses the bracketed name-addr form and
+            // must parse back to itself.
+            let reparsed = To::parse(&header)
+                .unwrap_or_else(|e| panic!("{:?} does not re-parse: {}", header, e));
+            assert_eq!(
+                reparsed.to_string(),
+                header,
+                "unstable round trip for {:?}",
+                raw
+            );
+        }
     }
 }

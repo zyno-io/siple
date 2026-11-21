@@ -10,7 +10,7 @@ publish.workspace = true
 [dependencies]
 siple-config = { path = "../siple-config" }
 siple-media = { path = "../siple-media" }
-rsipstack = { path = "../../vendor/rsipstack", default-features = false, features = ["platform-tokio", "rustls", "srv_lookup"] }
+rsipstack = { path = "../../vendor/rsipstack", default-features = false, features = ["platform-tokio", "rustls-ring", "srv_lookup"] }
 
 anyhow = "1"
 async-trait = "0.1"

@@ -9,6 +9,7 @@ use crate::{
     },
     Result,
 };
+use core::time::Duration;
 use std::{fmt, sync::Arc};
 use tokio::net::TcpStream;
 use tracing::debug;
@@ -61,7 +62,7 @@ impl TcpConnection {
         local_addr: SipAddr,
         cancel_token: Option<CancellationToken>,
     ) -> Result<Self> {
-        let remote_addr = stream.peer_addr()?;
+        let remote_addr = crate::platform::net::canonical_socket_addr(stream.peer_addr()?);
         let remote_sip_addr = SipAddr {
             r#type: Some(crate::sip::transport::Transport::Tcp),
             addr: remote_addr.into(),
@@ -111,9 +112,11 @@ impl StreamConnection for TcpConnection {
         self.inner.send_raw(data).await
     }
 
-    async fn serve_loop(&self, sender: TransportSender) -> Result<()> {
+    async fn serve_loop(&self, sender: TransportSender, idle_timeout: Duration) -> Result<()> {
         let sip_connection = SipConnection::Tcp(self.clone());
-        self.inner.serve_loop(sender, sip_connection).await
+        self.inner
+            .serve_loop(sender, sip_connection, idle_timeout)
+            .await
     }
 
     async fn close(&self) -> Result<()> {
