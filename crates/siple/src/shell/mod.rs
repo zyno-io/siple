@@ -821,7 +821,7 @@ impl Shell {
         };
         match ev {
             CallEvent::Ringing(id) => {
-                // A second call while one is live is call waiting: same effects, per §2.4.
+                // A second call while one is live is call waiting: same effects.
                 let fx = policy::incoming_effects(ui, focused);
                 if fx.raise {
                     self.show_window(ctx);

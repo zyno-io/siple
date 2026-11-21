@@ -8,7 +8,7 @@
 //! (the only owner of the write half, 10 s per write), an *rx* task (hub chunks to encoded
 //! frames, never blocks the hub) and the *main loop* (TX ring feeding, marks, clear, call
 //! events). Everything ends through one cancellation token tree rooted at the connection
-//! token (plan invariant I7).
+//! token.
 
 use std::collections::VecDeque;
 use std::sync::Arc;
@@ -276,7 +276,7 @@ struct Stats {
     rx_dropped_ms: AtomicU64,
 }
 
-/// Registry entry plus TX attachment of one stream; cleans up on every exit path (I4).
+/// Registry entry plus TX attachment of one stream; cleans up on every exit path.
 struct Reg {
     inner: Arc<Inner>,
     handle: CallMediaHandle,

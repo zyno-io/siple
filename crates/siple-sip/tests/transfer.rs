@@ -1,4 +1,4 @@
-//! Phase 7: call transfers. Three peer-mode accounts (a = transferor, b =
+//! Call transfers. Three peer-mode accounts (a = transferor, b =
 //! transferee, c = target) in one stack, plus raw-UDP probes for INVITE-with-Replaces.
 
 mod common;

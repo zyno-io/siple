@@ -24,9 +24,9 @@ use crate::theme::{
 };
 use crate::widgets::{icon, segmented, strong};
 
-/// The filter box and chips appear from this many entries on (§3.6).
+/// The filter box and chips appear from this many entries on.
 pub(crate) const FILTER_MIN_ENTRIES: usize = 12;
-/// This many failed keys of one account with one code collapse into one banner (§3.5).
+/// This many failed keys of one account with one code collapse into one banner.
 const BANNER_MIN_FAILURES: usize = 5;
 
 pub(crate) fn blf_tone(p: &Palette, s: BlfState) -> (Tone, bool) {

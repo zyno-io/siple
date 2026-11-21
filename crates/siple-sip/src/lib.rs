@@ -1,8 +1,8 @@
-//! Siple SIP foundation (Phase 3): one actor per account owning its rsipstack endpoint,
+//! Siple SIP foundation: one actor per account owning its rsipstack endpoint,
 //! registration state machine, keep-alives and incoming-request router.
 //!
 //! Entry point: [`SipStack`]. Events come out of the channel given in [`SipStackOptions`];
-//! status is polled with [`SipStack::account_status`]. Calls (Phase 5) are driven through
+//! status is polled with [`SipStack::account_status`]. Calls are driven through
 //! `SipStack::{dial, answer, reject, hangup, send_dtmf, mute, calls}`; media comes from the
 //! [`MediaProvider`] given to [`SipStack::set_media_provider`].
 

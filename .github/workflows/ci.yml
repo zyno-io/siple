@@ -1,5 +1,5 @@
-# Siple CI. Derived from .gitlab-ci.yml, the Dockerfiles and scripts/package-linux.sh.
-# Not yet run on GitHub: expect to tune runner images and caches on the first runs.
+# Siple CI: rustfmt, clippy (also with the `store` feature) and tests on Linux, macOS and Windows;
+# visual snapshots on macOS; cargo-deny; an MSRV check. Packages are built by release.yml and store.yml.
 name: CI
 
 on:
@@ -56,8 +56,8 @@ jobs:
       - name: clippy
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
-      # Store builds (Mac App Store, Microsoft Store) compile out the GitHub update source (and, later, the
-      # installer); the store update checks stay.
+      # Store builds (Mac App Store, Microsoft Store) compile out the GitHub update source and the
+      # in-place installer; the store update checks stay.
       - name: clippy (store feature)
         run: cargo clippy -p siple -p siple-core -p siple-cli --features store --all-targets --locked -- -D warnings
 

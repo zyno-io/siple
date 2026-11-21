@@ -3,6 +3,9 @@
 Thanks for helping. Siple is a source-available (FSL-1.1-ALv2) SIP softphone with a scriptable control API. Small,
 focused pull requests are easiest to review. For anything large, open an issue first.
 
+Looking for something to work on? [docs/ROADMAP.md](docs/ROADMAP.md) lists open work and known bugs;
+[docs/STORE.md](docs/STORE.md) covers what is left for the app stores and Flathub.
+
 By taking part you agree to follow the [Code of Conduct](CODE_OF_CONDUCT.md). Security problems go
 through [SECURITY.md](SECURITY.md), not public issues.
 
