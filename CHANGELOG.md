@@ -5,8 +5,8 @@
 
 - Developer tools (`[ui] developer_tools`, **Settings › Developer**) now gate the footer **Log**, **Open logs** and **Open config**
   buttons. The Settings pages, the account menu and the config-error banner keep their own Open config / Open logs buttons.
-- The account button's tooltip shows when it registered, the last renewal and when the registration expires. BLF key tooltips
-  show when the subscription was confirmed, the last refresh and its expiry.
+- With developer tools on, the account button's tooltip shows when it registered, the last renewal and when the registration
+  expires, and BLF key tooltips show when the subscription was confirmed, the last refresh and its expiry.
 - API: `blf.list` `subscription` carries `subscribed_at` and `last_refreshed_at`.
 - Dependencies updated.
 - rsipstack updated to 0.8.6 (from 0.7.3). User-visible fixes it brings:

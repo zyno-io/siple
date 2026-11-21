@@ -714,7 +714,7 @@ pub(super) fn developer(ui: &mut egui::Ui, cx: &Cx, out: &mut Vec<UiAction>) {
             "ui",
             "developer_tools",
             "Show developer tools",
-            "Show the log pane and the Open config / Open logs buttons in the footer",
+            "Show the log pane and the Open config / Open logs buttons in the footer, and registration and subscription times in the account and extension tooltips",
             &v,
         );
         ui.horizontal(|ui| {

@@ -533,11 +533,12 @@ fn account_chip(
     );
     resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, label.clone()));
     let mut tip = label;
-    // The label already carries the problem's title: add its hint and details, then the times.
+    // The label already carries the problem's title: add its hint and details, then the times
+    // (developer tools only).
     let mut lines = reg_failure(a)
         .map(|f| f.lines().split_off(1))
         .unwrap_or_default();
-    lines.extend(reg_time_lines(a));
+    lines.extend(reg_time_lines(a, cx.vm.snap.ui.developer_tools));
     for l in lines {
         tip.push('\n');
         tip.push_str(&l);

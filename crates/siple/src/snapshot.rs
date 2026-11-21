@@ -757,9 +757,13 @@ fn local_time_text(at: DateTime<Utc>, today: chrono::NaiveDate) -> String {
     }
 }
 
-/// Tooltip lines with the registration times of a registered account. Absolute local times:
-/// the GUI only repaints on snapshot changes, so relative ones would go stale while hovering.
-pub fn reg_time_lines(a: &AccountStatus) -> Vec<String> {
+/// Tooltip lines with the registration times of a registered account, shown only with
+/// developer tools on. Absolute local times: the GUI only repaints on snapshot changes, so
+/// relative ones would go stale while hovering.
+pub fn reg_time_lines(a: &AccountStatus, developer_tools: bool) -> Vec<String> {
+    if !developer_tools {
+        return Vec::new();
+    }
     reg_time_lines_on(a, chrono::Local::now().date_naive())
 }
 
@@ -786,8 +790,12 @@ fn reg_time_lines_on(a: &AccountStatus, today: chrono::NaiveDate) -> Vec<String>
     }
 }
 
-/// Tooltip lines with the subscription times of a BLF key; only the ones that are known.
-pub fn blf_time_lines(b: &siple_sip::BlfStatus) -> Vec<String> {
+/// Tooltip lines with the subscription times of a BLF key, only the known ones, shown only with
+/// developer tools on.
+pub fn blf_time_lines(b: &siple_sip::BlfStatus, developer_tools: bool) -> Vec<String> {
+    if !developer_tools {
+        return Vec::new();
+    }
     blf_time_lines_on(b, chrono::Local::now().date_naive())
 }
 
@@ -1340,6 +1348,9 @@ mod tests {
         assert!(reg_time_lines_on(&status(true, RegState::Registering), today).is_empty());
         // Disabled while the unREGISTER is still in flight: no times.
         assert!(reg_time_lines_on(&status(false, st.registration.clone()), today).is_empty());
+        // Developer tools only.
+        assert!(reg_time_lines(&st, false).is_empty());
+        assert_eq!(reg_time_lines(&st, true).len(), 3);
     }
 
     #[test]
@@ -1353,6 +1364,8 @@ mod tests {
             blf_time_lines_on(&b, today),
             ["Subscribed 14:02:11", "Expires 15:32:05"]
         );
+        assert!(blf_time_lines(&b, false).is_empty(), "developer tools only");
+        assert_eq!(blf_time_lines(&b, true).len(), 2);
         b.subscription.last_refreshed_at = Some(local_utc(2026, 11, 18, 23, 0, 0));
         assert_eq!(
             blf_time_lines_on(&b, today)[1],
