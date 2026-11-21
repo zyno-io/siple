@@ -1,6 +1,10 @@
 <!-- siple-rename: keep (this file documents the legacy ZynoPhone names on purpose) -->
 # Changelog
 
+## Unreleased
+
+- Dependencies updated.
+
 ## 0.1.2 (2026-11-19)
 
 - Store editions now tell you about updates. The Mac App Store edition asks Apple's public lookup of Siple's listing about
