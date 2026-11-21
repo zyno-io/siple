@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 
 use eframe::egui;
 use siple_core::config::edit::{AccountDraft, AccountField, EditValue};
+use siple_core::provision::SetupAccount;
 
 use super::form::{choice_row, hint_line, text_row, toggle_row};
 use crate::theme::Palette;
@@ -41,6 +42,8 @@ pub struct DraftForm {
     /// The advanced block is open.
     pub advanced: bool,
     pub auth_username: String,
+    /// Registrar `host[:port]`; empty = the domain.
+    pub registrar: String,
     pub outbound_proxy: String,
     pub transport: String,
     pub tls_verify: bool,
@@ -66,6 +69,7 @@ const SHOWN_KEYS: &[&str] = &[
     "password",
     "domain",
     "auth_username",
+    "registrar",
     "outbound_proxy",
     "transport",
     "srtp",
@@ -97,6 +101,7 @@ impl Default for DraftForm {
             keyring: false,
             advanced: false,
             auth_username: String::new(),
+            registrar: String::new(),
             outbound_proxy: String::new(),
             transport: "auto".into(),
             tls_verify: true,
@@ -115,19 +120,45 @@ impl DraftForm {
 
     /// Account id for the new `[[account]]`: `<username>.<domain>` limited to `[A-Za-z0-9_.-]`.
     pub fn account_id(&self) -> String {
-        let slug = |s: &str| {
-            s.trim()
-                .chars()
-                .map(|c| {
-                    if c.is_ascii_alphanumeric() || matches!(c, '_' | '.' | '-') {
-                        c
-                    } else {
-                        '-'
-                    }
-                })
-                .collect::<String>()
-        };
-        format!("{}.{}", slug(&self.username), slug(&self.domain))
+        siple_core::config::edit::suggested_account_id(&self.username, &self.domain)
+    }
+
+    /// The form a setup link prefills. The password stays empty and the keychain option off;
+    /// the advanced block opens when the link sets anything in it.
+    pub fn from_link(a: &SetupAccount) -> Self {
+        use siple_core::provision::{profile_name, srtp_name, transport_name};
+        let transport = a.transport.map_or("auto", transport_name).to_string();
+        let srtp = a.srtp.map_or("optional", srtp_name).to_string();
+        let profile = a.profile.map_or("generic", profile_name).to_string();
+        let advanced = !a.auth_username.is_empty()
+            || !a.registrar.is_empty()
+            || !a.outbound_proxy.is_empty()
+            || transport != "auto"
+            || srtp != "optional"
+            || profile != "generic";
+        Self {
+            display_name: a.display_name.clone(),
+            username: a.username.clone(),
+            domain: a.domain.clone(),
+            advanced,
+            auth_username: a.auth_username.clone(),
+            registrar: a.registrar.clone(),
+            outbound_proxy: a.outbound_proxy.clone(),
+            transport,
+            srtp,
+            profile,
+            ..Self::default()
+        }
+    }
+
+    /// Where the account would connect: the proxy, else the registrar, else the domain (as typed).
+    pub fn next_hop(&self) -> String {
+        [&self.outbound_proxy, &self.registrar, &self.domain]
+            .into_iter()
+            .map(|s| s.trim())
+            .find(|s| !s.is_empty())
+            .unwrap_or_default()
+            .to_string()
     }
 
     fn fields(&self) -> BTreeMap<AccountField, EditValue> {
@@ -142,6 +173,7 @@ impl DraftForm {
         s(AccountField::Username, &self.username);
         s(AccountField::Domain, &self.domain);
         s(AccountField::AuthUsername, &self.auth_username);
+        s(AccountField::Registrar, &self.registrar);
         s(AccountField::OutboundProxy, &self.outbound_proxy);
         s(AccountField::Transport, &self.transport);
         s(AccountField::Srtp, &self.srtp);
@@ -271,6 +303,17 @@ pub(crate) fn show(
         field_error(errors, "auth_username"),
     ) {
         f.auth_username = v;
+    }
+    if let Some(v) = text_row(
+        ui,
+        p,
+        "Registrar",
+        &f.registrar,
+        "Same as domain",
+        false,
+        field_error(errors, "registrar"),
+    ) {
+        f.registrar = v;
     }
     if let Some(v) = text_row(
         ui,

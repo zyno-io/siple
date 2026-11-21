@@ -52,6 +52,9 @@
         <uap3:Extension Category="windows.protocol" Executable="siple.exe" EntryPoint="Windows.FullTrustApplication">
           <uap3:Protocol Name="callto" Parameters="-- &quot;%1&quot;"><uap:DisplayName>Callto link</uap:DisplayName></uap3:Protocol>
         </uap3:Extension>
+        <uap3:Extension Category="windows.protocol" Executable="siple.exe" EntryPoint="Windows.FullTrustApplication">
+          <uap3:Protocol Name="siple" Parameters="-- &quot;%1&quot;"><uap:DisplayName>Siple setup link</uap:DisplayName></uap3:Protocol>
+        </uap3:Extension>
         <desktop:Extension Category="windows.startupTask" Executable="siple.exe" EntryPoint="Windows.FullTrustApplication">
           <desktop:StartupTask TaskId="SipleStartup" Enabled="false" DisplayName="@DISPLAY_NAME@"/>
         </desktop:Extension>

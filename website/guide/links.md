@@ -7,14 +7,17 @@ Make Siple the app that opens when you click a phone number or a `sip:` link on 
 Siple handles `sip:`, `sips:`, `tel:` and `callto:` links. When you click one, Siple opens, puts the number in the dial field
 and brings its window to the front. It never dials by itself: you check the number and press **Call**.
 
+Siple also handles `siple:` links, which an administrator sends to set up an account. Those open a review screen and change
+nothing until you confirm every step; see [Send a setup link](/guide/setup-links).
+
 If Siple is already running, the link goes to that copy. It does not open a second one.
 
 ## Turn it on or off
 
 1. Open **Settings › Notifications**.
-2. Under **Notifications and links**, switch **Open sip:, sips:, tel: and callto: links** on or off.
+2. Under **Notifications and links**, switch **Open sip:, sips:, tel:, callto: and siple: setup links** on or off.
 
-The setup you see on first start has the same choice, **Open sip:, tel: and callto: links with Siple**.
+The setup you see on first start has the same choice, **Open phone and setup links with Siple**.
 
 ## Make Siple the default app for phone links
 
@@ -31,7 +34,8 @@ The switch in Settings has no effect on a Mac, because this registration happens
 <template #windows>
 
 Siple registers itself as a candidate handler for your user account. Choose it in **Settings › Default apps** in Windows.
-Turning the Siple setting off removes the registration.
+Turning the Siple setting off removes the registration. `siple:` links need no choice: nothing else claims that scheme, so
+Siple also registers it directly.
 
 </template>
 <template #linux>
@@ -42,7 +46,7 @@ The `.desktop` file declares the link types. Make Siple the default with:
 xdg-mime default io.zyno.siple.desktop x-scheme-handler/sip
 ```
 
-Repeat the command for `sips`, `tel` and `callto`. The switch in Settings has no effect on Linux, because this registration
+Repeat the command for `sips`, `tel`, `callto` and `siple`. The switch in Settings has no effect on Linux, because this registration
 happens at install time.
 
 </template>
@@ -59,5 +63,5 @@ it has no runtime effect, because registration happens at install time.
 | Linux | The `.desktop` file declares the schemes. |
 
 A second `siple <link>` command hands the link to the running instance. Agents can do the same through the control API with
-`app.open_uri`.
+`app.open_uri`; for a `siple:` setup link that only opens the review screen.
 :::

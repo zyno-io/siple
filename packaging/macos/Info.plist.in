@@ -31,6 +31,16 @@
 				<string>callto</string>
 			</array>
 		</dict>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>io.zyno.siple.provision</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>siple</string>
+			</array>
+		</dict>
 	</array>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>

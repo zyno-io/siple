@@ -302,6 +302,24 @@ pub enum ConfigEdit {
     },
 }
 
+/// The account id a new account gets from its user and domain: `<username>.<domain>`, every
+/// character outside `[A-Za-z0-9_.-]` replaced by `-`.
+pub fn suggested_account_id(username: &str, domain: &str) -> String {
+    let slug = |s: &str| {
+        s.trim()
+            .chars()
+            .map(|c| {
+                if c.is_ascii_alphanumeric() || matches!(c, '_' | '.' | '-') {
+                    c
+                } else {
+                    '-'
+                }
+            })
+            .collect::<String>()
+    };
+    format!("{}.{}", slug(username), slug(domain))
+}
+
 /// Builds the account a draft describes without touching any file (`account.test` of a draft,
 /// before it is saved): the draft goes through the same value checks as `add_account`, then the
 /// usual validation. `password_store` is ignored (a draft's `password` is used as given).

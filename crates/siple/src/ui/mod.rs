@@ -24,6 +24,7 @@ mod keys;
 mod rail;
 pub(crate) mod rpc;
 pub(crate) mod settings;
+mod setup_link;
 mod stage;
 mod transfer;
 pub(crate) mod wizard;
@@ -835,6 +836,28 @@ impl PhoneUi {
         self.state.apply_panel_request(lines, ext);
         if let Some(save) = self.state.take_panel_save() {
             self.actions.set_gui_panels(save);
+        }
+    }
+
+    /// Routes a link that arrived from outside: a call link prefills the dial field, a setup link
+    /// opens the Review screen. Neither dials, tests, contacts a server or writes anything.
+    pub fn open_incoming(&mut self, link: &siple_core::uri::IncomingLink) {
+        match link {
+            siple_core::uri::IncomingLink::Dial(l) => self.prefill_dial(&l.target),
+            siple_core::uri::IncomingLink::Setup(l) => self.open_setup_link(l.clone()),
+        }
+    }
+
+    /// Opens the Review screen of a setup link (see [`wizard::WizardState::offer_link`]); when
+    /// the wizard cannot take it, a notice says why.
+    pub fn open_setup_link(&mut self, link: siple_core::provision::SetupLink) {
+        let snap = self.shared.snapshot();
+        let offer = self
+            .state
+            .wizard
+            .offer_link(link, wizard::Origin::Opened, &snap, Utc::now());
+        if let wizard::Offer::Refused(why) = offer {
+            self.shared.set_notice(why.to_string());
         }
     }
 
