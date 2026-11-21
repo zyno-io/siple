@@ -4,8 +4,8 @@
 use eframe::egui::{self, Align, CornerRadius, Layout, Margin, RichText, Stroke};
 
 use super::combo_icon;
-use crate::theme::{FS_BODY, FS_SMALL, Palette, R_LG, R_MD, SP_S, SP_XS};
-use crate::widgets::{FIELD_MARGIN, account_switch, icon, strong};
+use crate::theme::{FS_BODY, FS_MICRO, FS_SMALL, Palette, R_LG, R_MD, SP_S, SP_XS, icon as ic};
+use crate::widgets::{FIELD_MARGIN, account_switch, icon, mono, strong};
 
 /// Width of the label column.
 const LABEL_W: f32 = 150.0;
@@ -276,4 +276,58 @@ pub(crate) fn message_box(ui: &mut egui::Ui, tone: crate::theme::Tone, text: &st
             ui.set_width(ui.available_width());
             ui.add(egui::Label::new(RichText::new(text).size(FS_SMALL).color(tone.ink)).wrap());
         });
+}
+
+/// A problem as three lines: icon and strong title in the tone's ink, the hint under it, and the
+/// server's raw answer as muted monospace details. Everything wraps.
+pub(crate) fn problem_lines(
+    ui: &mut egui::Ui,
+    p: &Palette,
+    tone: crate::theme::Tone,
+    title: &str,
+    hint: &str,
+    detail: &str,
+) {
+    ui.vertical(|ui| {
+        ui.spacing_mut().item_spacing.y = 2.0;
+        ui.horizontal_top(|ui| {
+            ui.spacing_mut().item_spacing.x = 6.0;
+            ui.label(icon(ic::WARNING_CIRCLE, 15.0).color(tone.ink));
+            ui.add(egui::Label::new(strong(title, FS_SMALL).color(tone.ink)).wrap());
+        });
+        ui.add(egui::Label::new(RichText::new(hint).size(FS_SMALL).color(p.text)).wrap());
+        if !detail.is_empty() {
+            ui.add(egui::Label::new(mono(detail, FS_MICRO).color(p.muted)).wrap());
+        }
+    });
+}
+
+/// [`problem_lines`] inside a frame on the tone's soft fill.
+pub(crate) fn problem_box(
+    ui: &mut egui::Ui,
+    p: &Palette,
+    tone: crate::theme::Tone,
+    title: &str,
+    hint: &str,
+    detail: &str,
+) {
+    egui::Frame::new()
+        .fill(tone.soft)
+        .corner_radius(CornerRadius::same(R_MD))
+        .inner_margin(Margin::symmetric(10, SP_XS as i8 + 2))
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            problem_lines(ui, p, tone, title, hint, detail);
+        });
+}
+
+/// The outcome of an account test: a failure with a named problem shows its title, hint and
+/// evidence; anything else (success, `other`, an old server) shows the one-line message.
+pub(crate) fn test_result_box(ui: &mut egui::Ui, p: &Palette, r: &super::rpc::TestResult) {
+    match r.problem {
+        Some(problem) if !r.ok && problem != siple_sip::problem::Problem::Other => {
+            problem_box(ui, p, p.err, problem.title(), problem.hint(), &r.detail);
+        }
+        _ => message_box(ui, if r.ok { p.ok } else { p.err }, &r.message),
+    }
 }

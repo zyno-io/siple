@@ -6,7 +6,7 @@ use eframe::egui::{self, Color32, CornerRadius, RichText, Stroke};
 use siple_sip::{CallDirection, CallInfo, CallState, EndCause, TransferPhase};
 
 use super::{Cx, UiAction, UiState, display_name, session_for, state_tone};
-use crate::snapshot::{call_elapsed_secs, format_duration};
+use crate::snapshot::{call_elapsed_secs, end_failure, format_duration};
 use crate::theme::{FS_BODY, FS_ICON, FS_MICRO, FS_SMALL, R_MD, SP_S, Tone, icon as ic};
 use crate::widgets::{
     Chevron, chevron_button, icon, paint_focus_ring, paint_lamp, soft_button, strong,
@@ -61,18 +61,21 @@ pub(super) fn line_summary(cx: &Cx, st: &UiState, c: &CallInfo) -> (&'static str
     (glyph, tone, text)
 }
 
-/// End cause as the rail shows it: "Transferred", "Missed", "Busy 486", "Declined".
+/// End cause as the rail shows it: the problem's title ("Busy", "Not allowed") for a failure, else
+/// "Transferred", "Missed", "Cancelled", "Declined" (we rejected it) or "Ended".
 fn ended_text(c: &CallInfo) -> String {
-    match &c.end {
-        Some(e) => match e.cause {
-            EndCause::Transferred => "Transferred".into(),
-            EndCause::Missed => "Missed".into(),
-            EndCause::Rejected if e.code == 486 => "Busy 486".into(),
-            EndCause::Rejected => "Declined".into(),
-            EndCause::Hangup | EndCause::RemoteHangup => "Ended".into(),
-            _ => format!("{} {}", e.code, e.reason).trim().to_string(),
-        },
-        None => "Ended".into(),
+    let Some(e) = &c.end else {
+        return "Ended".into();
+    };
+    if let Some(f) = end_failure(e) {
+        return f.title;
+    }
+    match e.cause {
+        EndCause::Transferred => "Transferred".into(),
+        EndCause::Missed => "Missed".into(),
+        EndCause::Cancelled => "Cancelled".into(),
+        EndCause::Rejected => "Declined".into(),
+        _ => "Ended".into(),
     }
 }
 

@@ -444,6 +444,10 @@ impl AppBackend {
         let mut v = serde_json::to_value(&d).map_err(|e| ApiError::internal(e.to_string()))?;
         v["ok"] = d.is_ok().into();
         v["message"] = d.message().into();
+        if let Some(p) = d.problem() {
+            v["problem"] =
+                serde_json::to_value(p).map_err(|e| ApiError::internal(e.to_string()))?;
+        }
         Ok(v)
     }
 
@@ -526,7 +530,7 @@ pub fn backend_methods() -> Vec<MethodInfo> {
     vec![
             MethodInfo::new(
                 "status",
-                "Overall state: instance_id and started_at (a changed instance_id means a restart: event seqs and call ids reset), accounts (registration, dnd, mwi summary, blf list, pending_rebuild), calls, active_line (id of the un-held device-bound call that owns the microphone and speaker, or null), network {generation: count of network changes seen}, audio (effective devices from [audio] with source config|default, active devices, mic_permission), build {channel: direct|mas|msix, sandboxed, store: a store edition (compiled without the GitHub update source), version}, speech {tts, stt: whether [speech] tts_command / stt_command are set}, config (path, applied_at, last_error), update {enabled, current, available, latest, release_url, source, action, store_url, install_state: the update check's summary, see app.update_status}, event_seq.",
+                "Overall state: instance_id and started_at (a changed instance_id means a restart: event seqs and call ids reset), accounts (registration, which carries `problem` {kind, title, hint} when failed; dnd, mwi summary, blf list, pending_rebuild), calls, active_line (id of the un-held device-bound call that owns the microphone and speaker, or null), network {generation: count of network changes seen}, audio (effective devices from [audio] with source config|default, active devices, mic_permission), build {channel: direct|mas|msix, sandboxed, store: a store edition (compiled without the GitHub update source), version}, speech {tts, stt: whether [speech] tts_command / stt_command are set}, config (path, applied_at, last_error), update {enabled, current, available, latest, release_url, source, action, store_url, install_state: the update check's summary, see app.update_status}, event_seq.",
                 none(),
             ),
             MethodInfo::new("account.list", "Status of all accounts.", none()),
@@ -567,7 +571,7 @@ pub fn backend_methods() -> Vec<MethodInfo> {
             ),
             MethodInfo::new(
                 "account.test",
-                "Try an account's settings with a one-off REGISTER (then unREGISTER) on a private socket, without disturbing any running account, and say what is wrong. Give exactly one of `account` (a configured account id, its stored settings and password) or `draft` ({id?, fields:{field: value}}: the same fields and checks as `config.edit` `add_account`, e.g. username, password, domain, transport, tls_verify; nothing is saved). `timeout_secs` (1-25, default 15) bounds the whole test. Result: `diagnosis` is one of `ok` {transport (what `auto` picked), auto, server, granted_secs, elapsed_ms} | `auth_failed` {code: 401/403/407 after the digest answer} | `not_found` (404) | `timeout` {transport, hint: with UDP, try TCP or TLS} | `tls_untrusted` {fingerprint: SHA-256 of the server certificate, lowercase hex, reason}: to trust that server, write it with `config.edit` set_account `tls_fingerprint` | `dns_failed` {message} | `network_unreachable` {message} | `other` {code (0 = local failure), reason}; plus `ok` (boolean) and `message` (one line for a user). The password is never echoed. A registrar that allows one binding per address of record may briefly drop the running account's binding; the account's next refresh restores it. A draft whose fields are invalid fails with invalid_params and data.errors [{path, message}].",
+                "Try an account's settings with a one-off REGISTER (then unREGISTER) on a private socket, without disturbing any running account, and say what is wrong. Give exactly one of `account` (a configured account id, its stored settings and password) or `draft` ({id?, fields:{field: value}}: the same fields and checks as `config.edit` `add_account`, e.g. username, password, domain, transport, tls_verify; nothing is saved). `timeout_secs` (1-25, default 15) bounds the whole test. Result: `diagnosis` is one of `ok` {transport (what `auto` picked), auto, server, granted_secs, elapsed_ms} | `auth_failed` {code: 401/403/407 after the digest answer} | `not_found` (404) | `timeout` {transport, hint: with UDP, try TCP or TLS} | `tls_untrusted` {fingerprint: SHA-256 of the server certificate, lowercase hex, reason}: to trust that server, write it with `config.edit` set_account `tls_fingerprint` | `dns_failed` {message} | `network_unreachable` {message} | `other` {code (0 = local failure), reason}; plus `ok` (boolean), `message` (one line for a user) and, unless `ok`, `problem` {kind, title, hint} (the plain-language category; `hint` there is the stable one, while `timeout`'s own `hint` field predates it). The password is never echoed. A registrar that allows one binding per address of record may briefly drop the running account's binding; the account's next refresh restores it. A draft whose fields are invalid fails with invalid_params and data.errors [{path, message}].",
                 json!({"type":"object","properties":{
                     "account":{"type":"string","description":"Configured account id."},
                     "draft":{"type":"object","properties":{

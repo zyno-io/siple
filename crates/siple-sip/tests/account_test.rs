@@ -10,7 +10,7 @@ use std::time::Duration;
 
 use siple_config::{AccountConfig, GeneralConfig, MediaConfig, Secret, Transport};
 use siple_sip::net::{NetMonitor, NetProbe, NetReason, NetSetup};
-use siple_sip::{Diagnosis, NullWireSink, RegState, SipError, SipStack, SipStackOptions};
+use siple_sip::{Diagnosis, NullWireSink, Problem, RegState, SipError, SipStack, SipStackOptions};
 use tokio::sync::mpsc::{UnboundedSender, unbounded_channel};
 
 // --- fake registrars ---------------------------------------------------------------------------
@@ -362,6 +362,7 @@ async fn wrong_password_is_auth_failed() {
             .test_account(account(fake.addr, Transport::Udp), SHORT)
             .await;
         assert_eq!(d, Diagnosis::AuthFailed { code });
+        assert_eq!(d.problem(), Some(Problem::AuthFailed));
         assert!(d.message().contains("Wrong username or password"));
         s.shutdown().await;
     }
@@ -375,6 +376,7 @@ async fn unknown_user_is_not_found() {
         .test_account(account(fake.addr, Transport::Udp), SHORT)
         .await;
     assert_eq!(d, Diagnosis::NotFound);
+    assert_eq!(d.problem(), Some(Problem::UserNotFound));
     s.shutdown().await;
 }
 
@@ -392,6 +394,7 @@ async fn other_status_is_reported_with_code_and_reason() {
             reason: "Service Unavailable".into()
         }
     );
+    assert_eq!(d.problem(), Some(Problem::ServerError));
     s.shutdown().await;
 }
 
@@ -412,6 +415,7 @@ async fn silence_times_out_with_a_tcp_tls_hint_on_udp() {
     };
     assert_eq!(*transport, Transport::Udp);
     assert!(hint.contains("TCP or TLS"), "{hint}");
+    assert_eq!(d.problem(), Some(Problem::NoResponse));
     s.shutdown().await;
 }
 
@@ -424,11 +428,13 @@ async fn dns_failure_and_no_route_are_told_apart() {
     probe.dns_fail.store(true, Ordering::SeqCst);
     let d = s.test_account(cfg.clone(), SHORT).await;
     assert!(matches!(d, Diagnosis::DnsFailed { .. }), "{d:?}");
+    assert_eq!(d.problem(), Some(Problem::DnsFailed));
     probe.dns_fail.store(false, Ordering::SeqCst);
     probe.no_route.store(true, Ordering::SeqCst);
     cfg.bind_address.clear(); // an explicit bind address skips the route check
     let d = s.test_account(cfg, SHORT).await;
     assert!(matches!(d, Diagnosis::NetworkUnreachable { .. }), "{d:?}");
+    assert_eq!(d.problem(), Some(Problem::NetworkUnreachable));
     s.shutdown().await;
 }
 
@@ -464,6 +470,7 @@ async fn self_signed_tls_is_untrusted_with_its_fingerprint_then_trusted_by_pinni
     assert_eq!(fingerprint, &fp);
     assert!(!reason.is_empty());
     assert!(d.message().contains(&fp));
+    assert_eq!(d.problem(), Some(Problem::TlsUntrusted));
 
     // "Trust this server": the fingerprint goes to `tls_fingerprint`; the same test now registers.
     let mut pinned = cfg;
@@ -479,6 +486,27 @@ async fn self_signed_tls_is_untrusted_with_its_fingerprint_then_trusted_by_pinni
         ),
         "{d:?}"
     );
+    assert_eq!(d.problem(), None);
+    s.shutdown().await;
+}
+
+#[tokio::test]
+async fn a_running_tls_account_with_an_untrusted_certificate_fails_with_tls_untrusted() {
+    let (fake, _fp) = tls_registrar(Reply::Code(200, "OK"));
+    let s = stack(Arc::default());
+    s.add_account(
+        account(fake.addr, Transport::Tls),
+        &GeneralConfig::default(),
+        &MediaConfig::default(),
+    )
+    .await
+    .unwrap();
+    until_status(&s, "failed", |st| {
+        matches!(st.registration, RegState::Failed { .. })
+    })
+    .await;
+    let reg = s.account_status("t").unwrap().registration;
+    assert_eq!(reg.problem(), Some(Problem::TlsUntrusted), "{reg:?}");
     s.shutdown().await;
 }
 

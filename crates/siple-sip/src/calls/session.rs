@@ -22,6 +22,7 @@ use super::{
     TransferRole,
 };
 use crate::error::{Result, SipError};
+use crate::problem::{Context, Problem, classify};
 use crate::types::SipEvent;
 
 /// Terminal sessions kept for display.
@@ -123,7 +124,7 @@ pub struct TransferNotify {
 }
 
 /// What went wrong last.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TransferError {
     /// `consult`, `refer`, `notify`, `swap`, `resume` or `superseded`.
     pub stage: String,
@@ -131,6 +132,44 @@ pub struct TransferError {
     pub code: u16,
     /// Reason phrase or local error text.
     pub reason: String,
+}
+
+impl TransferError {
+    /// The plain-language problem behind this error; `None` for a superseded session.
+    pub fn problem(&self) -> Option<Problem> {
+        let ctx = match self.stage.as_str() {
+            "consult" | "notify" => Context::Call,
+            "superseded" => return None,
+            // refer, swap, resume (and anything new) are in-dialog requests
+            _ => Context::InDialog,
+        };
+        Some(classify(ctx, self.code, &self.reason).unwrap_or(Problem::Other))
+    }
+}
+
+impl Serialize for TransferError {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> std::result::Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct Wire<'a> {
+            stage: &'a str,
+            code: u16,
+            reason: &'a str,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            problem: Option<Problem>,
+        }
+        let TransferError {
+            stage,
+            code,
+            reason,
+        } = self;
+        Wire {
+            stage,
+            code: *code,
+            reason,
+            problem: self.problem(),
+        }
+        .serialize(s)
+    }
 }
 
 /// A transfer session (`snapshot.transfers`, `transfer.get`, event `transfer.session`).

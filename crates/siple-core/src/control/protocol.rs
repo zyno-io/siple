@@ -155,6 +155,22 @@ impl ApiError {
         self
     }
 
+    /// Attaches the plain-language `problem` to `error.data`, keeping other extra fields.
+    pub fn with_problem(mut self, problem: crate::problem::Problem) -> Self {
+        let p = serde_json::to_value(problem).unwrap_or(Value::Null);
+        match &mut self.extra {
+            Some(Value::Object(m)) => {
+                m.insert("problem".into(), p);
+            }
+            Some(other) => {
+                let detail = other.take();
+                self.extra = Some(json!({ "detail": detail, "problem": p }));
+            }
+            None => self.extra = Some(json!({ "problem": p })),
+        }
+        self
+    }
+
     /// The JSON-RPC error object.
     pub fn to_wire(&self) -> Value {
         let mut data = json!({ "kind": self.kind.as_str() });
@@ -332,6 +348,25 @@ mod tests {
         assert_eq!(w["data"]["kind"], "unsupported");
         assert_eq!(ErrorKind::Unsupported.as_str(), "unsupported");
         assert_eq!(ApiError::from_wire(&w), e);
+    }
+
+    #[test]
+    fn with_problem_survives_the_wire_and_keeps_the_kind() {
+        use crate::problem::Problem;
+        let e = ApiError::sip_error(486, "486 Busy Here")
+            .with_extra(json!({"call": "c1"}))
+            .with_problem(Problem::Busy);
+        let w = e.to_wire();
+        assert_eq!(w["data"]["kind"], "sip_error");
+        assert_eq!(w["data"]["sip_code"], 486);
+        assert_eq!(w["data"]["call"], "c1");
+        assert_eq!(w["data"]["problem"]["kind"], "busy");
+        assert_eq!(w["data"]["problem"]["title"], "Busy");
+        let back = ApiError::from_wire(&w);
+        assert_eq!(back, e);
+        assert_eq!(back.to_wire(), w);
+        let bare = ApiError::timeout("t").with_problem(Problem::NoResponse);
+        assert_eq!(bare.to_wire()["data"]["problem"]["kind"], "no_response");
     }
 
     #[test]

@@ -37,6 +37,8 @@ use crate::types::SipEvent;
 
 /// Fraction of the granted lifetime after which a subscription is refreshed.
 pub const REFRESH_FRACTION: f64 = 0.85;
+/// Prefix of the failure text when the notifier ended the subscription.
+pub(crate) const TERMINATED: &str = "subscription terminated: ";
 /// Default lifetime of `message-summary` subscriptions (no config knob).
 const MWI_EXPIRES: u32 = 3600;
 /// Default lifetime of generic subscriptions.
@@ -1102,7 +1104,7 @@ impl SubManager {
                         s.next = None;
                         s.retrying = false;
                         let reason = format!(
-                            "subscription terminated: {}",
+                            "{TERMINATED}{}",
                             sub_state.reason.as_deref().unwrap_or("no reason")
                         );
                         s.set_state(SubState::Failed { code: 0, reason }, ev);
@@ -1111,7 +1113,7 @@ impl SubManager {
                         s.last_error = Some((
                             0,
                             format!(
-                                "subscription terminated: {}",
+                                "{TERMINATED}{}",
                                 sub_state.reason.as_deref().unwrap_or("no reason")
                             ),
                         ));

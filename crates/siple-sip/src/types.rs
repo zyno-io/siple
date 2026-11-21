@@ -11,6 +11,7 @@ use tokio::sync::mpsc::UnboundedSender;
 use crate::blf::{BlfDialog, BlfState};
 use crate::calls::{CallInfo, NegotiatedSummary};
 use crate::mwi::{MwiStatus, MwiSummary};
+use crate::problem::{Context, Problem, classify};
 use crate::subscribe::{SubKind, SubState};
 
 /// `Allow` header value advertised on REGISTER / OPTIONS / INVITE / 18x / 2xx. One place so later
@@ -23,9 +24,64 @@ pub const SUPPORTED: &str = "replaces";
 /// `Accept` header value on OPTIONS responses.
 pub const ACCEPT: &str = "application/sdp";
 
-/// Registration state of an account.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+/// Borrowed mirror of [`RegState`] for serialization: same tag and variants, plus the problem
+/// on `failed`. Destructured without `..` in the impl below so a new field is a compile error.
+#[derive(Serialize)]
 #[serde(tag = "state", rename_all = "snake_case")]
+enum RegStateWire<'a> {
+    Disabled,
+    Unregistered,
+    Registering,
+    Registered {
+        registered_at: &'a DateTime<Utc>,
+        last_renewed_at: &'a DateTime<Utc>,
+        expires_at: &'a DateTime<Utc>,
+        granted_secs: u32,
+    },
+    WaitingForNetwork,
+    Failed {
+        code: u16,
+        reason: &'a str,
+        retry_at: &'a DateTime<Utc>,
+        problem: Problem,
+    },
+}
+
+impl Serialize for RegState {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> std::result::Result<S::Ok, S::Error> {
+        match self {
+            RegState::Disabled => RegStateWire::Disabled,
+            RegState::Unregistered => RegStateWire::Unregistered,
+            RegState::Registering => RegStateWire::Registering,
+            RegState::Registered {
+                registered_at,
+                last_renewed_at,
+                expires_at,
+                granted_secs,
+            } => RegStateWire::Registered {
+                registered_at,
+                last_renewed_at,
+                expires_at,
+                granted_secs: *granted_secs,
+            },
+            RegState::WaitingForNetwork => RegStateWire::WaitingForNetwork,
+            RegState::Failed {
+                code,
+                reason,
+                retry_at,
+            } => RegStateWire::Failed {
+                code: *code,
+                reason,
+                retry_at,
+                problem: self.problem().unwrap_or(Problem::Other),
+            },
+        }
+        .serialize(s)
+    }
+}
+
+/// Registration state of an account.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RegState {
     /// Account is disabled; nothing is running.
     Disabled,
@@ -59,6 +115,16 @@ pub enum RegState {
 }
 
 impl RegState {
+    /// The plain-language problem behind a failed registration; `None` in every other state.
+    pub fn problem(&self) -> Option<Problem> {
+        match self {
+            RegState::Failed { code, reason, .. } => {
+                Some(classify(Context::Register, *code, reason).unwrap_or(Problem::Other))
+            }
+            _ => None,
+        }
+    }
+
     /// Records a successful REGISTER. A renewal keeps the start of a still-live binding.
     pub(crate) fn renewed(&self, now: DateTime<Utc>, granted_secs: u32) -> Self {
         let registered_at = match self {

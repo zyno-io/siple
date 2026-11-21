@@ -51,7 +51,7 @@ jobs:
 
       # Per package, never --all: vendor/rsipstack is not ours and must not be reformatted.
       - name: rustfmt
-        run: cargo fmt --check -p siple-media -p siple-config -p siple-core -p siple-sip -p siple -p siple-cli
+        run: cargo fmt --check -p siple-problem -p siple-media -p siple-config -p siple-core -p siple-sip -p siple -p siple-cli
 
       - name: clippy
         run: cargo clippy --workspace --all-targets --locked -- -D warnings

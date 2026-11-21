@@ -5,6 +5,8 @@ use serde::Serialize;
 use siple_config::{AudioSink, AudioSource, Codec, SrtpPolicy};
 use siple_media::sdp_neg::Negotiated;
 
+use crate::problem::{Context, Problem, classify};
+
 /// Call id, `c1`, `c2`, ... unique per process (across accounts).
 pub type CallId = String;
 
@@ -122,7 +124,7 @@ pub enum AnswerMode {
 }
 
 /// Why and how a call ended.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CallEnd {
     /// SIP status code that ended the call: the final response of an unanswered call, the
     /// `Reason` cause of a BYE (200 when absent), 487 for CANCEL. 0 = local failure (transport
@@ -139,6 +141,61 @@ pub struct CallEnd {
     pub q850_cause: Option<u16>,
     /// Category of the end; see [`EndCause`].
     pub cause: EndCause,
+}
+
+impl CallEnd {
+    /// The plain-language problem behind a call that did not end normally; `None` for a hangup,
+    /// transfer, cancel, miss or a call we rejected ourselves.
+    pub fn problem(&self) -> Option<Problem> {
+        match self.cause {
+            EndCause::Hangup
+            | EndCause::RemoteHangup
+            | EndCause::Transferred
+            | EndCause::Replaced
+            | EndCause::Cancelled
+            | EndCause::Missed => None,
+            EndCause::Rejected if self.by == EndedBy::Local => None,
+            EndCause::SessionExpired => Some(Problem::CallDropped),
+            EndCause::NetworkLost => Some(Problem::NetworkLost),
+            EndCause::Rejected | EndCause::Failed => {
+                Some(classify(Context::Call, self.code, &self.reason).unwrap_or(Problem::Other))
+            }
+        }
+    }
+}
+
+impl Serialize for CallEnd {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct Wire<'a> {
+            code: u16,
+            reason: &'a str,
+            by: EndedBy,
+            missed: bool,
+            q850_cause: Option<u16>,
+            cause: EndCause,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            problem: Option<Problem>,
+        }
+        let CallEnd {
+            code,
+            reason,
+            by,
+            missed,
+            q850_cause,
+            cause,
+        } = self;
+        Wire {
+            code: *code,
+            reason,
+            by: *by,
+            missed: *missed,
+            q850_cause: *q850_cause,
+            cause: *cause,
+            problem: self.problem(),
+        }
+        .serialize(s)
+    }
 }
 
 /// Hold flags of a call.

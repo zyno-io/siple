@@ -10,6 +10,7 @@ publish.workspace = true
 [dependencies]
 siple-config = { path = "../siple-config" }
 siple-media = { path = "../siple-media" }
+siple-problem = { path = "../siple-problem" }
 rsipstack = { path = "../../vendor/rsipstack", default-features = false, features = ["platform-tokio", "rustls", "srv_lookup"] }
 
 anyhow = "1"

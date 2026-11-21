@@ -46,8 +46,8 @@ Likely causes:
 
 What to do:
 
-1. Hover over the account lamp in the top bar to read the state, or open it and read the failure text (for example
-   `failed: 401 Unauthorized`).
+1. Click the account in the top bar. The menu names the problem in plain words (for example **Wrong username or
+   password**), says what to try, and shows the server's answer underneath (for example `403 Forbidden`).
 2. Open **Settings › Accounts** and check **Username**, **Password** and **Domain** against what your IT
    team or provider gave you.
 3. If it says **waiting for network**, check your Wi-Fi or cable. See [Network changes](/guide/network).
@@ -63,6 +63,14 @@ firewall, wrong `registrar` or transport) and 488 (codec or SRTP mismatch: check
 **TLS to a self-signed PBX.** TLS is the encryption on the connection to your server. Prefer pinning (`tls_fingerprint`) or
 `tls_ca_file` over `tls_verify = false`. Siple speaks TLS 1.2 and 1.3 with ECDHE suites; older-only servers are not supported.
 :::
+
+## What Siple's messages mean
+
+When something fails, Siple names the problem in plain words and says what to try. The server's own answer (such as
+`486 Busy Here`) sits on a details line or in a hover. Each message below has a short code, which is what the
+[API](/agents/api-reference) and `siple-cli` report as `problem.kind`.
+
+<!--@include: ../../docs/PROBLEMS.md-->
 
 ## Calls drop when you change networks
 
