@@ -236,17 +236,20 @@ impl AuthState {
         }))
     }
 
+    /// Whether a request sent to `destination` (the resolved next hop) may carry the account's
+    /// digest response: the same rule as for answering a challenge.
+    pub(crate) fn allows_hop(&self, destination: Option<&SipAddr>) -> bool {
+        let (hop, reliable) = hop_of(destination);
+        decide(&self.lock().provider, hop.as_ref(), reliable) == Decision::Allow
+    }
+
     fn check(
         &self,
         req: &Request,
         destination: Option<&SipAddr>,
         resp: &Response,
     ) -> Result<(), String> {
-        let hop = destination.map(Endpoint::from_addr);
-        let reliable = destination.is_some_and(|d| {
-            d.r#type
-                .is_some_and(|t| !matches!(t, rsipstack::sip::Transport::Udp))
-        });
+        let (hop, reliable) = hop_of(destination);
         let mut g = self.lock();
         tracing::debug!(hop = ?hop.as_ref().map(ToString::to_string), "auth decision");
         if decide(&g.provider, hop.as_ref(), reliable) == Decision::Allow {
@@ -275,6 +278,37 @@ impl AuthState {
              if your provider uses other servers)"
         ))
     }
+}
+
+/// The hop a request goes to, and whether it is a connection-oriented transport.
+fn hop_of(destination: Option<&SipAddr>) -> (Option<Endpoint>, bool) {
+    let reliable = destination.is_some_and(|d| {
+        d.r#type
+            .is_some_and(|t| !matches!(t, rsipstack::sip::Transport::Udp))
+    });
+    (destination.map(Endpoint::from_addr), reliable)
+}
+
+/// Removes `Authorization` / `Proxy-Authorization` from an ACK that is not going to the provider.
+/// rsipstack copies the INVITE's credentials into the 2xx ACK (RFC 3261 §22.1), and over UDP that
+/// ACK goes to the 2xx's Record-Route or Contact, which the peer controls. The digest response is
+/// only for the provider that challenged us.
+pub(crate) fn strip_foreign_ack_credentials(
+    auth: &AuthState,
+    req: &mut Request,
+    destination: Option<&SipAddr>,
+) {
+    if req.method != rsipstack::sip::Method::Ack
+        || !req
+            .headers
+            .iter()
+            .any(|h| matches!(h, Header::Authorization(_) | Header::ProxyAuthorization(_)))
+        || auth.allows_hop(destination)
+    {
+        return;
+    }
+    req.headers
+        .retain(|h| !matches!(h, Header::Authorization(_) | Header::ProxyAuthorization(_)));
 }
 
 /// The realm of the 401 (`WWW-Authenticate`) / 407 (`Proxy-Authenticate`) challenge.
@@ -437,5 +471,56 @@ mod tests {
         let g = st.lock();
         assert_eq!(run(&g.provider, "192.0.2.1:5060"), Decision::Refuse);
         assert_eq!(run(&g.provider, "192.0.2.2:5060"), Decision::Allow);
+    }
+
+    #[test]
+    fn ack_credentials_only_go_to_the_provider() {
+        let st = AuthState::new();
+        let cfg = AccountConfig {
+            domain: "pbx.example".into(),
+            ..Default::default()
+        };
+        let provider: SocketAddr = "192.0.2.1:5060".parse().unwrap();
+        st.update(&cfg, Some((&cfg, &[provider])));
+        let msg = |method: &str| {
+            Request::try_from(
+                format!(
+                    "{method} sip:bob@203.0.113.9:5060 SIP/2.0\r\n\
+                     Via: SIP/2.0/UDP 192.0.2.50:5060;branch=z9hG4bKack1\r\n\
+                     From: <sip:alice@pbx.example>;tag=a\r\n\
+                     To: <sip:bob@pbx.example>;tag=b\r\n\
+                     Call-ID: ack-creds\r\n\
+                     CSeq: 2 {method}\r\n\
+                     Proxy-Authorization: Digest username=\"alice\", realm=\"pbx\", \
+                     nonce=\"n\", uri=\"sip:bob@pbx.example\", response=\"0123\"\r\n\
+                     Content-Length: 0\r\n\r\n"
+                )
+                .as_str(),
+            )
+            .unwrap()
+        };
+        let has_creds = |r: &Request| {
+            r.headers
+                .iter()
+                .any(|h| matches!(h, Header::Authorization(_) | Header::ProxyAuthorization(_)))
+        };
+        let udp = |a: &str| {
+            SipAddr::new(
+                rsipstack::sip::Transport::Udp,
+                a.parse::<SocketAddr>().unwrap().into(),
+            )
+        };
+
+        // To the provider: kept (RFC 3261 §22.1).
+        let mut ack = msg("ACK");
+        strip_foreign_ack_credentials(&st, &mut ack, Some(&udp("192.0.2.1:5060")));
+        assert!(has_creds(&ack));
+        // Straight to the callee's Contact: removed.
+        strip_foreign_ack_credentials(&st, &mut ack, Some(&udp("203.0.113.9:5060")));
+        assert!(!has_creds(&ack));
+        // Other methods are left to the challenge guard.
+        let mut invite = msg("INVITE");
+        strip_foreign_ack_credentials(&st, &mut invite, Some(&udp("203.0.113.9:5060")));
+        assert!(has_creds(&invite));
     }
 }

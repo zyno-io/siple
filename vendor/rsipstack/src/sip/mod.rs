@@ -1,8 +1,10 @@
 pub mod error;
+pub mod event_packages;
 pub mod headers;
 pub mod message;
 pub mod method;
 pub mod parser;
+pub(crate) mod routing;
 pub mod services;
 pub mod status_code;
 pub mod transport;
@@ -30,9 +32,9 @@ pub mod param {
 
 pub mod typed {
     pub use super::headers::typed::{
-        Allow, Authorization, CSeq, Contact, From, HistoryInfo, HistoryInfoEntry, Identity,
-        ProxyAuthenticate, ProxyAuthorization, RecordRoute, Route, ServiceRoute, To, Tokenize,
-        TypedHeader, Via, WwwAuthenticate,
+        Allow, Authorization, CSeq, Contact, Diversion, DiversionEntry, DiversionReason, From,
+        HistoryInfo, HistoryInfoEntry, Identity, ProxyAuthenticate, ProxyAuthorization,
+        RecordRoute, Route, ServiceRoute, To, Tokenize, TypedHeader, Via, WwwAuthenticate,
     };
     pub mod tokenizers {
         pub use crate::sip::headers::typed::tokenizers::{AuthTokenizer, CseqTokenizer};
@@ -42,13 +44,13 @@ pub mod typed {
 pub use headers::untyped::{
     Accept, AcceptEncoding, AcceptLanguage, AlertInfo, Allow, AuthenticationInfo, Authorization,
     CSeq, CallId, CallInfo, Contact, ContentDisposition, ContentEncoding, ContentLanguage,
-    ContentLength, ContentType, Date, ErrorInfo, Event, Expires, From, HistoryInfo, Identity,
-    InReplyTo, MaxForwards, MimeVersion, MinExpires, MinSE, Organization, PAssertedIdentity,
-    PPreferredIdentity, Path, Priority, Privacy, ProxyAuthenticate, ProxyAuthorization,
-    ProxyRequire, RAck, RSeq, Reason, RecordRoute, ReferTo, ReferredBy, Replaces, ReplyTo, Require,
-    RetryAfter, Route, Server, SessionExpires, SessionId, Subject, SubscriptionState, Supported,
-    Timestamp, To, ToTypedHeader, Unsupported, UntypedHeader, UserAgent, UserToUser, Via, Warning,
-    WwwAuthenticate,
+    ContentLength, ContentType, Date, Diversion, ErrorInfo, Event, Expires, From, HistoryInfo,
+    Identity, InReplyTo, MaxForwards, MimeVersion, MinExpires, MinSE, Organization,
+    PAssertedIdentity, PPreferredIdentity, Path, Priority, Privacy, ProxyAuthenticate,
+    ProxyAuthorization, ProxyRequire, RAck, RSeq, Reason, RecordRoute, ReferTo, ReferredBy,
+    Replaces, ReplyTo, Require, RetryAfter, Route, Server, SessionExpires, SessionId, Subject,
+    SubscriptionState, Supported, Timestamp, To, ToTypedHeader, Unsupported, UntypedHeader,
+    UserAgent, UserToUser, Via, Warning, WwwAuthenticate,
 };
 
 pub mod prelude {

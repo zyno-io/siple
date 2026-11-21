@@ -1,19 +1,15 @@
 use super::dialog::DialogInnerRef;
 use super::DialogId;
+use crate::dialog::{
+    dialog::{DialogState, TerminatedReason, TransactionHandle},
+    subscription::ClientSubscriptionDialog,
+};
 use crate::platform::CancellationToken;
 use crate::prelude::*;
 use crate::sip::prelude::HeadersExt;
-use crate::sip::{Response, SipMessage, StatusCode};
+use crate::sip::Response;
 use crate::transaction::transaction::Transaction;
 use crate::Result;
-use crate::{
-    dialog::{
-        authenticate::handle_client_authenticate,
-        dialog::{DialogState, TerminatedReason, TransactionHandle},
-        subscription::ClientSubscriptionDialog,
-    },
-    transaction::key::TransactionRole,
-};
 use core::sync::atomic::Ordering;
 use tracing::{debug, trace, warn};
 
@@ -36,7 +32,7 @@ use tracing::{debug, trace, warn};
 ///
 /// 1. **Creation** - Dialog created when sending INVITE
 /// 2. **Early State** - Receives provisional responses (1xx)
-/// 3. **Confirmed** - Receives 2xx response and sends ACK
+/// 3. **Confirmed** - Receives 2xx response; ACK is then sent
 /// 4. **Active** - Can send in-dialog requests (UPDATE, INFO, etc.)
 /// 5. **Termination** - Sends BYE or CANCEL to end session
 ///
@@ -250,8 +246,11 @@ impl ClientInviteDialog {
     ///
     /// # Returns
     ///
-    /// * `Ok(())` - CANCEL was sent successfully
+    /// * `Ok(())` - CANCEL was sent successfully, or deferred until the
+    ///   first provisional response when none has arrived yet (RFC 3261 §9.1)
     /// * `Err(Error)` - Failed to send CANCEL request
+    ///
+    /// See [`InviteDialog::cancel`](super::invite_dialog::InviteDialog::cancel).
     ///
     /// # Examples
     ///
@@ -616,9 +615,13 @@ impl ClientInviteDialog {
     }
 
     async fn handle_bye(&mut self, tx: &mut Transaction) -> Result<()> {
+        self.inner.record_remote_bye(
+            tx.original_received_at
+                .unwrap_or_else(super::lifecycle::LifecycleTime::now),
+        );
         debug!(id = %self.id(), uri = %tx.original.uri, "received bye");
         self.inner
-            .transition(DialogState::Terminated(self.id(), TerminatedReason::UasBye))?;
+            .transition(DialogState::Terminated(self.id(), TerminatedReason::UasBye));
         tx.reply(crate::sip::StatusCode::OK).await?;
         Ok(())
     }
@@ -627,27 +630,27 @@ impl ClientInviteDialog {
         debug!(id = %self.id(), uri = %tx.original.uri, "received info");
         let (handle, rx) = TransactionHandle::new();
         self.inner
-            .transition(DialogState::Info(self.id(), tx.original.clone(), handle))?;
+            .transition(DialogState::Info(self.id(), tx.original.clone(), handle));
         let result = self.inner.process_transaction_handle(tx, rx).await;
-        let confirmed = self.return_to_confirmed(tx);
-        result.and(confirmed)
+        self.return_to_confirmed(tx);
+        result
     }
 
     /// Restore confirmation after the mid-dialog handlers that use this helper.
     /// REFER is delivered as an event without leaving Confirmed and does not
     /// need another confirmation event after its response.
-    fn return_to_confirmed(&self, tx: &Transaction) -> Result<()> {
+    fn return_to_confirmed(&self, tx: &Transaction) {
         self.inner.transition(DialogState::Confirmed(
             self.id(),
             tx.last_response.clone().unwrap_or_default(),
-        ))
+        ));
     }
 
     async fn handle_options(&mut self, tx: &mut Transaction) -> Result<()> {
         debug!(id = %self.id(), uri = %tx.original.uri, "received options");
         let (handle, rx) = TransactionHandle::new();
         self.inner
-            .transition(DialogState::Options(self.id(), tx.original.clone(), handle))?;
+            .transition(DialogState::Options(self.id(), tx.original.clone(), handle));
         self.inner.process_transaction_handle(tx, rx).await
     }
 
@@ -655,196 +658,57 @@ impl ClientInviteDialog {
         debug!(id = %self.id(), uri = %tx.original.uri, "received update");
         let (handle, rx) = TransactionHandle::new();
         self.inner
-            .transition(DialogState::Updated(self.id(), tx.original.clone(), handle))?;
+            .transition(DialogState::Updated(self.id(), tx.original.clone(), handle));
         let result = self.inner.process_transaction_handle(tx, rx).await;
-        let confirmed = self.return_to_confirmed(tx);
-        result.and(confirmed)
+        self.return_to_confirmed(tx);
+        result
     }
 
     async fn handle_reinvite(&mut self, tx: &mut Transaction) -> Result<()> {
-        debug!(id = %self.id(), uri = %tx.original.uri, "received reinvite");
-        let (handle, rx) = TransactionHandle::new();
-        self.inner
-            .transition(DialogState::Updated(self.id(), tx.original.clone(), handle))?;
-
-        self.inner.process_transaction_handle(tx, rx).await?;
-        let answered_2xx = tx
-            .last_response
-            .as_ref()
-            .is_some_and(|resp| resp.status_code.kind() == crate::sip::StatusCodeKind::Successful);
-        let mut acked = false;
-
-        // wait for ACK
-        while let Some(msg) = tx.receive().await {
-            match msg {
-                SipMessage::Request(req) if req.method == crate::sip::Method::Ack => {
-                    debug!(id = %self.id(), "received ACK for re-INVITE");
-                    self.inner.remote_ack.lock().replace(req);
-                    acked = true;
-                    break;
-                }
-                _ => {}
-            }
-        }
-        self.inner
-            .end_session_without_ack(tx, answered_2xx && !acked)
-            .await;
-        Ok(())
+        self.inner.process_reinvite(tx, false).await
     }
 
     async fn handle_refer(&mut self, tx: &mut Transaction) -> Result<()> {
         debug!(id = %self.id(), uri = %tx.original.uri, "received refer");
         let (handle, rx) = TransactionHandle::new();
         self.inner
-            .transition(DialogState::Refer(self.id(), tx.original.clone(), handle))?;
+            .transition(DialogState::Refer(self.id(), tx.original.clone(), handle));
 
         // RFC 3515: the REFER was answered (usually 202) and the dialog must
         // go back to Confirmed — the implicit subscription's NOTIFYs are
         // in-dialog requests that need the confirmed dialog.
         let result = self.inner.process_transaction_handle(tx, rx).await;
-        let confirmed = self.return_to_confirmed(tx);
-        result.and(confirmed)
+        self.return_to_confirmed(tx);
+        result
     }
 
     async fn handle_message(&mut self, tx: &mut Transaction) -> Result<()> {
         debug!(id = %self.id(), uri = %tx.original.uri, "received message");
         let (handle, rx) = TransactionHandle::new();
         self.inner
-            .transition(DialogState::Message(self.id(), tx.original.clone(), handle))?;
+            .transition(DialogState::Message(self.id(), tx.original.clone(), handle));
 
         let result = self.inner.process_transaction_handle(tx, rx).await;
-        let confirmed = self.return_to_confirmed(tx);
-        result.and(confirmed)
+        self.return_to_confirmed(tx);
+        result
     }
 
     async fn handle_notify(&mut self, tx: &mut Transaction) -> Result<()> {
         debug!(id = %self.id(), uri = %tx.original.uri, "received notify");
         let (handle, rx) = TransactionHandle::new();
         self.inner
-            .transition(DialogState::Notify(self.id(), tx.original.clone(), handle))?;
+            .transition(DialogState::Notify(self.id(), tx.original.clone(), handle));
         let result = self.inner.process_transaction_handle(tx, rx).await;
-        let confirmed = self.return_to_confirmed(tx);
-        result.and(confirmed)
+        self.return_to_confirmed(tx);
+        result
     }
 
     pub async fn process_invite(
         &self,
         tx: &mut Transaction,
     ) -> Result<(DialogId, Option<Response>)> {
-        self.inner.transition(DialogState::Calling(self.id()))?;
-        let mut auth_sent = false;
-        tx.send().await?;
-        let mut dialog_id = self.id();
-        let mut final_response = None;
-        while let Some(msg) = tx.receive().await {
-            match msg {
-                SipMessage::Request(_) => {}
-                SipMessage::Response(resp) => {
-                    let status = resp.status_code.clone();
-
-                    // RFC 7989 §8: learn the peer's (possibly new) UUID.
-                    let peer_uuid = resp.session_id_header().and_then(|s| s.local_uuid());
-                    self.inner.observe_peer_session_uuid(peer_uuid);
-
-                    if status == StatusCode::Trying {
-                        self.inner.transition(DialogState::Trying(self.id()))?;
-                        continue;
-                    }
-
-                    if matches!(status.kind(), crate::sip::StatusCodeKind::Provisional) {
-                        self.inner.handle_provisional_response(&resp).await?;
-                        self.inner.transition(DialogState::Early(self.id(), resp))?;
-                        continue;
-                    }
-
-                    if matches!(
-                        status,
-                        StatusCode::ProxyAuthenticationRequired | StatusCode::Unauthorized
-                    ) {
-                        if auth_sent {
-                            final_response = Some(resp.clone());
-                            debug!(id = %self.id(), ?status, "received auth response after auth sent");
-                            self.inner.transition(DialogState::Terminated(
-                                self.id(),
-                                TerminatedReason::ProxyAuthRequired,
-                            ))?;
-                            break;
-                        }
-                        auth_sent = true;
-                        if let Some(credential) = &self.inner.credential {
-                            *tx = handle_client_authenticate(
-                                self.inner.increment_local_seq(),
-                                tx,
-                                resp,
-                                credential,
-                            )
-                            .await?;
-                            tx.send().await?;
-                            self.inner.update_remote_tag("").ok();
-                            // Update initial_request with the new invite request
-                            {
-                                let mut req = self.inner.initial_request.lock();
-                                *req = tx.original.clone();
-                            }
-                            continue;
-                        } else {
-                            // No credential to retry with: the challenge is the
-                            // final response (RFC 3261 §22.2, §22.3).
-                            final_response = Some(resp);
-                            debug!(id = %self.id(), ?status, "received auth challenge without credential");
-                            self.inner.transition(DialogState::Terminated(
-                                self.id(),
-                                TerminatedReason::ProxyAuthRequired,
-                            ))?;
-                            break;
-                        }
-                    }
-                    final_response = Some(resp.clone());
-                    if let Some(tag) = resp.to_header()?.tag()? {
-                        self.inner.update_remote_tag(tag.value())?
-                    }
-
-                    if let Ok(id) = DialogId::try_from((&resp, TransactionRole::Client)) {
-                        dialog_id = id;
-                    }
-                    match resp.status_code {
-                        StatusCode::Ringing | StatusCode::SessionProgress
-                            if resp
-                                .to_header()
-                                .ok()
-                                .and_then(|h| h.tag().ok().flatten())
-                                .is_some() =>
-                        {
-                            self.inner.update_route_set_from_response(&resp);
-                        }
-                        StatusCode::OK => {
-                            self.inner.update_route_set_from_response(&resp);
-                            // 200 response to INVITE always contains Contact header
-                            let contact = resp.contact_header()?;
-                            self.inner.remote_contact.lock().replace(contact.clone());
-
-                            let contact_uri = resp
-                                .typed_contact_headers()?
-                                .first()
-                                .map(|c| c.uri.clone())
-                                .ok_or_else(|| {
-                                    crate::Error::Error("missing Contact header".to_string())
-                                })?;
-                            *self.inner.remote_uri.lock() = contact_uri;
-                            self.inner
-                                .transition(DialogState::Confirmed(dialog_id.clone(), resp))?;
-                        }
-                        _ => {
-                            self.inner.transition(DialogState::Terminated(
-                                self.id(),
-                                TerminatedReason::UasOther(resp.status_code.clone()),
-                            ))?;
-                        }
-                    }
-                    break;
-                }
-            }
-        }
-        Ok((dialog_id, final_response))
+        super::invite_dialog::InviteDialog::from_inner(self.inner.clone())
+            .process_invite(tx)
+            .await
     }
 }

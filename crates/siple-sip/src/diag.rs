@@ -422,7 +422,7 @@ async fn register_once(
     }
     let endpoint = EndpointBuilder::new()
         .with_cancel_token(token.clone())
-        .with_transport_layer(tl.clone())
+        .with_transport_layer(tl)
         .with_user_agent(if cfg.user_agent.is_empty() {
             default_ua
         } else {

@@ -207,16 +207,11 @@ async fn test_server_invite_ignores_ack_with_other_cseq_over_tcp() {
         .with_user_agent("rsipstack-test")
         .with_transport_layer(tl)
         .build();
-    endpoint
-        .inner
-        .transport_layer
-        .serve_listens()
-        .await
-        .unwrap();
     let endpoint_inner = endpoint.inner.clone();
-    let serve_handle = tokio::spawn(async move {
-        let _ = endpoint_inner.serve().await;
-    });
+    let mut serving = Box::pin(async move { endpoint_inner.serve().await });
+    // Poll Endpoint startup before connecting to its TCP listener.
+    assert!(futures::poll!(&mut serving).is_pending());
+    let serve_handle = tokio::spawn(serving);
     let mut incoming = endpoint.incoming_transactions().expect("incoming");
     let mut stream = tokio::net::TcpStream::connect(server_addr).await.unwrap();
 
@@ -256,91 +251,94 @@ async fn test_server_invite_ignores_ack_with_other_cseq_over_tcp() {
     serve_handle.abort();
 }
 
-/// Wire tap that plays the peer's ACK from inside the 2xx send: the ACK is on its way (and
-/// given time to be routed) before `respond` has moved the transaction to Accepted.
-struct AckBeforeSendReturns {
-    sock: std::net::UdpSocket,
-    dest: std::net::SocketAddr,
-    ack: Vec<u8>,
-    done: std::sync::atomic::AtomicBool,
-}
+/// The peer can ACK a final response as soon as it leaves the socket,
+/// before `respond()` has moved the transaction on (issue #192). The send is
+/// held in a full channel while the ACK arrives: the ACK must still reach
+/// the transaction, for a 2xx (new branch, routed by dialog and CSeq) as for
+/// a non-2xx (INVITE branch). A failed or cancelled send leaves no ACK
+/// route behind.
+#[tokio::test]
+async fn test_server_invite_ack_during_final_response_send() {
+    use crate::transaction::key::{TransactionKey, TransactionRole};
+    use crate::transaction::transaction::Transaction;
+    use crate::transport::{channel::ChannelConnection, SipAddr};
+    use std::future::Future;
+    use std::task::{Context, Waker};
 
-impl crate::transport::wire_tap::WireTap for AckBeforeSendReturns {
-    fn on_wire(&self, ev: crate::transport::wire_tap::WireEvent<'_>) {
-        use crate::transport::wire_tap::WireDirection;
-        if ev.direction == WireDirection::Send
-            && ev.bytes.starts_with(b"SIP/2.0 200")
-            && !self.done.swap(true, std::sync::atomic::Ordering::SeqCst)
-        {
-            self.sock.send_to(&self.ack, self.dest).expect("send ACK");
-            // Loopback delivery and routing take microseconds; the tap runs on the worker
-            // that sends the 2xx, so the endpoint's receive task needs another worker.
-            std::thread::sleep(Duration::from_millis(200));
+    let endpoint = EndpointBuilder::new().build();
+    let addr = SipAddr::from("127.0.0.1:5060".parse::<std::net::SocketAddr>().unwrap());
+    for (cseq, status, outcome, after_ack) in [
+        (3, StatusCode::OK, "send fails", TransactionState::Trying),
+        (5, StatusCode::OK, "cancelled", TransactionState::Trying),
+        (2, StatusCode::OK, "ACK", TransactionState::Terminated),
+        (4, StatusCode::BusyHere, "ACK", TransactionState::Confirmed),
+    ] {
+        let invite = make_reinvite("UDP", cseq);
+        let (_in_tx, in_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (out_tx, mut out_rx) = tokio::sync::mpsc::channel(1);
+        let conn: SipConnection =
+            ChannelConnection::create_connection_bounded(in_rx, out_tx.clone(), addr.clone(), None)
+                .await
+                .unwrap()
+                .into();
+        let key = TransactionKey::from_request(&invite, TransactionRole::Server).unwrap();
+        let mut tx = Transaction::new_server(
+            key,
+            invite.clone(),
+            endpoint.inner.clone(),
+            Some(conn.clone()),
+        );
+        if outcome == "send fails" {
+            drop(out_rx);
+            assert!(tx.reply(status).await.is_err());
+            assert_eq!(tx.state, after_ack);
+            assert_eq!(endpoint.inner.waiting_ack_cseq.len(), 0);
+            assert_eq!(endpoint.inner.waiting_ack.len(), 0);
+            continue;
         }
+        let ack = if status == StatusCode::OK {
+            make_2xx_ack(&invite, cseq)
+        } else {
+            let mut ack = invite.clone();
+            ack.method = Method::Ack;
+            for h in ack.headers.iter_mut() {
+                if let crate::sip::Header::CSeq(c) = h {
+                    *c = CSeq::new(format!("{} ACK", cseq));
+                }
+            }
+            ack
+        };
+        // Fill the channel so the response send waits for room.
+        let filler = crate::transport::TransportEvent::Incoming(
+            invite.clone().into(),
+            conn.clone(),
+            addr.clone(),
+        );
+        out_tx.try_send(filler).unwrap();
+        let mut reply = Box::pin(tx.reply(status.clone()));
+        let mut cx = Context::from_waker(Waker::noop());
+        assert!(reply.as_mut().poll(&mut cx).is_pending());
+        if outcome == "cancelled" {
+            drop(reply);
+            assert_eq!(tx.state, after_ack);
+            assert_eq!(endpoint.inner.waiting_ack_cseq.len(), 0);
+            continue;
+        }
+        // The ACK arrives while the response is being sent.
+        endpoint
+            .inner
+            .on_received_message(ack.into(), conn.clone(), &addr)
+            .await
+            .unwrap();
+        out_rx.recv().await.unwrap();
+        reply.await.expect("reply");
+        assert!(out_rx.recv().await.is_some(), "the response was sent");
+        let msg = timeout(Duration::from_millis(200), tx.receive())
+            .await
+            .unwrap_or_else(|_| panic!("{status}: the ACK must reach the transaction"))
+            .expect("transaction ended before the ACK");
+        assert!(matches!(msg, SipMessage::Request(ref r) if r.method == Method::Ack));
+        assert_eq!(tx.state, after_ack);
+        assert_eq!(endpoint.inner.waiting_ack_cseq.len(), 0);
     }
-}
-
-/// An ACK that reaches the endpoint before `respond` has moved the transaction to Accepted
-/// must still be routed to the transaction: the ACK route is registered before the 2xx is
-/// sent. Without that the ACK is dropped (it is not retransmitted) and the transaction only
-/// ever sees 2xx timers.
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn test_server_invite_ack_right_after_2xx_is_delivered() {
-    let token = CancellationToken::new();
-
-    let server_conn = UdpConnection::create_connection("127.0.0.1:0".parse().unwrap(), None, None)
-        .await
-        .expect("create server connection");
-    let server_conn_sip: SipConnection = server_conn.into();
-    let server_addr = server_conn_sip.get_addr().clone();
-
-    let tl = TransportLayer::new(token.child_token());
-    tl.add_transport(server_conn_sip);
-
-    let client_conn = UdpConnection::create_connection("127.0.0.1:0".parse().unwrap(), None, None)
-        .await
-        .expect("create client connection");
-    let client_conn_sip: SipConnection = client_conn.clone().into();
-
-    let invite = make_reinvite("UDP", 2);
-    tl.set_wire_tap(std::sync::Arc::new(AckBeforeSendReturns {
-        sock: std::net::UdpSocket::bind("127.0.0.1:0").unwrap(),
-        dest: server_addr.get_socketaddr().unwrap(),
-        ack: make_2xx_ack(&invite, 2).to_string().into_bytes(),
-        done: Default::default(),
-    }));
-
-    let endpoint = EndpointBuilder::new()
-        .with_user_agent("rsipstack-test")
-        .with_transport_layer(tl)
-        .build();
-    let endpoint_inner = endpoint.inner.clone();
-    let serve_handle = tokio::spawn(async move {
-        let _ = endpoint_inner.serve().await;
-    });
-
-    client_conn_sip
-        .send(invite.clone().into(), Some(&server_addr))
-        .await
-        .expect("send re-INVITE");
-
-    let mut incoming = endpoint.incoming_transactions().expect("incoming");
-    let mut tx = timeout(Duration::from_secs(2), incoming.recv())
-        .await
-        .expect("timeout waiting for incoming transaction")
-        .expect("no incoming transaction");
-
-    tx.reply(StatusCode::OK).await.expect("reply 200");
-    // Timer G retransmits the 2xx after 500 ms: the ACK must arrive before that.
-    let msg = timeout(Duration::from_millis(400), tx.receive()).await;
-    match msg {
-        Ok(Some(SipMessage::Request(req))) => assert_eq!(req.method, Method::Ack),
-        other => panic!("the early ACK was not delivered: {:?}", other),
-    }
-    assert_eq!(tx.state, TransactionState::Terminated);
-    assert_eq!(endpoint.inner.waiting_ack.len(), 0);
-    assert_eq!(endpoint.inner.waiting_ack_cseq.len(), 0);
-
-    token.cancel();
-    serve_handle.abort();
 }

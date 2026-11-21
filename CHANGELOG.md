@@ -9,6 +9,24 @@
   show when the subscription was confirmed, the last refresh and its expiry.
 - API: `blf.list` `subscription` carries `subscribed_at` and `last_refreshed_at`.
 - Dependencies updated.
+- rsipstack updated to 0.8.6 (from 0.7.3). User-visible fixes it brings:
+  - Display names in From, To and Contact are written with `"` and `\` escaped, so a name containing a quote can no
+    longer break the header. Received headers, URIs and Content-Length are checked against the RFC 3261 grammar. Over
+    UDP a message that fails is dropped; over TCP or TLS (where a Content-Length is now required) it closes the
+    connection, and Siple reconnects and registers again.
+  - Digest authentication: `qop=auth` is sent unquoted, `MD5-sess` / `SHA-256-sess` and `nc` above 9 work, and a
+    `stale=true` challenge is answered again.
+  - Over UDP, requests other than INVITE (REGISTER, BYE, OPTIONS...) keep being retransmitted after a 100 Trying, as
+    RFC 3261 asks, and a timer race that could stall transactions is gone.
+  - In-dialog requests follow the Contact a re-INVITE or UPDATE refreshes, out-of-order requests get a 500,
+    and UPDATE works before the call is answered.
+  - IPv6: a listener on `::` also serves IPv4, IPv4 peers show as IPv4, and `Via received` is written per RFC.
+- Two fixes from rsipstack's main branch, carried until its next release:
+  - Registering over TCP or TLS works with Kamailio registrars that put the observed flow in the Contact as
+    `received="sip:IP:port;transport=tls"` (the quoted `;` split the parameter, and rsipstack 0.8.6 refused the answer).
+  - Hanging up an outgoing call while it rings now sends the CANCEL to the same next hop as the INVITE (outbound
+    proxy or registrar). Before, it went wherever the dialled address resolved, so with an outbound proxy, or a
+    registrar host other than the domain, the other side could keep ringing.
 
 ## 0.1.2 (2026-11-19)
 

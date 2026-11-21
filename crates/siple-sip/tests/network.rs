@@ -161,6 +161,8 @@ struct Registrar {
     accepts: Arc<AtomicUsize>,
     /// TCP: ordinal (1-based) of the accepted connection whose REGISTERs go unanswered.
     mute_conn: Arc<AtomicUsize>,
+    /// TCP: parameters appended to the Contact of a 200 to REGISTER (before `;expires=`).
+    contact_params: Arc<Mutex<String>>,
 }
 
 impl Registrar {
@@ -190,6 +192,7 @@ fn registrar(decide: impl Fn(usize) -> Script + Send + 'static) -> Registrar {
         stop: Arc::default(),
         accepts: Arc::default(),
         mute_conn: Arc::default(),
+        contact_params: Arc::default(),
     };
     let (regs, opts, ans, stop) = (
         r.registers.clone(),
@@ -763,14 +766,16 @@ fn tcp_registrar() -> Registrar {
         stop: Arc::default(),
         accepts: Arc::default(),
         mute_conn: Arc::default(),
+        contact_params: Arc::default(),
     };
-    let (regs, opts, ans, stop, accepts, mute) = (
+    let (regs, opts, ans, stop, accepts, mute, params) = (
         r.registers.clone(),
         r.options.clone(),
         r.answer_options.clone(),
         r.stop.clone(),
         r.accepts.clone(),
         r.mute_conn.clone(),
+        r.contact_params.clone(),
     );
     std::thread::spawn(move || {
         while !stop.load(Ordering::Relaxed) {
@@ -779,7 +784,7 @@ fn tcp_registrar() -> Registrar {
                 continue;
             };
             let ordinal = accepts.fetch_add(1, Ordering::SeqCst) + 1;
-            let mute = mute.clone();
+            let (mute, params) = (mute.clone(), params.clone());
             conn.set_nonblocking(false).unwrap();
             conn.set_read_timeout(Some(Duration::from_millis(100)))
                 .unwrap();
@@ -837,7 +842,8 @@ fn tcp_registrar() -> Registrar {
                         let contact = head
                             .lines()
                             .find(|l| l.to_ascii_lowercase().starts_with("contact:"))
-                            .map(|l| l.split_once(':').unwrap().1.trim().to_string());
+                            .map(|l| l.split_once(':').unwrap().1.trim().to_string())
+                            .map(|c| format!("{c}{}", params.lock().unwrap()));
                         let _ = conn.write_all(response(&head, &script, contact, peer).as_bytes());
                     }
                 }
@@ -877,6 +883,30 @@ async fn accepts_reach(reg: &Registrar, n: usize) {
         "expected {n} TCP connections, saw {}",
         reg.accepts.load(Ordering::SeqCst)
     );
+}
+
+/// Kamailio with `received_avp` answers a REGISTER over TCP / TLS with the observed flow as a
+/// quoted URI carrying its own `;transport=`. rsipstack 0.8.6 split that quoted value at its `;`,
+/// refused the whole 200 OK and closed the connection, so the account never registered (fixed
+/// upstream by #259, backported in vendor/rsipstack).
+#[tokio::test]
+async fn tcp_register_ok_with_quoted_received_contact_param_registers() {
+    let reg = tcp_registrar();
+    *reg.contact_params.lock().unwrap() = ";q=1;received=\"sip:127.0.0.1:47522;transport=tcp\"\
+         ;+sip.instance=\"<urn:uuid:aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee>\";reg-id=1"
+        .into();
+    let mut r = rig();
+    add(&r, tcp_account("a", &reg)).await;
+    wait_state(&r, "a", "registered", registered).await;
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    let evs = drain(&mut r);
+    assert!(no_failures(&evs), "no Failed: {evs:?}");
+    assert_eq!(
+        (reg.accepts.load(Ordering::SeqCst), reg.count()),
+        (1, 1),
+        "one connection, one REGISTER: the 200 was accepted"
+    );
+    r.stack.shutdown().await;
 }
 
 #[tokio::test]

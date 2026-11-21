@@ -137,8 +137,16 @@ pub struct InviteOption {
     pub destination: Option<SipAddr>,
     pub content_type: Option<String>,
     pub offer: Option<Vec<u8>>,
+    /// Local Contact. On stream transports its host and port are normally
+    /// replaced with the outgoing connection's local address (and the scheme
+    /// becomes `sips` over TLS). A Contact that already carries a `transport`
+    /// parameter is treated as deliberately built by the caller, for example
+    /// from the address a registrar reported behind NAT, and is sent unchanged.
     pub contact: crate::sip::Uri,
     pub credential: Option<Credential>,
+    /// Extra headers appended to the INVITE. A `Max-Forwards` or
+    /// `Content-Type` here replaces the one the stack would add, so it is
+    /// never sent twice; a `Content-Type` here wins over `content_type`.
     pub headers: Option<Vec<crate::sip::Header>>,
     pub support_prack: bool,
     pub call_id: Option<String>,
@@ -172,7 +180,7 @@ impl DialogGuard {
 
 impl Drop for DialogGuard {
     fn drop(&mut self) {
-        let dlg = match self.dialog_layer_inner.dialogs.remove(&self.id.to_string()) {
+        let dlg = match self.dialog_layer_inner.dialogs.remove(&self.id) {
             Some(dlg) => dlg,
             None => return,
         };
@@ -184,17 +192,24 @@ impl Drop for DialogGuard {
     }
 }
 
-pub(super) struct DialogGuardForUnconfirmed<'a> {
-    pub dialog_layer_inner: &'a DialogLayerInnerRef,
-    pub id: &'a DialogId,
+pub(super) struct DialogGuardForUnconfirmed {
+    pub dialog_layer_inner: DialogLayerInnerRef,
+    pub id: DialogId,
     invite_tx: Option<Transaction>,
+    /// Whether the owning future started processing the INVITE.
+    started: bool,
     /// The INVITE's dialog, `None` once `process_invite` returned.
     dialog: Option<InviteDialog>,
 }
 
-impl<'a> Drop for DialogGuardForUnconfirmed<'a> {
+impl Drop for DialogGuardForUnconfirmed {
     fn drop(&mut self) {
-        let client_dialog = match self.dialog_layer_inner.dialogs.remove(&self.id.to_string()) {
+        // Normal completion has handed ownership to the caller, even when
+        // the confirmed key equals the early key (a tag-less 2xx).
+        if self.dialog.is_none() {
+            return;
+        }
+        let client_dialog = match self.dialog_layer_inner.dialogs.remove(&self.id) {
             Some(Dialog::Invite(client_dialog)) => client_dialog,
             Some(_) => return,
             // The application already removed the dialog from the layer
@@ -205,6 +220,15 @@ impl<'a> Drop for DialogGuardForUnconfirmed<'a> {
                 None => return,
             },
         };
+
+        // A task dropped before its first poll never sent an INVITE.
+        if !self.started {
+            client_dialog.inner.transition(DialogState::Terminated(
+                client_dialog.id(),
+                TerminatedReason::UacCancel,
+            ));
+            return;
+        }
 
         match client_dialog.state() {
             DialogState::Terminated(_, _) => {}
@@ -217,7 +241,7 @@ impl<'a> Drop for DialogGuardForUnconfirmed<'a> {
                 let calling = matches!(state, DialogState::Calling(_));
                 let invite_tx = self.invite_tx.take();
                 if calling || invite_tx.is_none() {
-                    let _ = client_dialog.inner.transition(DialogState::Terminated(
+                    client_dialog.inner.transition(DialogState::Terminated(
                         client_dialog.id(),
                         TerminatedReason::UacCancel,
                     ));
@@ -241,66 +265,19 @@ impl<'a> Drop for DialogGuardForUnconfirmed<'a> {
                             return;
                         }
                     }
-                    let started = crate::platform::Instant::now();
                     let final_window = invite_tx.endpoint_inner.option.t1x64;
-                    let mut timeout =
-                        core::pin::pin!(crate::platform::sleep(core::time::Duration::from_secs(2)));
                     invite_tx.stop_retransmissions();
 
-                    let mut cancel_done = false;
-                    let mut final_response = None;
-                    // Boxed so it can be dropped before the wait below.
-                    let mut cancel = Box::pin(client_dialog.send_cancel());
-
-                    use crate::platform::select::Which3;
-                    loop {
-                        // after cancel completes, use pending as placeholder (3-arm race with
-                        // unchanged types)
-                        let cancel_sel = if cancel_done {
-                            futures::future::Either::Left(core::future::pending::<
-                                core::result::Result<(), crate::Error>,
-                            >())
-                        } else {
-                            futures::future::Either::Right(&mut cancel)
-                        };
-                        let mut cancel_sel = core::pin::pin!(cancel_sel);
-                        let mut recv_f = core::pin::pin!(invite_tx.receive());
-                        match crate::platform::select::select3(
-                            &mut timeout,
-                            &mut cancel_sel,
-                            &mut recv_f,
-                        )
-                        .await
-                        {
-                            Which3::A(()) => break,
-                            Which3::B(result) => match result {
-                                Ok(()) => cancel_done = true,
-                                Err(e) => {
-                                    warn!(id = %client_dialog.id(), error = %e, "dialog cancel failed");
-                                    break;
-                                }
-                            },
-                            Which3::C(msg) => match msg {
-                                Some(SipMessage::Response(resp))
-                                    if resp.status_code.kind() != StatusCodeKind::Provisional =>
-                                {
-                                    debug!(
-                                        id = %client_dialog.id(),
-                                        status = %resp.status_code,
-                                        "received final response"
-                                    );
-                                    final_response = Some(resp);
-                                    break;
-                                }
-                                Some(_) => {}
-                                None => break,
-                            },
+                    // CANCEL is a separate transaction. Keep driving it to its
+                    // own response or timeout even if the INVITE finishes first.
+                    let cancel_dialog = client_dialog.clone();
+                    let _handle = crate::platform::spawn(async move {
+                        if let Err(e) = cancel_dialog.send_cancel().await {
+                            warn!(id = %cancel_dialog.id(), error = %e, "dialog cancel failed");
                         }
-                    }
-
-                    drop(cancel);
+                    });
                     if !calling {
-                        let _ = client_dialog.inner.transition(DialogState::Terminated(
+                        client_dialog.inner.transition(DialogState::Terminated(
                             client_dialog.id(),
                             TerminatedReason::UacCancel,
                         ));
@@ -311,29 +288,22 @@ impl<'a> Drop for DialogGuardForUnconfirmed<'a> {
                     // INVITE transaction until its final response (up to
                     // 64*T1) so a 2xx is ACKed, then end that session with a
                     // BYE (RFC 3261 §9.1, §15).
-                    if final_response.is_none() {
-                        let elapsed = crate::platform::Instant::now()
-                            .checked_duration_since(started)
-                            .unwrap_or_default();
-                        final_response = wait_response(
-                            &mut invite_tx,
-                            final_window.saturating_sub(elapsed),
-                            true,
-                        )
-                        .await;
-                    }
+                    let final_response = wait_response(&mut invite_tx, final_window, true).await;
                     // Closing the command channel terminates the dialog loop.
                     drop(invite_tx);
                     bye_if_2xx(&client_dialog, final_response).await;
                 });
             }
-            DialogState::Confirmed(_, _) => {
-                let _handle = crate::platform::spawn(async move {
-                    if let Err(e) = client_dialog.hangup().await {
-                        info!(id = %client_dialog.id(), error = %e, "failed to hangup confirmed dialog");
-                    }
-                });
-            }
+            // A completed invite task is NOT an abandoned invite: for
+            // `do_invite_async` the background task always ends right after
+            // the dialog confirms (the JoinHandle detaches), and the
+            // application owns the confirmed dialog from `Confirmed` on.
+            // Hanging it up here killed established calls whenever the
+            // dialog's registry entry was still reachable under the early
+            // (tag-less) key — e.g. a 200 OK without a To tag, whose
+            // confirmed key equals the early key. Unconfirmed branches above
+            // keep their CANCEL cleanup (those ARE abandonment).
+            DialogState::Confirmed(_, _) => {}
             _ => {}
         }
     }
@@ -360,7 +330,7 @@ async fn wait_response(
 }
 
 /// End the session a 2xx to an abandoned INVITE established.
-async fn bye_if_2xx(client_dialog: &InviteDialog, resp: Option<Response>) {
+pub(super) async fn bye_if_2xx(client_dialog: &InviteDialog, resp: Option<Response>) {
     if let Some(resp) = resp.filter(|r| r.status_code.kind() == StatusCodeKind::Successful) {
         info!(id = %client_dialog.id(), "2xx after CANCEL, sending BYE");
         if let Err(e) = client_dialog.bye_2xx_after_cancel(&resp).await {
@@ -440,12 +410,19 @@ impl DialogLayer {
             .filter(|t| *t != crate::sip::Transport::Udp);
 
         let transport_addr = target_transport.and_then(|transport| {
-            self.endpoint
-                .transport_layer
-                .get_addrs()
+            // Listeners only (see `DialogInner::via_addr_for_send_transport`):
+            // a connection-cache match advertised the remote peer's address as
+            // our own Via on initial INVITEs toward WS/WSS targets.
+            let listens = self.endpoint.transport_layer.get_listen_addrs();
+            listens
                 .iter()
                 .find(|a| a.r#type == Some(transport))
                 .cloned()
+                .or_else(|| {
+                    let mut addr = listens.first().cloned()?;
+                    addr.r#type = Some(transport);
+                    Some(addr)
+                })
         });
 
         let via = self.endpoint.get_via(transport_addr.clone(), None)?;
@@ -468,7 +445,17 @@ impl DialogLayer {
             request.headers.push(route.clone().into());
         }
 
-        let contact = if let Some(ref addr) = transport_addr {
+        // A Contact that names its transport was built deliberately by the
+        // caller (e.g. with the public address learned from a REGISTER
+        // response behind NAT); keep it rather than rewriting it to the local
+        // socket address.
+        let caller_built_contact = opt
+            .contact
+            .params
+            .iter()
+            .any(|p| matches!(p, crate::sip::Param::Transport(_)));
+        let contact = if let Some(addr) = transport_addr.as_ref().filter(|_| !caller_built_contact)
+        {
             let mut uri = opt.contact.clone();
             uri.host_with_port = addr.addr.clone();
             if !uri
@@ -547,12 +534,12 @@ impl DialogLayer {
         // can't override default headers
         if let Some(headers) = opt.headers.as_ref() {
             for header in headers {
-                // only override if it is a "max-forwards" header
-                // so as not to duplicate it; this is important because
-                // some clients consider messages with duplicate "max-forwards"
+                // only override "max-forwards" and "content-type" headers
+                // so as not to duplicate them; this is important because
+                // some clients consider messages with duplicate single-valued
                 // headers as malformed and may silently ignore invites
                 match header {
-                    crate::sip::Header::MaxForwards(_) => {
+                    crate::sip::Header::MaxForwards(_) | crate::sip::Header::ContentType(_) => {
                         request.headers.unique_push(header.clone())
                     }
                     _ => request.headers.push(header.clone()),
@@ -665,7 +652,8 @@ impl DialogLayer {
     /// # Important: Cleanup Required
     ///
     /// When a 2xx response is received, the confirmed dialog is registered in
-    /// the internal dialog registry. **The caller is responsible for removing it**
+    /// the internal dialog registry (not when [`InviteDialog::cancel`] was
+    /// called: that 2xx is ended with a BYE). **The caller is responsible for removing it**
     /// after the dialog terminates by calling [`DialogLayer::remove_dialog`]
     /// with the dialog's [`DialogId`].
     ///
@@ -692,12 +680,13 @@ impl DialogLayer {
 
         self.inner
             .dialogs
-            .insert(id.to_string(), Dialog::Invite(dialog.clone()));
+            .insert(id.clone(), Dialog::Invite(dialog.clone()));
 
         let mut guard = DialogGuardForUnconfirmed {
-            dialog_layer_inner: &self.inner,
-            id: &id,
+            dialog_layer_inner: self.inner.clone(),
+            id: id.clone(),
             invite_tx: Some(tx),
+            started: true,
             dialog: Some(dialog.clone()),
         };
 
@@ -706,9 +695,19 @@ impl DialogLayer {
             .as_mut()
             .expect("transcation should be avaible");
 
-        let r = dialog.process_invite(tx).boxed().await;
+        let r = dialog
+            .process_invite_with_registration(tx, |new_id| {
+                self.inner.dialogs.with_mut(|dialogs| {
+                    dialogs.remove(&id);
+                    dialogs.insert(new_id.clone(), Dialog::Invite(dialog.clone()));
+                });
+            })
+            .boxed()
+            .await;
         guard.dialog = None;
-        self.inner.dialogs.remove(&id.to_string());
+        if !dialog.inner.is_confirmed() {
+            self.inner.dialogs.remove(&id);
+        }
 
         match r {
             Ok((new_dialog_id, resp)) => {
@@ -716,14 +715,8 @@ impl DialogLayer {
                     Some(ref r)
                         if r.status_code.kind() == crate::sip::StatusCodeKind::Successful =>
                     {
-                        debug!(
-                            "client invite dialog confirmed: {} => {}",
-                            id, new_dialog_id
-                        );
-                        self.inner
-                            .dialogs
-                            .insert(new_dialog_id.to_string(), Dialog::Invite(dialog.clone()));
-
+                        // Registration happened before ACK, and must not be
+                        // repeated after a concurrent BYE/remove_dialog.
                         // RFC 6026 §7.2: the client transaction is in Accepted
                         // with Timer M (64*T1) armed. Keep receiving until it
                         // ends so retransmitted 2xx keep being re-ACKed and
@@ -754,14 +747,15 @@ impl DialogLayer {
     /// Asynchronously executes an INVITE transaction in the background.
     ///
     /// Registers the dialog under an early dialog ID while the INVITE is in progress.
-    /// Once completed, the early entry is removed and, on 2xx response,
-    /// the dialog is re-registered under the confirmed dialog ID.
+    /// On a 2xx response, the early entry is replaced by the confirmed dialog
+    /// ID before sending ACK, so incoming requests can be handled immediately.
     /// Returns a JoinHandle resolving to the final dialog ID and response.
     ///
     /// # Important: Cleanup Required
     ///
     /// On a successful (2xx) response the confirmed dialog is registered in
-    /// the internal dialog registry. **The caller must remove it** after the
+    /// the internal dialog registry (not when [`InviteDialog::cancel`] was
+    /// called: that 2xx is ended with a BYE). **The caller must remove it** after the
     /// dialog terminates by calling [`DialogLayer::remove_dialog`] with the
     /// confirmed dialog's [`DialogId`].
     ///
@@ -775,23 +769,52 @@ impl DialogLayer {
         opt: InviteOption,
         state_sender: DialogStateSender,
     ) -> Result<(InviteDialog, crate::platform::JoinHandle<InviteAsyncResult>)> {
-        let (dialog, mut tx) = self.create_client_invite_dialog(opt, state_sender)?;
+        let (dialog, tx) = self.create_client_invite_dialog(opt, state_sender)?;
         let id0 = dialog.id();
 
         // 1) register early key (so in-dialog requests can be matched)
         self.inner
             .dialogs
-            .insert(id0.to_string(), Dialog::Invite(dialog.clone()));
+            .insert(id0.clone(), Dialog::Invite(dialog.clone()));
 
         let inner = self.inner.clone();
         let dialog_clone = dialog.clone();
 
+        // Own the guard before spawning so an abort before the first poll
+        // also removes the early registry entry.
+        let mut guard = DialogGuardForUnconfirmed {
+            dialog_layer_inner: inner.clone(),
+            id: id0.clone(),
+            invite_tx: Some(tx),
+            started: false,
+            dialog: Some(dialog_clone.clone()),
+        };
+
         // 2) run invite in background, keep registry updated like do_invite()
         let handle = crate::platform::spawn_with_result(async move {
-            let r = dialog_clone.process_invite(&mut tx).boxed().await;
+            guard.started = true;
+            let invite_tx = guard
+                .invite_tx
+                .as_mut()
+                .expect("transaction should be available");
+            let r = dialog_clone
+                .process_invite_with_registration(invite_tx, |new_id| {
+                    inner.dialogs.with_mut(|dialogs| {
+                        dialogs.remove(&id0);
+                        dialogs.insert(new_id.clone(), Dialog::Invite(dialog_clone.clone()));
+                    });
+                })
+                .boxed()
+                .await;
+            guard.dialog = None;
+            let mut tx = guard
+                .invite_tx
+                .take()
+                .expect("transaction should be available");
 
-            // remove early key
-            inner.dialogs.remove(&id0.to_string());
+            if !dialog_clone.inner.is_confirmed() {
+                inner.dialogs.remove(&id0);
+            }
 
             match &r {
                 Ok((new_id, resp_opt)) => {
@@ -803,11 +826,8 @@ impl DialogLayer {
                         .unwrap_or(false);
 
                     if is_2xx {
-                        debug!("client invite dialog confirmed: {} => {}", id0, new_id);
-                        inner
-                            .dialogs
-                            .insert(new_id.to_string(), Dialog::Invite(dialog_clone.clone()));
-
+                        // The full key was registered before ACK. Do not
+                        // resurrect a dialog the application already removed.
                         // RFC 6026 §7.2: keep draining the Accepted transaction
                         // until Timer M ends it (re-ACKs retransmitted 2xx,
                         // observes forked 2xx, and detaches it from the
@@ -883,7 +903,11 @@ impl DialogLayer {
             let uri = self.endpoint.sip_addr_to_uri(destination.clone()); // siple
             *dlg_inner.remote_uri.lock() = uri;
         }
+        // siple: backport of upstream #261 (71dfc26): CANCEL follows the INVITE's destination.
+        *dlg_inner.invite_destination.lock() = tx.destination.clone();
         let dialog = InviteDialog::from_inner(Arc::new(dlg_inner));
+        dialog.inner.lifecycle.lock().sender = self.inner.lifecycle_sender.lock().clone();
+        dialog.inner.reserve_invite(&tx)?;
         Ok((dialog, tx))
     }
 }

@@ -579,13 +579,13 @@ async fn test_2xx_over_tcp_is_retransmitted_until_the_ack() -> crate::Result<()>
         .with_cancel_token(token.child_token())
         .with_option(short_timers())
         .build();
-    endpoint.inner.transport_layer.serve_listens().await?;
     let dialog_layer = Arc::new(DialogLayer::new(endpoint.inner.clone()));
     let mut incoming = endpoint.incoming_transactions()?;
     let endpoint_inner = endpoint.inner.clone();
-    tokio::spawn(async move {
-        let _ = endpoint_inner.serve().await;
-    });
+    let mut serving = Box::pin(async move { endpoint_inner.serve().await });
+    // Poll Endpoint startup before connecting to its TCP listener.
+    assert!(futures::poll!(&mut serving).is_pending());
+    tokio::spawn(serving);
     let (state_sender, mut states) = unbounded_channel();
     let (dialog_sender, mut dialogs) = unbounded_channel();
     tokio::spawn(async move {
@@ -1072,4 +1072,33 @@ async fn test_unacked_reinvite_2xx_ends_the_session_on_a_legacy_client_dialog() 
 #[tokio::test]
 async fn test_acked_reinvite_keeps_a_legacy_client_dialog() -> crate::Result<()> {
     legacy_client_dialog_reinvite(true).await
+}
+
+/// CANCEL is a UAC request (RFC 3261 §9): `cancel()` on a server dialog
+/// fails and sends nothing; an unanswered INVITE is ended with `reject()`.
+#[tokio::test]
+async fn test_cancel_on_a_server_dialog_fails() -> crate::Result<()> {
+    let token = CancellationToken::new();
+    let (mut states, mut dialogs, peer) = setup(&token, short_timers()).await?;
+
+    peer.send_request(Method::Invite, 1, None).await;
+    let dialog = tokio::time::timeout(Duration::from_secs(2), dialogs.recv())
+        .await
+        .expect("timeout waiting for the server dialog")
+        .unwrap();
+    let error = dialog.cancel().await.expect_err("cancel() on a UAS");
+    assert!(error.to_string().contains("reject()"), "{error}");
+    let sent = peer.collect(Instant::now() + T1 * 4).await;
+    assert!(
+        sent.iter()
+            .all(|(_, m)| matches!(m, SipMessage::Response(r) if r.status_code.code() == 100)),
+        "nothing but 100 Trying, got {sent:?}"
+    );
+    assert!(!dialog.state().is_terminated());
+    // hangup() on the unanswered server dialog keeps its behavior.
+    dialog.hangup().await?;
+    assert!(!dialog.state().is_terminated());
+    assert!(!std::iter::from_fn(|| states.try_recv().ok()).any(|s| s.is_terminated()));
+    token.cancel();
+    Ok(())
 }

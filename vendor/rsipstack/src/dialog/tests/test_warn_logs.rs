@@ -131,7 +131,8 @@ async fn test_bye_in_early_state_warns_without_the_response() -> crate::Result<(
     let SipMessage::Response(ringing) = message("SIP/2.0 180 Ringing", "1 INVITE") else {
         unreachable!()
     };
-    inner.transition(DialogState::Early(inner.id.lock().clone(), ringing))?;
+    let id = inner.id.lock().clone();
+    inner.transition(DialogState::Early(id, ringing));
 
     let errors = [
         ClientInviteDialog {
@@ -183,7 +184,8 @@ async fn test_websocket_parse_failure_warns_without_the_message() -> crate::Resu
     });
     let remote = SipAddr::new(crate::sip::transport::Transport::Ws, addr.into());
     let conn = WebSocketConnection::connect(&remote, None).await?;
-    conn.serve_loop(unbounded_channel().0).await?;
+    conn.serve_loop(unbounded_channel().0, core::time::Duration::ZERO)
+        .await?;
 
     let warns = capture.lines(Level::WARN, "Error parsing SIP message");
     assert_eq!(warns.len(), 1, "{warns:?}");

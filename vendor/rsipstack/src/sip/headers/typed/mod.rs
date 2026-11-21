@@ -1,7 +1,7 @@
 use crate::prelude::*;
 use crate::sip::{Error, Header};
 
-mod parse_helpers;
+pub(crate) mod parse_helpers;
 pub mod tokenizers;
 
 pub trait TypedHeader<'a>:
@@ -25,6 +25,7 @@ pub use allow::Allow;
 pub use authorization::Authorization;
 pub use contact::Contact;
 pub use cseq::CSeq;
+pub use diversion::{Diversion, DiversionEntry, DiversionReason};
 pub use from::From;
 pub use history_info::{HistoryInfo, HistoryInfoEntry};
 pub use identity::Identity;
@@ -41,6 +42,7 @@ pub mod allow;
 pub mod authorization;
 pub mod contact;
 pub mod cseq;
+pub mod diversion;
 pub mod from;
 pub mod history_info;
 pub mod identity;
