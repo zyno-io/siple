@@ -6,6 +6,8 @@ use quick_xml::Reader;
 use quick_xml::events::{BytesStart, Event};
 use serde::Serialize;
 
+use crate::problem::{Context, Problem, classify};
+
 /// Derived state of one monitored extension.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -499,7 +501,7 @@ pub enum SubscriptionPhase {
 }
 
 /// Health of the subscription behind a BLF entry.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BlfSubscription {
     /// Lifecycle phase.
     pub phase: SubscriptionPhase,
@@ -510,11 +512,71 @@ pub struct BlfSubscription {
     pub last_reason: Option<String>,
     /// When the subscription lapses unless refreshed.
     pub expires_at: Option<DateTime<Utc>>,
+    /// When the current subscription was first confirmed, i.e. the first 2xx to SUBSCRIBE of its
+    /// dialog. In-dialog refreshes keep it; a failure, a termination, a rebuild or a new dialog
+    /// (resubscribe, including after a 481 to a refresh) resets it, and the next 2xx sets it
+    /// again. `None` while nothing is confirmed.
+    pub subscribed_at: Option<DateTime<Utc>>,
+    /// When a SUBSCRIBE (initial or refresh) last succeeded (2xx) for the current subscription.
+    /// Reset together with `subscribed_at`, so it is `None` after a failure too.
+    pub last_refreshed_at: Option<DateTime<Utc>>,
     /// When the next attempt happens (`retrying` only).
     pub retry_at: Option<DateTime<Utc>>,
 }
 
+impl Serialize for BlfSubscription {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct Wire<'a> {
+            phase: SubscriptionPhase,
+            last_code: Option<u16>,
+            last_reason: &'a Option<String>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            last_problem: Option<Problem>,
+            expires_at: &'a Option<DateTime<Utc>>,
+            subscribed_at: &'a Option<DateTime<Utc>>,
+            last_refreshed_at: &'a Option<DateTime<Utc>>,
+            retry_at: &'a Option<DateTime<Utc>>,
+        }
+        let BlfSubscription {
+            phase,
+            last_code,
+            last_reason,
+            expires_at,
+            subscribed_at,
+            last_refreshed_at,
+            retry_at,
+        } = self;
+        Wire {
+            phase: *phase,
+            last_code: *last_code,
+            last_reason,
+            last_problem: self.problem(),
+            expires_at,
+            subscribed_at,
+            last_refreshed_at,
+            retry_at,
+        }
+        .serialize(s)
+    }
+}
+
 impl BlfSubscription {
+    /// The plain-language problem behind the last failure; `None` while healthy.
+    pub fn problem(&self) -> Option<Problem> {
+        if self.last_code.is_none() && self.last_reason.is_none() {
+            return None;
+        }
+        Some(
+            classify(
+                Context::Subscribe,
+                self.last_code.unwrap_or(0),
+                self.last_reason.as_deref().unwrap_or(""),
+            )
+            .unwrap_or(Problem::Other),
+        )
+    }
+
     /// Whether the shown state may be out of date: the subscription is retrying, or neither a
     /// NOTIFY nor a refresh extended it past `expires_at + grace`.
     pub fn is_stale(&self, now: DateTime<Utc>, grace: std::time::Duration) -> bool {
@@ -878,6 +940,8 @@ mod tests {
             last_code: None,
             last_reason: None,
             expires_at: expires_in.map(|s| Utc::now() + chrono::Duration::seconds(s)),
+            subscribed_at: None,
+            last_refreshed_at: None,
             retry_at: None,
         }
     }

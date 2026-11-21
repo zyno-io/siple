@@ -16,6 +16,7 @@ method, prints the JSON result and exits. No MCP server or other long-running he
    - Windows: `siple-cli.exe` in the same folder as `siple.exe` (wherever the user unzipped Siple;
      ask if you cannot find it)
    - Linux: `bin/siple-cli` inside the extracted `siple-<version>` folder
+   - Linux Flatpak: `flatpak run --command=siple-cli io.zyno.siple` (file arguments only under `~/.var/app/io.zyno.siple/`)
 2. **Siple must be running.** `siple-cli ctl status` fails when it is not: with
    `no running instance found`, or with a connection error if Siple crashed or was killed. Ask the user to start the Siple app. Only if they
    want no GUI, start `siple-cli run --headless` yourself (it keeps running and must stay running
@@ -45,7 +46,10 @@ echo '{"call_id":"c1"}' | siple-cli ctl call.get -   # params from stdin
   `{"code", "message", "data": {"kind", ...}}` where `data.kind` is `not_found`, `invalid_state`,
   `invalid_params`, `sip_error` (with `sip_code`), `timeout`, `unauthorized`, `method_not_found`,
   `unsupported` or `internal`. `unsupported` means this edition cannot do it: the Mac App Store
-  edition has no `[speech]` hooks (`call.say`, transcription, `speech.*`). From the CLI itself (Siple not running, unreadable params, connection lost):
+  and Flatpak editions have no `[speech]` hooks (`call.say`, transcription, `speech.*`). A SIP-level failure also has `data.problem {kind, title, hint}`: tell the
+  user the `title` and the `hint`, and match on `kind` (never on the text). The same object is on a failed
+  registration (`registration.problem`), on `end.problem` of an ended call, on `subscription.last_problem` of a
+  BLF entry and on `account.test` results (`problem`). From the CLI itself (Siple not running, unreadable params, connection lost):
   `{"error": "<message>"}` with no `kind`.
 - On Windows PowerShell, quoting JSON is fragile: write params to a file and pass it quoted,
   `siple-cli ctl config.edit '@edits.json'` (a bare `@` is PowerShell syntax), or pipe it:
@@ -104,6 +108,7 @@ siple-cli ctl call.wait_for "{\"call_id\":\"$call\",\"state\":\"active\",\"since
 | Test an account | `account.test {account}` |
 | Change settings | `config.edit` (typed edits; comments in config.toml are kept), e.g. `move_account {id, index}` |
 | Set a password | `account.set_password {account, password}` (never put passwords in `config.edit` output you show) |
+| Add an account from a setup link | `provision.parse {link}`, then `account.test` with its `draft` plus a `password` in `draft.fields`, then `config.edit add_account` with the same draft (a link never carries a password; ask the user for it) |
 
 ## Rules
 

@@ -154,6 +154,8 @@ pub fn is_idempotent(method: &str) -> bool {
             | "call.sip_trace"
             | "call.rx_audio"
             | "speech.transcribe"
+            | "provision.parse"
+            | "provision.build"
     ) || method.ends_with(".list")
         || method.ends_with(".get")
 }

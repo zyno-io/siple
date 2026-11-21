@@ -4,23 +4,195 @@ use crate::sip::{
     Error,
 };
 use memchr::memchr;
+
+/// Split a combined header value into comma-joined entries, honouring
+/// quoted strings and angle-bracket delimited name-addr forms (`<...>`).
+pub fn split_comma_entries(s: &str) -> Vec<String> {
+    let mut values = Vec::new();
+    let mut current = String::new();
+    let mut angle_depth = 0usize;
+    let mut in_quotes = false;
+    for ch in s.chars() {
+        match ch {
+            '"' => {
+                in_quotes = !in_quotes;
+                current.push(ch);
+            }
+            '<' if !in_quotes => {
+                angle_depth += 1;
+                current.push(ch);
+            }
+            '>' if !in_quotes => {
+                angle_depth = angle_depth.saturating_sub(1);
+                current.push(ch);
+            }
+            ',' if !in_quotes && angle_depth == 0 => {
+                let v = current.trim().to_string();
+                if !v.is_empty() {
+                    values.push(v);
+                }
+                current.clear();
+            }
+            _ => current.push(ch),
+        }
+    }
+    let v = current.trim().to_string();
+    if !v.is_empty() {
+        values.push(v);
+    }
+    values
+}
+
+/// Look up a header/URI param by (ASCII-case-insensitive) name.
+pub fn param_value(params: &[Param], key: &str) -> Option<String> {
+    params.iter().find_map(|p| match p {
+        Param::Other(n, v) if n.value().eq_ignore_ascii_case(key) => {
+            v.as_ref().map(|t| t.value().to_string())
+        }
+        _ => None,
+    })
+}
+
+pub(crate) fn find_unquoted_lt(s: &str) -> Result<Option<usize>, Error> {
+    let mut in_quotes = false;
+    let mut escaped = false;
+    let mut lt_pos = None;
+    for (i, ch) in s.char_indices() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        if in_quotes && ch == '\\' {
+            escaped = true;
+            continue;
+        }
+        if ch == '"' {
+            in_quotes = !in_quotes;
+            continue;
+        }
+        if !in_quotes && ch == '<' && lt_pos.is_none() {
+            lt_pos = Some(i);
+        }
+    }
+    if in_quotes {
+        return Err(Error::ParseError("unclosed quote in display name".into()));
+    }
+    Ok(lt_pos)
+}
+
+fn is_token(s: &str) -> bool {
+    !s.is_empty()
+        && s.bytes().all(|b| {
+            b.is_ascii_alphanumeric()
+                || matches!(
+                    b,
+                    b'-' | b'.' | b'!' | b'%' | b'*' | b'_' | b'+' | b'`' | b'\'' | b'~'
+                )
+        })
+}
+
+pub(crate) fn validate_display_name(display_raw: &str) -> Result<Option<String>, Error> {
+    let display_raw = display_raw.trim();
+    if display_raw.is_empty() {
+        return Ok(None);
+    }
+    if display_raw.starts_with('"') && display_raw.ends_with('"') && display_raw.len() >= 2 {
+        // RFC 3261 quoted-string: unescape quoted-pairs so the stored display
+        // name is the actual text; printing escapes `"` and `\` again.
+        return Ok(Some(unescape_quoted_pairs(
+            &display_raw[1..display_raw.len() - 1],
+        )?));
+    }
+    if !display_raw.split_whitespace().all(is_token) {
+        return Err(Error::ParseError("invalid display name".into()));
+    }
+    Ok(Some(display_raw.to_string()))
+}
+
+/// Unescape RFC 3261 quoted-pairs (`\X` → `X`) inside a quoted string.
+/// A trailing lone `\` is kept verbatim; control octets are rejected.
+pub(crate) fn unescape_quoted_pairs(s: &str) -> Result<String, Error> {
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars();
+    while let Some(c) = chars.next() {
+        if c == '\\' {
+            match chars.next() {
+                Some(next) if next == '\t' || !next.is_control() => out.push(next),
+                Some(next) => {
+                    return Err(Error::ParseError(format!(
+                        "invalid quoted-pair escape: \\{}",
+                        next
+                    )))
+                }
+                None => out.push('\\'),
+            }
+        } else if c == '\t' || !c.is_control() {
+            out.push(c);
+        } else {
+            return Err(Error::ParseError(
+                "control character in quoted string".into(),
+            ));
+        }
+    }
+    Ok(out)
+}
+
+/// Write a display name as a quoted string with `"` and `\` escaped as
+/// quoted-pairs, so a parsed name-addr prints back to the same text.
+pub(crate) fn write_quoted_escaped(f: &mut core::fmt::Formatter<'_>, s: &str) -> core::fmt::Result {
+    use core::fmt::Write;
+    f.write_char('"')?;
+    for c in s.chars() {
+        match c {
+            '"' => f.write_str("\\\"")?,
+            '\\' => f.write_str("\\\\")?,
+            _ => f.write_char(c)?,
+        }
+    }
+    f.write_char('"')
+}
+
+/// Write `"<display>" <uri>` (or just `<uri>`), used by the name-addr
+/// headers (To, From, Contact, Route, Record-Route, Service-Route).
+pub(crate) fn write_display_name_addr(
+    f: &mut core::fmt::Formatter<'_>,
+    display_name: &Option<String>,
+    uri: &impl core::fmt::Display,
+) -> core::fmt::Result {
+    match display_name {
+        Some(name) => {
+            write_quoted_escaped(f, name)?;
+            write!(f, " <{}>", uri)
+        }
+        None => write!(f, "<{}>", uri),
+    }
+}
+
 pub fn parse_display_uri_params_str(s: &str) -> Result<(Option<String>, Uri, Vec<Param>), Error> {
     let s = s.trim();
-    if let Some(lt) = s.find('<') {
-        let display_name = s[..lt].trim().trim_matches('"').to_string();
+    if let Some(lt) = find_unquoted_lt(s)? {
+        let display = validate_display_name(&s[..lt])?;
         let rest = &s[lt + 1..];
         let gt = rest
             .find('>')
-            .ok_or_else(|| Error::ParseError(format!("missing '>' in: {}", s)))?;
+            .ok_or_else(|| Error::ParseError("missing '>' in name-addr".into()))?;
         let uri_str = &rest[..gt];
-        let params_str = rest[gt + 1..].trim().trim_start_matches(';');
-        let uri = parse_uri(uri_str)?;
-        let params = parse_params(params_str)?;
-        let display = if display_name.is_empty() {
-            None
+        if uri_str.is_empty() || uri_str.chars().any(char::is_whitespace) {
+            return Err(Error::ParseError("invalid URI in <>".into()));
+        }
+        let after_gt = rest[gt + 1..].trim();
+        let params = if after_gt.is_empty() {
+            vec![]
         } else {
-            Some(display_name)
+            let params_str = after_gt
+                .strip_prefix(';')
+                .ok_or_else(|| Error::ParseError("expected ';' after '>'".into()))?;
+            if params_str.trim().is_empty() {
+                return Err(Error::ParseError("empty parameter".into()));
+            }
+            parse_params(params_str)?
         };
+        let uri = parse_uri(uri_str)?;
         return Ok((display, uri, params));
     }
 
@@ -52,22 +224,31 @@ pub fn parse_display_uri_params_str(s: &str) -> Result<(Option<String>, Uri, Vec
         }
     }
 
-    if let Some(end) = uri_end {
+    let (uri, params) = if let Some(end) = uri_end {
         let uri_str = &s[..end];
         let params_str = &s[end + 1..];
+        if params_str.trim().is_empty() {
+            return Err(Error::ParseError("empty parameter".into()));
+        }
         let uri = parse_uri(uri_str)?;
         let params = parse_params(params_str)?;
-        return Ok((None, uri, params));
-    }
+        (uri, params)
+    } else {
+        // No header params, entire string is URI
+        let uri = parse_uri(s)?;
+        (uri, vec![])
+    };
 
-    // No header params, entire string is URI
-    let uri = parse_uri(s)?;
-    Ok((None, uri, vec![]))
+    if !uri.headers.is_empty() || uri.scheme.is_none() {
+        return Err(Error::ParseError("invalid unbracketed addr-spec".into()));
+    }
+    Ok((None, uri, params))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::sip::headers::typed::To;
 
     #[test]
     fn test_with_angle_brackets() {
@@ -173,5 +354,36 @@ mod tests {
             parse_display_uri_params_str("sip:bob@example.com;tag=1;expires=60;lr").unwrap();
         assert_eq!(result.1.auth.as_ref().unwrap().user, "bob");
         assert_eq!(result.2.len(), 3);
+    }
+
+    // ── issue #258: quoted-pairs in display names round-trip ──────────────────────
+
+    #[test]
+    fn unescape_quoted_pairs_resolves_escapes_and_rejects_control_octets() {
+        assert_eq!(unescape_quoted_pairs(r#"a\"b\\c"#).unwrap(), "a\"b\\c");
+        assert_eq!(unescape_quoted_pairs("a\\ b").unwrap(), "a b");
+        assert_eq!(
+            unescape_quoted_pairs("lone trailing \\").unwrap(),
+            "lone trailing \\"
+        );
+        assert!(unescape_quoted_pairs("a\u{7}b").is_err());
+        assert!(unescape_quoted_pairs("a\\\u{7}").is_err());
+    }
+
+    #[test]
+    fn quoted_display_name_unescapes_and_prints_escaped() {
+        let result =
+            parse_display_uri_params_str("\"He said \\\"hi\\\"\" <sip:bob@example.com>").unwrap();
+        assert_eq!(result.0.as_deref(), Some("He said \"hi\""));
+        let to = To::parse("\"He said \\\"hi\\\"\" <sip:bob@example.com>").unwrap();
+        assert_eq!(
+            to.to_string(),
+            "\"He said \\\"hi\\\"\" <sip:bob@example.com>"
+        );
+    }
+
+    #[test]
+    fn display_name_rejects_control_characters() {
+        assert!(parse_display_uri_params_str("\"a\u{7}b\" <sip:bob@example.com>").is_err());
     }
 }

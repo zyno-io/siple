@@ -569,7 +569,7 @@ impl Inner {
             out.push(Change::Speech);
         }
 
-        // [audio]: the config is the only source of devices (D3).
+        // [audio]: the config is the only source of devices.
         if d.audio {
             let (eff, changed) = self.sync_audio(&new.audio);
             if changed {

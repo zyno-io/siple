@@ -8,9 +8,11 @@ use siple_core::config::{AccountConfig, PasswordStore};
 use super::super::draft::{self, DraftForm, PROFILES, SRTP, TRANSPORTS};
 use super::super::form::{
     choice_row, group, hint_line, int_row, message_box, primary_button, primary_icon_button,
-    small_button, text_row, toggle_row,
+    small_button, test_result_box, text_row, toggle_row,
 };
 use super::super::rpc::{self, RpcRequest, RpcTag, TestRun};
+use super::super::setup_link;
+use super::super::wizard::{Offer, Origin};
 use super::super::{Cx, UiAction, UiState, reg_tone};
 use crate::snapshot::{RegClass, reg_class};
 use crate::theme::{FS_BODY, FS_MICRO, FS_SMALL, Palette, R_LG, SP_S, icon as ic};
@@ -179,6 +181,13 @@ pub(super) fn show(ui: &mut egui::Ui, cx: &Cx, st: &mut UiState, out: &mut Vec<U
     let p = cx.p;
     let snap = cx.vm.snap;
     let accounts = &snap.cfg.accounts;
+    // An account added from a setup link is selected once it is in the list.
+    if let Some(id) = st.settings.select_after.clone()
+        && accounts.iter().any(|a| a.id == id)
+    {
+        st.settings.account = Some(id);
+        st.settings.select_after = None;
+    }
     if st
         .settings
         .account
@@ -192,6 +201,13 @@ pub(super) fn show(ui: &mut egui::Ui, cx: &Cx, st: &mut UiState, out: &mut Vec<U
         if primary_icon_button(ui, p, ic::PLUS, "New account", st.settings.add.is_none()).clicked()
         {
             st.settings.add = Some(DraftForm::default());
+        }
+        if small_button(ui, p, "Add from setup link", true).clicked() {
+            st.settings.paste = match st.settings.paste {
+                Some(_) => None,
+                None => Some(String::new()),
+            };
+            st.settings.paste_error = None;
         }
         let file_pw = accounts
             .iter()
@@ -216,6 +232,24 @@ pub(super) fn show(ui: &mut egui::Ui, cx: &Cx, st: &mut UiState, out: &mut Vec<U
             st.wizard.restart();
         }
     });
+    if st.settings.paste.is_some() {
+        let mut offered = None;
+        group(ui, p, "Add from setup link", |ui| {
+            offered =
+                setup_link::paste_row(ui, p, &mut st.settings.paste, &mut st.settings.paste_error);
+        });
+        if let Some(link) = offered {
+            let id = link.account.draft().id;
+            match st.wizard.offer_link(link, Origin::Pasted, snap, cx.vm.now) {
+                Offer::Refused(why) => st.settings.paste_error = Some(why.to_string()),
+                Offer::Opened | Offer::Replaced => {
+                    st.settings.paste = None;
+                    st.settings.paste_error = None;
+                    st.settings.select_after = Some(id);
+                }
+            }
+        }
+    }
     if st.settings.add.is_some() {
         add_form(ui, cx, st, out);
     }
@@ -598,7 +632,23 @@ fn security(
                     params: serde_json::json!({"account": f.id}),
                 }));
             }
+            let share = small_button(ui, p, "Copy setup link", !dirty);
+            let share = share.on_hover_text(
+                "A link that fills in this account on another computer. It never contains the password.",
+            );
+            if share.clicked() {
+                out.push(UiAction::Rpc(RpcRequest {
+                    tag: RpcTag::ShareLink(f.id.to_string()),
+                    method: "provision.build",
+                    params: serde_json::json!({"account": f.id}),
+                }));
+            }
         });
+        if let Some((id, note)) = &st.settings.link_note
+            && id == f.id
+        {
+            hint_line(ui, p, note);
+        }
         test_result(ui, p, st.settings.tests.get(f.id), &a.id, out);
     });
 }
@@ -622,7 +672,7 @@ pub(in crate::ui) fn test_result(
         }
         Some(TestRun::Failed(m)) => message_box(ui, p.err, m),
         Some(TestRun::Done(r)) => {
-            message_box(ui, if r.ok { p.ok } else { p.err }, &r.message);
+            test_result_box(ui, p, r);
             if r.diagnosis == "tls_untrusted"
                 && let Some(fp) = &r.fingerprint
             {

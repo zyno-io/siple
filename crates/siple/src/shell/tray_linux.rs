@@ -2,6 +2,9 @@
 //! the packaging NEEDED-library rule holds). Needs a StatusNotifierHost (KDE, XFCE, and GNOME
 //! with the AppIndicator extension); without one [`spawn`] fails and the shell makes closing the
 //! window minimize it instead, so the app never becomes unreachable.
+//!
+//! In a Flatpak the tray registers under its unique bus name only (no `--own-name` grant): ksni's
+//! well-known name embeds a counter that changes each time the tray is recreated.
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -13,6 +16,12 @@ use super::tray_model::{MenuEntry, TrayCmd, TrayIconState, TrayModel, render_ico
 use super::{ShellMsg, ShellTx};
 
 const ICON_PX: usize = 48;
+
+/// Whether the tray asks for the well-known `org.kde.StatusNotifierItem-<pid>-<n>` name. A
+/// Flatpak has no grant for it, so it registers by its unique name.
+fn owns_bus_name(c: &siple_core::config::channel::Channel) -> bool {
+    c.kind != siple_core::config::channel::ChannelKind::Flatpak
+}
 
 pub struct SipleTray {
     model: TrayModel,
@@ -150,7 +159,12 @@ impl LinuxTray {
                 tx: tx.clone(),
                 online: online.clone(),
             };
-            let result = match tray.assume_sni_available(true).spawn().await {
+            let result = match tray
+                .assume_sni_available(true)
+                .disable_dbus_name(!owns_bus_name(siple_core::config::channel::current()))
+                .spawn()
+                .await
+            {
                 Ok(handle) => {
                     // One task applies updates in order (separate tasks could land reordered).
                     let (models, mut rx) = tokio::sync::watch::channel(model);
@@ -202,5 +216,25 @@ impl LinuxTray {
         self.rt.spawn(async move {
             h.shutdown().await;
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::owns_bus_name;
+    use siple_core::config::channel::Channel;
+
+    #[test]
+    fn only_a_flatpak_skips_the_well_known_bus_name() {
+        assert!(owns_bus_name(&Channel::DIRECT));
+        assert!(!owns_bus_name(&Channel::FLATPAK));
+    }
+
+    /// ksni's builder has no getters, so check that the spawn applies the decision at all.
+    #[test]
+    fn the_spawn_applies_the_bus_name_decision() {
+        let src = include_str!("tray_linux.rs");
+        let code = src.split("#[cfg(test)]").next().unwrap();
+        assert!(code.contains(".disable_dbus_name(!owns_bus_name("));
     }
 }

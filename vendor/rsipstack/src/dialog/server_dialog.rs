@@ -148,7 +148,7 @@ impl ServerInviteDialog {
         self.inner
             .tu_sender
             .send(TransactionEvent::Respond(resp.clone()))?;
-        self.inner.transition(DialogState::Early(self.id(), resp))?;
+        self.inner.transition(DialogState::Early(self.id(), resp));
         Ok(())
     }
     /// Accept the incoming INVITE request
@@ -193,8 +193,7 @@ impl ServerInviteDialog {
             .tu_sender
             .send(TransactionEvent::Respond(resp.clone()))?;
 
-        self.inner
-            .transition(DialogState::WaitAck(self.id(), resp))?;
+        self.inner.transition(DialogState::WaitAck(self.id(), resp));
         Ok(())
     }
 
@@ -297,6 +296,13 @@ impl ServerInviteDialog {
         if self.inner.is_terminated() || self.inner.is_confirmed() {
             return Ok(());
         }
+        {
+            let state = self.inner.state.lock();
+            if state.is_terminated() || state.is_confirmed() {
+                return Ok(());
+            }
+            self.inner.record_local_termination();
+        }
         debug!(id=%self.id(), ?code, ?reason, "rejecting dialog");
         let headers = reason.map(|reason| vec![crate::sip::Header::Reason(reason.into())]);
         let resp = self.inner.make_response(
@@ -312,7 +318,8 @@ impl ServerInviteDialog {
         self.inner.transition(DialogState::Terminated(
             self.id(),
             TerminatedReason::UasDecline,
-        ))
+        ));
+        Ok(())
     }
 
     /// Send a BYE request to terminate the dialog.
@@ -663,7 +670,15 @@ impl ServerInviteDialog {
                 cseq = %cseq,
                 "received old request"
             );
-            // discard old request
+            // ACK is never answered. Other stale requests are rejected
+            // regardless of the original dialog role (RFC 3261 section 12.2.2).
+            if !matches!(
+                tx.original.method,
+                crate::sip::Method::Ack | crate::sip::Method::Cancel
+            ) {
+                tx.reply(crate::sip::StatusCode::ServerInternalError)
+                    .await?;
+            }
             return Ok(());
         }
         self.inner
@@ -738,9 +753,13 @@ impl ServerInviteDialog {
     }
 
     async fn handle_bye(&mut self, tx: &mut Transaction) -> Result<()> {
+        self.inner.record_remote_bye(
+            tx.original_received_at
+                .unwrap_or_else(super::lifecycle::LifecycleTime::now),
+        );
         debug!(id = %self.id(), uri = %tx.original.uri, "received bye");
         self.inner
-            .transition(DialogState::Terminated(self.id(), TerminatedReason::UacBye))?;
+            .transition(DialogState::Terminated(self.id(), TerminatedReason::UacBye));
         tx.reply(crate::sip::StatusCode::OK).await?;
         Ok(())
     }
@@ -749,20 +768,20 @@ impl ServerInviteDialog {
         debug!(id = %self.id(), uri = %tx.original.uri, "received info");
         let (handle, rx) = TransactionHandle::new();
         self.inner
-            .transition(DialogState::Info(self.id(), tx.original.clone(), handle))?;
+            .transition(DialogState::Info(self.id(), tx.original.clone(), handle));
         let result = self.inner.process_transaction_handle(tx, rx).await;
-        let confirmed = self.return_to_confirmed(tx);
-        result.and(confirmed)
+        self.return_to_confirmed(tx);
+        result
     }
 
     /// Restore confirmation after the mid-dialog handlers that use this helper.
     /// REFER is delivered as an event without leaving Confirmed and does not
     /// need another confirmation event after its response.
-    fn return_to_confirmed(&self, tx: &Transaction) -> Result<()> {
+    fn return_to_confirmed(&self, tx: &Transaction) {
         self.inner.transition(DialogState::Confirmed(
             self.id(),
             tx.last_response.clone().unwrap_or_default(),
-        ))
+        ));
     }
 
     async fn handle_prack(&mut self, tx: &mut Transaction) -> Result<()> {
@@ -795,7 +814,7 @@ impl ServerInviteDialog {
         debug!(id = %self.id(), uri = %tx.original.uri, "received options");
         let (handle, rx) = TransactionHandle::new();
         self.inner
-            .transition(DialogState::Options(self.id(), tx.original.clone(), handle))?;
+            .transition(DialogState::Options(self.id(), tx.original.clone(), handle));
 
         self.inner.process_transaction_handle(tx, rx).await
     }
@@ -804,18 +823,18 @@ impl ServerInviteDialog {
         debug!(id = %self.id(), uri = %tx.original.uri, "received update");
         let (handle, rx) = TransactionHandle::new();
         self.inner
-            .transition(DialogState::Updated(self.id(), tx.original.clone(), handle))?;
+            .transition(DialogState::Updated(self.id(), tx.original.clone(), handle));
 
         let result = self.inner.process_transaction_handle(tx, rx).await;
-        let confirmed = self.return_to_confirmed(tx);
-        result.and(confirmed)
+        self.return_to_confirmed(tx);
+        result
     }
 
     async fn handle_refer(&mut self, tx: &mut Transaction) -> Result<()> {
         debug!(id = %self.id(), uri = %tx.original.uri, "received refer");
         let (handle, rx) = TransactionHandle::new();
         self.inner
-            .transition(DialogState::Refer(self.id(), tx.original.clone(), handle))?;
+            .transition(DialogState::Refer(self.id(), tx.original.clone(), handle));
 
         self.inner.process_transaction_handle(tx, rx).await
     }
@@ -824,68 +843,33 @@ impl ServerInviteDialog {
         debug!(id = %self.id(), uri = %tx.original.uri, "received message");
         let (handle, rx) = TransactionHandle::new();
         self.inner
-            .transition(DialogState::Message(self.id(), tx.original.clone(), handle))?;
+            .transition(DialogState::Message(self.id(), tx.original.clone(), handle));
 
         let result = self.inner.process_transaction_handle(tx, rx).await;
-        let confirmed = self.return_to_confirmed(tx);
-        result.and(confirmed)
+        self.return_to_confirmed(tx);
+        result
     }
 
     async fn handle_notify(&mut self, tx: &mut Transaction) -> Result<()> {
         debug!(id = %self.id(), uri = %tx.original.uri, "received notify");
         let (handle, rx) = TransactionHandle::new();
         self.inner
-            .transition(DialogState::Notify(self.id(), tx.original.clone(), handle))?;
+            .transition(DialogState::Notify(self.id(), tx.original.clone(), handle));
 
         let result = self.inner.process_transaction_handle(tx, rx).await;
-        let confirmed = self.return_to_confirmed(tx);
-        result.and(confirmed)
+        self.return_to_confirmed(tx);
+        result
     }
 
     async fn handle_reinvite(&mut self, tx: &mut Transaction) -> Result<()> {
-        debug!(id = %self.id(), "received re-invite {}", tx.original.uri);
-        let (handle, rx) = TransactionHandle::new();
-        self.inner
-            .transition(DialogState::Updated(self.id(), tx.original.clone(), handle))?;
-
-        self.inner.process_transaction_handle(tx, rx).await?;
-        let answered_2xx = tx
-            .last_response
-            .as_ref()
-            .is_some_and(|resp| resp.status_code.kind() == crate::sip::StatusCodeKind::Successful);
-        let mut acked = false;
-
-        while let Some(msg) = tx.receive().await {
-            if let SipMessage::Request(req) = msg {
-                if req.method == crate::sip::Method::Ack {
-                    debug!(id = %self.id(),"received ack for re-invite {}", req.uri);
-                    self.inner.remote_ack.lock().replace(req);
-                    self.inner.transition(DialogState::Confirmed(
-                        self.id(),
-                        tx.last_response.clone().unwrap_or_default(),
-                    ))?;
-                    acked = true;
-                    break;
-                }
-            }
-        }
-        // A matching ACK ends the Accepted transaction; `acked` keeps the
-        // timeout path (no ACK within 64*T1) from firing on a confirmed
-        // re-INVITE.
-        self.inner
-            .end_session_without_ack(tx, answered_2xx && !acked)
-            .await;
-        Ok(())
+        self.inner.process_reinvite(tx, true).await
     }
 
     async fn handle_invite(&mut self, tx: &mut Transaction) -> Result<()> {
+        *tx.initial_dialog.lock() = Some(Arc::downgrade(&self.inner));
         let handle_loop = async {
-            if !self.inner.is_confirmed()
-                && matches!(tx.original.method, crate::sip::Method::Invite)
-                && self
-                    .inner
-                    .transition(DialogState::Calling(self.id()))
-                    .is_ok()
+            if matches!(tx.original.method, crate::sip::Method::Invite)
+                && self.inner.transition_if_calling()
             {
                 tx.send_trying().await.ok();
             }
@@ -903,7 +887,7 @@ impl ServerInviteDialog {
                             self.inner.transition(DialogState::Confirmed(
                                 self.id(),
                                 tx.last_response.clone().unwrap_or_default(),
-                            ))?;
+                            ));
                             break;
                         }
                         crate::sip::Method::Cancel => {
@@ -913,7 +897,7 @@ impl ServerInviteDialog {
                             self.inner.transition(DialogState::Terminated(
                                 self.id(),
                                 TerminatedReason::UacCancel,
-                            ))?;
+                            ));
                             break;
                         }
                         _ => {}

@@ -8,12 +8,12 @@ A RFC 3261/3262 compliant SIP stack written in Rust. The goal of this project is
 
 - **RFC 3261/3262 Compliant**: Full compliance with SIP specification
 - **Multiple Transport Support**: UDP, TCP, TLS, WebSocket (TLS/WebSocket require the `rustls` and `websocket` features, enabled by default). The TLS client goes through a backend seam (`platform::tls`) — host default is the built-in rustls; embedded stacks can register their own connector
+- **IPv6 & Dual-Stack**: listeners on `::` serve IPv4 and IPv6; IPv4-mapped peers are canonicalized and UDP sends pick a reachable listener
 - **Transaction Layer**: Complete SIP transaction state machine
 - **Dialog Layer**: SIP dialog management
 - **Reliable Provisionals**: PRACK (RFC 3262 / 100rel) support
 - **Digest Authentication**: Built-in authentication support
-- **High Performance**: Built with Rust for maximum performance
-- **Easy to Use**: Simple and intuitive API design
+- **no_std / Embedded**: alloc-only core with an embassy backend
 
 ## no_std / Embedded Support
 
@@ -45,29 +45,23 @@ cargo check --no-default-features --features platform-embassy
   use UDP or SIPS today.
 - On no_std, register a `DomainResolver` instead of the tokio DNS resolver.
 
-## TODO
-- [x] Transport support
-  - [x] UDP
-  - [x] TCP
-  - [x] TLS
-  - [x] WebSocket
-- [x] Digest Authentication
-- [x] Transaction Layer
-- [x] Dialog Layer
-- [ ] WASM target
-- [x] no_std embassy-based targets
+## Compatibility
+
+rsipstack follows RFC 3261 strictly. Stream transports require a valid single
+`Content-Length`, `Via received` is bare for IPv6, dialogs follow target
+refreshes, and transactions match per RFC. See the
+[CHANGELOG](CHANGELOG.md) for release-specific behaviour changes.
 
 ## Use Cases
 
-This SIP stack can be used in various scenarios, including but not limited to:
+rsipstack powers production SIP applications and related projects:
 
-- Integration with WebRTC for browser-based communication, such as WebRTC SBC.
-- Building custom SIP proxies or registrars
-- Building custom SIP user agents (SIP.js alternative)
-
-## Why Rust?
-
-We are a group of developers who are passionate about SIP and Rust. We believe that Rust is a great language for building high-performance network applications, and we want to bring the power of Rust to the SIP/WebRTC/SFU world.
+- [RustPBX](https://github.com/restsend/rustpbx) — programmable, software-defined PBX
+- [Active Call](https://github.com/miuda-ai/active-call) — SIP/WebRTC AI voice agent
+- [SipBot](https://github.com/miuda-ai/sipbot) — SIP call-flow bot for testing and simulation
+- [RustRTC](https://github.com/restsend/rustrtc) — WebRTC, RTP/SRTP and T.38 media stack used alongside rsipstack
+- [MiuTURN](https://github.com/restsend/miuturn) — TURN server for WebRTC
+- Custom SIP proxies, registrars, user agents, and WebRTC SBCs
 
 ## Quick Start Examples
 
@@ -156,6 +150,23 @@ transport_layer.add_transport(tcp_listener.into());
 To add TLS or WebSocket listeners, construct a `TlsListenerConnection` or
 `WebSocketListenerConnection` and register it with `transport_layer.add_transport(...)`.
 
+> **rustls crypto provider.** rsipstack's TLS uses rustls's process-wide crypto
+> provider and builds rustls with `ring`. If your application also links the
+> `aws-lc-rs` backend (for example through `reqwest`'s default rustls setup),
+> rustls cannot pick one on its own and the first TLS connection panics with
+> *"Could not automatically determine the process-level CryptoProvider"*.
+> Install a provider once at startup, before creating any TLS transport:
+>
+> ```rust
+> rustls::crypto::ring::default_provider()
+>     .install_default()
+>     .expect("install rustls crypto provider");
+> // or: rustls::crypto::aws_lc_rs::default_provider().install_default()
+> ```
+>
+> The installed provider is used for every rustls user in the process,
+> rsipstack included, so it is also where to restrict cipher suites.
+
 The raw `TransportEvent` stream is an internal API consumed by `Endpoint::serve`.
 To process incoming SIP messages, build an `Endpoint` around the transport layer and
 drive it with `endpoint.serve()` while consuming transactions via
@@ -242,6 +253,13 @@ let invite_option = InviteOption {
 let (state_sender, _state_receiver) = dialog_layer.new_dialog_state_channel();
 let (invite_dialog, response) = dialog_layer.do_invite(invite_option, state_sender).await?;
 ```
+
+For application-controlled renegotiation on an established call, see
+[`dialog::reinvite`](https://docs.rs/rsipstack/latest/rsipstack/dialog/reinvite/index.html):
+prepare/send a re-INVITE, observe provisional responses, cancel one negotiation,
+and supply the ACK answer to an offerless re-INVITE. Incoming re-INVITE handles
+expose CANCEL and the matching ACK body. The existing `reinvite()` convenience
+method remains available.
 
 ### 5. Implementing a Proxy
 

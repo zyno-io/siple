@@ -11,6 +11,8 @@ use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 
+use crate::provision::{self, SetupLink, SetupLinkError};
+
 /// Longest link accepted, in bytes.
 pub const MAX_LINK_LEN: usize = 256;
 const MAX_USER_LEN: usize = 128;
@@ -23,11 +25,11 @@ pub enum LinkError {
     /// Nothing to dial.
     #[error("empty link")]
     Empty,
-    /// Longer than [`MAX_LINK_LEN`].
-    #[error("link is longer than {MAX_LINK_LEN} bytes")]
-    TooLong,
+    /// Longer than the limit (bytes) for this kind of link.
+    #[error("link is longer than {0} bytes")]
+    TooLong(usize),
     /// Not one of `sip:`, `sips:`, `tel:`, `callto:`.
-    #[error("unsupported link scheme (expected sip:, sips:, tel: or callto:)")]
+    #[error("unsupported link scheme (expected sip:, sips:, tel:, callto: or siple:)")]
     Scheme,
     /// Control character, space or an escape that decodes to one.
     #[error("link contains control characters or whitespace")]
@@ -35,6 +37,35 @@ pub enum LinkError {
     /// Anything else wrong with the shape of the link.
     #[error("invalid link: {0}")]
     Invalid(&'static str),
+    /// A `siple:` setup link that is not acceptable.
+    #[error("{0}")]
+    Setup(SetupLinkError),
+}
+
+impl LinkError {
+    /// Stable machine-readable code (`data.code` in the API).
+    pub fn code(&self) -> &'static str {
+        match self {
+            Self::Empty => "empty",
+            Self::TooLong(_) => "too_long",
+            Self::Scheme => "scheme",
+            Self::Control => "control",
+            Self::Invalid(_) => "invalid",
+            Self::Setup(e) => e.code(),
+        }
+    }
+
+    /// The API error: `invalid_params` with `{reason: "invalid_link", code, field?}`. The
+    /// message never repeats a submitted value.
+    pub fn to_api_error(&self) -> crate::control::ApiError {
+        let mut extra = serde_json::json!({"reason": "invalid_link", "code": self.code()});
+        if let Self::Setup(e) = self
+            && let Some(f) = e.field()
+        {
+            extra["field"] = f.into();
+        }
+        crate::control::ApiError::invalid_params(self.to_string()).with_extra(extra)
+    }
 }
 
 /// Scheme of an accepted link.
@@ -94,7 +125,7 @@ fn split_scheme(s: &str) -> Option<(LinkScheme, &str)> {
 
 /// Refuses control characters, whitespace and `%XX` escapes that decode to them, and malformed
 /// escapes.
-fn check_chars(s: &str) -> Result<(), LinkError> {
+pub(crate) fn check_chars(s: &str) -> Result<(), LinkError> {
     if s.chars().any(|c| c.is_control() || c.is_whitespace()) {
         return Err(LinkError::Control);
     }
@@ -120,14 +151,14 @@ fn check_chars(s: &str) -> Result<(), LinkError> {
     Ok(())
 }
 
-fn user_ok(u: &str) -> bool {
+pub(crate) fn user_ok(u: &str) -> bool {
     !u.is_empty()
         && u.len() <= MAX_USER_LEN
         && u.bytes()
             .all(|c| c.is_ascii_alphanumeric() || b"-_.!~*'()&=+$,".contains(&c))
 }
 
-fn host_ok(h: &str) -> bool {
+pub(crate) fn host_ok(h: &str) -> bool {
     if h.is_empty() || h.len() > MAX_HOST_LEN {
         return false;
     }
@@ -253,7 +284,7 @@ pub fn parse_link(link: &str) -> Result<LinkTarget, LinkError> {
         return Err(LinkError::Empty);
     }
     if link.len() > MAX_LINK_LEN {
-        return Err(LinkError::TooLong);
+        return Err(LinkError::TooLong(MAX_LINK_LEN));
     }
     check_chars(link)?;
     let (scheme, rest) = split_scheme(link).ok_or(LinkError::Scheme)?;
@@ -281,6 +312,72 @@ pub fn parse_link(link: &str) -> Result<LinkTarget, LinkError> {
         }
     };
     Ok(LinkTarget { scheme, target })
+}
+
+/// A link that arrived from outside: something to dial or an account to set up.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum IncomingLink {
+    /// `sip:`, `sips:`, `tel:`, `callto:`.
+    Dial(LinkTarget),
+    /// `siple:provision`.
+    Setup(SetupLink),
+}
+
+/// Whether `s` starts with a scheme Siple handles (`sip`, `sips`, `tel`, `callto`, `siple`).
+pub fn known_scheme(s: &str) -> bool {
+    s.trim().split_once(':').is_some_and(|(sc, _)| {
+        matches!(
+            sc.to_ascii_lowercase().as_str(),
+            "sip" | "sips" | "tel" | "callto" | "siple"
+        )
+    })
+}
+
+/// Validates any incoming link: `siple:` goes to [`provision::parse`] (2048 bytes), the rest to
+/// [`parse_link`] (256 bytes). Nothing is contacted or stored.
+pub fn parse_any(link: &str) -> Result<IncomingLink, LinkError> {
+    let link = link.trim();
+    if link.is_empty() {
+        return Err(LinkError::Empty);
+    }
+    if link.len() > provision::MAX_LINK_LEN {
+        return Err(LinkError::TooLong(provision::MAX_LINK_LEN));
+    }
+    let is_setup = link
+        .split_once(':')
+        .is_some_and(|(s, _)| s.eq_ignore_ascii_case("siple"));
+    if is_setup {
+        provision::parse(link)
+            .map(IncomingLink::Setup)
+            .map_err(LinkError::Setup)
+    } else {
+        parse_link(link).map(IncomingLink::Dial)
+    }
+}
+
+/// Parses a pasted setup link: ASCII whitespace (line wraps) is removed and surrounding `<>` or
+/// quotes are dropped. A dial link is refused with a pointed message.
+pub fn parse_pasted(text: &str) -> Result<SetupLink, LinkError> {
+    if text.len() > 4 * provision::MAX_LINK_LEN {
+        return Err(LinkError::TooLong(provision::MAX_LINK_LEN));
+    }
+    let squeezed: String = text.chars().filter(|c| !c.is_ascii_whitespace()).collect();
+    let mut s = squeezed.as_str();
+    loop {
+        let t = s
+            .strip_prefix('<')
+            .and_then(|x| x.strip_suffix('>'))
+            .or_else(|| s.strip_prefix('"').and_then(|x| x.strip_suffix('"')))
+            .or_else(|| s.strip_prefix('\'').and_then(|x| x.strip_suffix('\'')));
+        match t {
+            Some(inner) => s = inner,
+            None => break,
+        }
+    }
+    match parse_any(s)? {
+        IncomingLink::Setup(l) => Ok(l),
+        IncomingLink::Dial(_) => Err(LinkError::Invalid("that is a call link, not a setup link")),
+    }
 }
 
 /// Outcome of [`hand_off`].
@@ -615,7 +712,7 @@ mod tests {
     #[test]
     fn rejects_overlong() {
         let long = format!("sip:{}@example.test", "a".repeat(MAX_LINK_LEN));
-        assert_eq!(parse_link(&long), Err(LinkError::TooLong));
+        assert_eq!(parse_link(&long), Err(LinkError::TooLong(MAX_LINK_LEN)));
         let long_user = format!("sip:{}@example.test", "a".repeat(MAX_USER_LEN + 1));
         assert!(parse_link(&long_user).is_err());
         let long_tel = format!("tel:{}", "1".repeat(MAX_NUMBER_LEN + 1));
@@ -641,5 +738,94 @@ mod tests {
         assert!(l.allow(t0) && l.allow(t0) && l.allow(t0));
         assert!(!l.allow(t0 + Duration::from_secs(1)));
         assert!(l.allow(t0 + Duration::from_secs(11)));
+    }
+
+    const SETUP: &str = "siple:provision?d=eyJ2IjoxLCJhY2NvdW50Ijp7InVzZXJuYW1lIjoiMTAwMSIsImRvbWFpbiI6ImV4YW1wbGUudGVzdCJ9fQ";
+
+    #[test]
+    fn parse_any_dispatches() {
+        assert!(matches!(
+            parse_any("sip:bob@example.test"),
+            Ok(IncomingLink::Dial(_))
+        ));
+        assert!(matches!(
+            parse_any("tel:+15550100"),
+            Ok(IncomingLink::Dial(_))
+        ));
+        let Ok(IncomingLink::Setup(l)) = parse_any(&format!("  {SETUP}\n")) else {
+            panic!("setup link not accepted")
+        };
+        assert_eq!(l.account.domain, "example.test");
+        assert_eq!(parse_any(""), Err(LinkError::Empty));
+        assert_eq!(parse_any("http://x"), Err(LinkError::Scheme));
+        assert_eq!(
+            parse_any(&format!("siple:provision?d={}", "A".repeat(2100))),
+            Err(LinkError::TooLong(2048))
+        );
+        // Dial links keep their own, smaller cap.
+        let long = format!("sip:{}@example.test", "a".repeat(300));
+        assert_eq!(parse_any(&long), Err(LinkError::TooLong(MAX_LINK_LEN)));
+        let e = parse_any("siple:provision?d=!!").unwrap_err();
+        assert_eq!(e.code(), "bad_encoding");
+        assert_eq!(
+            parse_any("siple:call").unwrap_err().code(),
+            "unsupported_action"
+        );
+        assert_eq!(parse_any("sip:").unwrap_err().code(), "invalid");
+    }
+
+    #[test]
+    fn api_error_carries_code_and_field() {
+        let e = parse_any("siple:provision?d=eyJ2IjoxLCJhY2NvdW50Ijp7InBhc3N3b3JkIjoic2VjcmV0In19")
+            .unwrap_err()
+            .to_api_error();
+        let x = e.extra.unwrap();
+        assert_eq!(x["reason"], "invalid_link");
+        assert_eq!(x["code"], "password_not_allowed");
+        assert_eq!(x["field"], "password");
+        let e = parse_any("tel:x").unwrap_err().to_api_error();
+        assert_eq!(e.extra.unwrap()["code"], "invalid");
+    }
+
+    #[test]
+    fn parse_pasted_cleans_up() {
+        let want = match parse_any(SETUP) {
+            Ok(IncomingLink::Setup(l)) => l,
+            _ => panic!(),
+        };
+        let split = SETUP.len() / 2;
+        for t in [
+            SETUP.to_string(),
+            format!("<{SETUP}>"),
+            format!("\"{SETUP}\""),
+            format!("'{SETUP}'"),
+            format!("  {SETUP}\r\n"),
+            format!("{}\n  {}", &SETUP[..split], &SETUP[split..]),
+        ] {
+            assert_eq!(parse_pasted(&t).as_ref(), Ok(&want), "{t:?}");
+        }
+        assert_eq!(
+            parse_pasted("sip:bob@example.test"),
+            Err(LinkError::Invalid("that is a call link, not a setup link"))
+        );
+        assert!(parse_pasted("hello").is_err());
+        assert!(parse_pasted(&"x".repeat(100_000)).is_err());
+    }
+
+    #[test]
+    fn known_schemes() {
+        for s in [
+            "sip:a",
+            "SIPS:a",
+            "tel:1",
+            "callto:a",
+            "siple:provision",
+            " siple:x",
+        ] {
+            assert!(known_scheme(s), "{s}");
+        }
+        for s in ["http://x", "siplex:a", "nonsense", ""] {
+            assert!(!known_scheme(s), "{s}");
+        }
     }
 }

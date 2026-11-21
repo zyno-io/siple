@@ -15,8 +15,8 @@ and has an **Open config** button.
 
 ## Where the file is
 
-Select **Open config** (at the bottom of the window, or in **Settings › Advanced**) to open it. Hover over the button at the
-bottom of the window to see the full path. By default it lives here:
+Select **Open config** (in **Settings › Advanced**, or at the bottom of the window after turning on **Settings › Developer › Show developer tools**) to open it. Hover over the button to see the
+full path. By default it lives here:
 
 | OS | Default location |
 |---|---|

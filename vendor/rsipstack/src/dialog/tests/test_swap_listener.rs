@@ -80,7 +80,7 @@ async fn swapped_udp_listener_carries_the_next_re_invite_with_the_new_contact() 
     tl.add_transport(old.into());
     let endpoint = EndpointBuilder::new()
         .with_user_agent("rsipstack-test")
-        .with_transport_layer(tl.clone())
+        .with_transport_layer(tl)
         .with_cancel_token(token.child_token())
         .build();
     let mut incoming = endpoint.incoming_transactions()?;
@@ -113,9 +113,12 @@ async fn swapped_udp_listener_carries_the_next_re_invite_with_the_new_contact() 
     .await?;
     let new_addr = new.get_addr().clone();
     assert_ne!(new_addr, old_addr);
-    tl.swap_listener(Some(&old_addr), new.into()).await?;
+    endpoint
+        .inner
+        .transport_layer
+        .swap_listener(Some(&old_addr), new.into()).await?;
     old_tok.cancel();
-    assert_eq!(tl.get_addrs(), vec![new_addr.clone()]);
+    assert_eq!(endpoint.inner.transport_layer.get_addrs(), vec![new_addr.clone()]);
     let new_contact = Uri::try_from(format!("sip:alice@{}", new_addr.addr).as_str())?;
     dialog.set_local_contact(new_contact.clone());
     assert_eq!(dialog.local_contact(), Some(new_contact));

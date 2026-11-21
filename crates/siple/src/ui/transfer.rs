@@ -12,7 +12,7 @@ use siple_sip::{
 use super::blf_panel::paint_state_glyph;
 use super::rail::line_summary;
 use super::{Composer, Cx, UiAction, UiState, display_name};
-use crate::snapshot::{blf_state_text, blf_title, format_duration};
+use crate::snapshot::{blf_state_text, blf_title, format_duration, sip_detail, transfer_failure};
 use crate::theme::{FS_BODY, FS_MICRO, FS_MONO, FS_SMALL, Palette, R_MD, SP_S, Tone, icon as ic};
 use crate::widgets::{icon, mono, raised_card, soft_button, solid_button, strong};
 
@@ -323,22 +323,24 @@ fn leg_name(cx: &Cx, id: Option<&str>, fallback: &str) -> String {
         .map_or_else(|| fallback.to_string(), |c| display_name(c).to_string())
 }
 
-/// `486 Busy Here` from the session's last error (else the last NOTIFY).
+/// The plain-language reason of a failed session (`Busy`); the raw text when the session has no
+/// named problem, else "no reason given".
 fn failure_text(s: &TransferSession) -> String {
-    let join = |code: u16, reason: &str| {
-        if code == 0 {
-            reason.to_string()
-        } else {
-            format!("{code} {reason}").trim().to_string()
-        }
-    };
-    if let Some(e) = &s.last_error {
-        join(e.code, &e.reason)
-    } else if let Some(n) = &s.last_notify {
-        join(n.code, &n.reason)
+    if let Some(f) = transfer_failure(s) {
+        f.title
+    } else if let Some(e) = &s.last_error {
+        sip_detail(e.code, &e.reason)
     } else {
         "no reason given".to_string()
     }
+}
+
+/// Hover text with the server's raw answer behind a failure note.
+fn failure_details(s: &TransferSession) -> Option<String> {
+    transfer_failure(s)
+        .map(|f| f.detail)
+        .filter(|d| !d.is_empty())
+        .map(|d| format!("Details: {d}"))
 }
 
 /// One leg of the pair: name, state text, "Talking" marker.
@@ -414,7 +416,15 @@ pub(super) fn session_panel(
             });
         }
         let note = |ui: &mut egui::Ui, t: String, color: Color32| {
-            ui.add(egui::Label::new(RichText::new(t).size(FS_SMALL).color(color)).wrap());
+            ui.add(egui::Label::new(RichText::new(t).size(FS_SMALL).color(color)).wrap())
+        };
+        // A failure note: the plain-language text, the server's raw answer on hover.
+        let failure_note = |ui: &mut egui::Ui, t: String| {
+            let r = note(ui, t, p.err.ink);
+            match failure_details(s) {
+                Some(d) => r.on_hover_text(d),
+                None => r,
+            }
         };
         let sid = s.id.clone();
         match s.phase {
@@ -465,10 +475,9 @@ pub(super) fn session_panel(
                     } else {
                         format!("You're talking to {a_name}. {b_name} is on hold")
                     };
-                    note(
+                    failure_note(
                         ui,
                         format!("Transfer failed: {}. {who}.", failure_text(s)),
-                        p.err.ink,
                     );
                 }
                 if accent_button(
@@ -522,13 +531,12 @@ pub(super) fn session_panel(
                 });
             }
             ConsultFailed => {
-                note(
+                failure_note(
                     ui,
                     format!(
                         "The call to {b_name} failed ({}). {a_name} is still on hold.",
                         failure_text(s)
                     ),
-                    p.err.ink,
                 );
                 ui.horizontal_wrapped(|ui| {
                     if soft_button(
@@ -632,10 +640,9 @@ pub(super) fn session_panel(
                 } else {
                     String::new()
                 };
-                note(
+                failure_note(
                     ui,
                     format!("Transfer to {target} failed: {}.{resumed}", failure_text(s)),
-                    p.err.ink,
                 );
                 ui.horizontal_wrapped(|ui| {
                     let live = cx.call(&s.original).is_some_and(|c| c.state != CallState::Ended);

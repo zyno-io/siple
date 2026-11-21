@@ -1,5 +1,7 @@
 //! Error type for the SIP layer.
 
+use crate::problem::{Context, Problem, classify};
+
 /// Failure in the SIP layer.
 #[derive(Debug, thiserror::Error)]
 pub enum SipError {
@@ -68,6 +70,34 @@ pub enum SipError {
         /// Reason phrase of the response.
         reason: String,
     },
+}
+
+impl SipError {
+    /// The plain-language problem behind this error, when it is a failure a person can act on.
+    /// A `Status` is an in-dialog answer (re-INVITE, REFER, INFO, ...); local errors are
+    /// classified like their text, which a test keeps in step.
+    pub fn problem(&self) -> Option<Problem> {
+        match self {
+            SipError::Status { code, reason } => classify(Context::InDialog, *code, reason),
+            SipError::Config(_) => Some(Problem::AccountConfig),
+            SipError::Dns(_) => Some(Problem::DnsFailed),
+            SipError::NoRoute(_) => Some(Problem::NetworkUnreachable),
+            SipError::Timeout => Some(Problem::NoResponse),
+            SipError::Media(_) => Some(Problem::MediaFailed),
+            SipError::Tls(_) | SipError::Transport(_) | SipError::Protocol(_) => {
+                classify(Context::InDialog, 0, &self.to_string())
+            }
+            SipError::DuplicateAccount(_)
+            | SipError::UnknownAccount(_)
+            | SipError::Closed
+            | SipError::UnknownCall(_)
+            | SipError::UnknownTransfer(_)
+            | SipError::UnknownSubscription(_)
+            | SipError::UnknownBlf(_)
+            | SipError::CallState { .. }
+            | SipError::InvalidArgument(_) => None,
+        }
+    }
 }
 
 impl From<rsipstack::Error> for SipError {

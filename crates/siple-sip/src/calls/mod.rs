@@ -1140,6 +1140,11 @@ impl CallManager {
 /// margin. rsipstack stops Timer B at a 100 Trying and ignores Timer C, so a peer that goes
 /// silent after a 100 would otherwise leave the request (and `reinvite_out`) pending forever.
 const REINVITE_BOUND: Duration = Duration::from_secs(34);
+/// How long a re-INVITE waits for the dialog's other INVITE transaction (rsipstack refuses to start
+/// one meanwhile, RFC 3261 §14.1), polling every [`INVITE_BUSY_POLL`]. That is mostly the ACK of a
+/// re-INVITE we just answered, which follows within a round trip; past this, callers get a 491.
+const INVITE_BUSY_WAIT: Duration = Duration::from_secs(1);
+const INVITE_BUSY_POLL: Duration = Duration::from_millis(25);
 /// Overall budget of one public `hold()` / `unhold()`: the wait for an in-flight re-INVITE,
 /// the dialog-confirm wait, every attempt and the 491 backoff. The control client allows more
 /// (`request_timeout`, 50 s).
@@ -1744,7 +1749,9 @@ impl Call {
 
     /// Sends a re-INVITE and waits for its final response, at most `bound` (capped at
     /// [`REINVITE_BOUND`]). The bound turns into a synthetic 408 (as for Timer B), so every
-    /// caller takes its usual timeout path.
+    /// caller takes its usual timeout path. While another INVITE transaction of the dialog is in
+    /// progress rsipstack refuses to start one; after [`INVITE_BUSY_WAIT`] of retries that turns
+    /// into a synthetic 491, so callers apply their glare back-off.
     #[allow(clippy::result_large_err)] // rsipstack's own Result type, as returned by `reinvite`
     pub(crate) async fn reinvite_bounded(
         &self,
@@ -1753,15 +1760,34 @@ impl Call {
         body: Option<Vec<u8>>,
         bound: Duration,
     ) -> rsipstack::Result<Option<rsipstack::sip::Response>> {
-        let bound = bound.min(REINVITE_BOUND);
-        match tokio::time::timeout(bound, dialog.reinvite(Some(headers), body)).await {
-            Ok(res) => res,
-            Err(_) => Ok(Some(rsipstack::sip::Response {
-                status_code: rsipstack::sip::StatusCode::RequestTimeout,
+        let synthetic = |status_code| {
+            Ok(Some(rsipstack::sip::Response {
+                status_code,
                 version: rsipstack::sip::Version::V2,
                 headers: Default::default(),
                 body: Vec::new(),
-            })),
+                wire_reason: None,
+            }))
+        };
+        let start = tokio::time::Instant::now();
+        let deadline = start + bound.min(REINVITE_BOUND);
+        let busy_until = (start + INVITE_BUSY_WAIT).min(deadline);
+        loop {
+            let attempt = dialog.reinvite(Some(headers.clone()), body.clone());
+            match tokio::time::timeout_at(deadline, attempt).await {
+                Ok(Err(rsipstack::Error::DialogError(
+                    _,
+                    _,
+                    rsipstack::sip::StatusCode::RequestPending,
+                ))) => {
+                    if tokio::time::Instant::now() + INVITE_BUSY_POLL >= busy_until {
+                        return synthetic(rsipstack::sip::StatusCode::RequestPending);
+                    }
+                    tokio::time::sleep(INVITE_BUSY_POLL).await;
+                }
+                Ok(res) => return res,
+                Err(_) => return synthetic(rsipstack::sip::StatusCode::RequestTimeout),
+            }
         }
     }
 

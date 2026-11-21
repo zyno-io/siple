@@ -21,11 +21,16 @@ Store editions keep their data somewhere else, fixed by the OS sandbox or packag
 |---|---|
 | Mac App Store | `~/Library/Group Containers/VUDU4KEQ99.io.zyno.siple/Siple/` (the app group shared with the bundled CLI; the real home from the account database, never the sandbox `$HOME`) |
 | Microsoft Store (MSIX) | `%LOCALAPPDATA%\Packages\<package family name>\LocalState\Siple\` |
+| Flatpak (Flathub) | `~/.var/app/io.zyno.siple/config/siple/` (Flatpak's per-app `$XDG_CONFIG_HOME`; the same path inside the sandbox and on the host) |
 
 In the Mac App Store edition the control socket is `control.sock` in that directory; if the path would be too
 long for a unix socket it falls back to `s.sock` in the group container (never a temporary directory), and
-`[control] tcp_listen` is the way out when even that is too long. `status.build.channel` (`direct`, `mas`,
-`msix`) tells which edition is running.
+`[control] tcp_listen` is the way out when even that is too long. In the Flatpak edition the control socket is also
+`control.sock` there; for a too-long path the fallback is `$XDG_RUNTIME_DIR/app/io.zyno.siple/` (shared by every instance
+of the app and the host, never the sandbox's private `/tmp`). The sandbox sees only its own directory: files Siple reads
+(TLS files, `file:` audio) must be inside `~/.var/app/io.zyno.siple/`, or granted with
+`flatpak override --user --filesystem=/path:ro io.zyno.siple`. `status.build.channel` (`direct`, `mas`, `msix`,
+`flatpak`) tells which edition is running.
 
 Override with `--config PATH` (both binaries; also for `ctl`/`events`/`mcp`) or the `SIPLE_CONFIG` environment variable (handy with `docker exec`). Lock file, `runtime.json`, `state.toml`, the default control
 socket and the default log directory all live next to the config file, so different `--config` directories are
@@ -216,15 +221,15 @@ each key as the matching feature arrives. A key you leave out keeps its default.
 | `show_on_incoming` | bool | `true` | Raise the window on an incoming call. |
 | `show_on_answer` | bool | `false` | Raise the window when a call is answered. |
 | `notifications` | bool | `true` | Desktop notifications. |
-| `handle_links` | bool | `true` | Handle `sip:`, `sips:`, `tel:` and `callto:` links. |
+| `handle_links` | bool | `true` | Handle `sip:`, `sips:`, `tel:`, `callto:` and `siple:` (setup) links. |
 | `launch_at_login` | bool | `false` | Start Siple when you log in (macOS LaunchAgent, Windows `Run` key, Linux XDG autostart). Combine with `start_hidden = true` to start in the tray. |
-| `developer_tools` | bool | `false` | Show developer tools in the GUI. The control API and MCP stay on either way. |
+| `developer_tools` | bool | `false` | Show the Log pane and the Open logs / Open config buttons in the window footer, and the registration / subscription times (registered, last renewal, expires) in the account and BLF key tooltips. The control API and MCP stay on either way. |
 
 Desktop shell notes (tray, links, login item):
 
 - **Tray / close-to-tray.** With `tray = true` and `close_to_tray = true` closing the window hides it; only the tray menu's *Quit* (or Cmd+Q on macOS, Ctrl+Q on Windows / Linux, SIGTERM) exits. While hidden there is no Dock icon (macOS, `hide_from_taskbar`) and no taskbar button (Windows, Linux). `hide_from_taskbar = false` keeps the Dock icon on macOS and minimizes to the taskbar elsewhere. `tray = false` makes close quit. On Linux the tray is a StatusNotifierItem (KDE, XFCE, GNOME with the AppIndicator extension); without a host, closing minimizes instead so the app stays reachable. On Wayland sessions the window cannot be unmapped (winit limitation), so closing minimizes there too and `start_hidden` has no effect; start it under XWayland for full hide-to-tray: `env -u WAYLAND_DISPLAY -u WAYLAND_SOCKET siple` (winit uses Wayland whenever either variable is set).
-- **Links.** `sip:`, `sips:`, `tel:` and `callto:` links put the number in the dial field and raise the window; they never dial. A second `siple <link>` hands the link to the running instance. Windows: Siple registers itself under HKCU as a candidate for these schemes (choose it in Settings > Default apps); `handle_links = false` removes that registration. macOS and Linux register links through the app bundle / `.desktop` file at install time (Linux: `xdg-mime default io.zyno.siple.desktop x-scheme-handler/sip` etc.), so the key has no runtime effect there.
-- **Launch at login.** `launch_at_login = true` writes `~/Library/LaunchAgents/io.zyno.siple.plist` (macOS), `HKCU\...\Run` (Windows) or `~/.config/autostart/io.zyno.siple.desktop` (Linux) for the running executable; `false` removes it. A non-default `--config` profile has its own entry (the id plus a short hash of the config path) that starts that profile, so profiles never touch each other's entry. Pair with `start_hidden = true`. In the Mac App Store and Microsoft Store editions both `handle_links` and `launch_at_login` are no-ops (logged at info): the package manifest declares the links, and MSIX users switch the startup task on in Windows Settings > Apps > Startup.
+- **Links.** `sip:`, `sips:`, `tel:` and `callto:` links put the number in the dial field and raise the window; they never dial. `siple:provision` setup links open a review screen and change nothing until the user continues, types the password and tests the account (see [setup links guide](../website/guide/setup-links.md)). A second `siple <link>` hands the link to the running instance. Windows: Siple registers itself under HKCU as a candidate for `sip`, `sips`, `tel` and `callto` (choose it in Settings > Default apps) and registers `siple` directly, since nothing else claims it; `handle_links = false` removes both registrations. macOS and Linux register links through the app bundle / `.desktop` file at install time (Linux: `xdg-mime default io.zyno.siple.desktop x-scheme-handler/sip`, and likewise for `sips`, `tel`, `callto` and `siple`), so the key has no runtime effect there.
+- **Launch at login.** `launch_at_login = true` writes `~/Library/LaunchAgents/io.zyno.siple.plist` (macOS), `HKCU\...\Run` (Windows) or `~/.config/autostart/io.zyno.siple.desktop` (Linux) for the running executable; `false` removes it. A non-default `--config` profile has its own entry (the id plus a short hash of the config path) that starts that profile, so profiles never touch each other's entry. Pair with `start_hidden = true`. In the Mac App Store and Microsoft Store editions both `handle_links` and `launch_at_login` are no-ops (logged at info): the package manifest declares the links, and MSIX users switch the startup task on in Windows Settings > Apps > Startup. In the Flatpak edition `launch_at_login` goes through the desktop's Background portal: the desktop may ask once, the portal writes `~/.config/autostart/io.zyno.siple.desktop` on the host (`flatpak run --command=siple io.zyno.siple`), there is one entry for the app (so the profile that enabled it last wins), and `false` removes it if this profile registered it; a start with the default `false` asks nothing. `handle_links` is a no-op there, as on the Linux tarball.
 - **Notifications.** Incoming (with Answer / Decline on Linux), missed calls and transfer results appear while the window is not focused. macOS needs the signed app bundle (an unbundled binary logs once and skips them). The control API can show or hide the window (`ui.show`, `ui.hide`, `ui.state`, `ui.attention`, `app.open_uri`) when a GUI runs.
 
 `[ui.shortcuts]` maps an action name to a key chord such as `answer = "Mod+Shift+A"`; actions not listed keep their defaults. **Hot** (read every frame; Settings > Shortcuts shows the chord in effect). An unknown action name or a malformed chord is a config error.
@@ -250,7 +255,7 @@ Typing: digits, `*` and `#` send DTMF while the stage shows an Active line and n
 
 Optional external text-to-speech and speech-to-text commands, used by `call.say`, `call.listen{transcribe}` and
 `speech.*`. **Hot** (each job snapshots the section when it starts). Off by default; nothing is bundled.
-The Mac App Store edition cannot run external commands: the section is still accepted (with a warning in the log),
+The Mac App Store and Flatpak editions cannot run external commands: the section is still accepted (with a warning in the log),
 but those methods fail with `unsupported` and Settings shows "not available in this edition".
 
 | Option | Type | Default | Description |
@@ -293,6 +298,7 @@ What is sent, by edition:
 - **Microsoft Store**: Siple asks Windows' Store service whether an update of its own package is waiting. Windows contacts Microsoft as
   it does for the Store's own updates; Siple adds nothing and sends no request of its own. The Store does not name a version, so the
   pill reads "Update". A copy that was not installed from the Store (sideloaded) does not check.
+- **Flatpak**: nothing. Flatpak updates Siple from Flathub (`disabled_reason: managed_by_flatpak`).
 
 Nothing else is sent: no identifier, account, install ID or usage data, and no cookies. Failures (offline, rate limited, odd
 answer) are logged and shown in Settings; they never raise a dialog. API: `app.update_status` (with `source`, `action`, `store_url`,
@@ -336,7 +342,7 @@ In-place install is **not possible**, and the offer opens the release page with 
 installed with a package manager (Homebrew, winget, Scoop, Chocolatey, Nix), in Program Files or `/usr` or another folder your
 user cannot write, owned by another user, run as root, run from a disk image or a quarantined download (macOS), in a container,
 Flatpak, Snap or AppImage, headless (no window to restart into), a development build, or `install = false`. Siple never asks for
-administrator rights. The Mac App Store and Microsoft Store editions contain no downloader or installer: `app.install_update`
+administrator rights. The Mac App Store, Microsoft Store and Flatpak editions contain no downloader or installer: `app.install_update`
 answers `unsupported` there.
 
 ## `[[account]]`
@@ -378,7 +384,7 @@ example is `enabled = false` so a fresh install never tries to register.
 | `keepalive_method` | `crlf\|options` | `"crlf"` | hot | Double-CRLF ping or SIP OPTIONS. `options` also detects dead flows: any SIP response counts as alive. |
 | `keepalive_fail_threshold` | int | `2` | hot | With `keepalive_method = "options"`: this many consecutive unanswered keep-alives mark the flow dead; the account re-probes and re-registers at once. `0` = never, max 20. |
 | `use_sips_uri` | bool | `false` | rebuild | On TLS use a `sips:` Contact instead of `sip:...;transport=tls`. |
-| `tls_verify` | bool | `true` | rebuild | Verify the server certificate (OS trust store + `tls_ca_file`). `false` **ignores certificate errors** (test PBXs). |
+| `tls_verify` | bool | `true` | rebuild | Verify the server certificate (OS trust store + `tls_ca_file`). `false` **ignores certificate errors** (test PBXs). An untrusted certificate fails registration with the problem `tls_untrusted`; `account.test` also reports its fingerprint, ready for `tls_fingerprint`. |
 | `tls_ca_file` | string | `""` | rebuild | PEM file with extra trusted CAs. |
 | `tls_server_name` | string | `""` | rebuild | SNI / verification name override (registrar/proxy only). |
 | `tls_fingerprint` | string | `""` | rebuild | **Pin** the server's leaf certificate: SHA-256 of its DER as 64 hex digits (colons optional). That exact certificate is accepted regardless of chain, expiry or name (handshake signatures are still checked); `tls_verify` and `tls_ca_file` are then not consulted. Get it with `openssl x509 -in pbx.pem -noout -fingerprint -sha256`. |
@@ -446,7 +452,7 @@ UDP.
 | `hold_style` | `sendonly\|inactive` | `"sendonly"` | hot | SDP direction when we hold. `sendonly` becomes `inactive` automatically if the remote already holds us. |
 | `hold_send_cn` | bool | `false` | hot | Send periodic comfort noise while holding (keeps PBX media timeouts quiet). |
 | `follow_redirects` | bool | `true` | hot | Follow 3xx on outgoing calls (max 3 hops). |
-| `auth_foreign` | bool | `false` | hot | Answer digest challenges (401/407) from servers that are not your provider. Default: a challenge is answered only when the address the request was actually sent to belongs to your provider: the `outbound_proxy` / registrar / `domain` addresses and every address the outbound proxy / registrar resolved to (all SRV / A results, kept while the runtime for those hosts lives; the AOR `domain` is not resolved when a separate `registrar` is set). The request-URI, Contact and Record-Route are never trusted. Otherwise the call / request fails with `Authentication refused: <ip> is not your provider (set auth_foreign = true ...)` and no `Authorization` header is sent. `true` = answer everything (a rogue host can then collect a crackable digest of your password); needed only if your provider uses servers outside that set, e.g. an unrelated Record-Route edge. |
+| `auth_foreign` | bool | `false` | hot | Answer digest challenges (401/407) from servers that are not your provider. Default: a challenge is answered only when the address the request was actually sent to belongs to your provider: the `outbound_proxy` / registrar / `domain` addresses and every address the outbound proxy / registrar resolved to (all SRV / A results, kept while the runtime for those hosts lives; the AOR `domain` is not resolved when a separate `registrar` is set). The request-URI, Contact and Record-Route are never trusted. Otherwise the call / request fails with `Authentication refused: <ip> is not your provider (set auth_foreign = true ...)` (problem kind `auth_foreign_refused`) and no `Authorization` header is sent. `true` = answer everything (a rogue host can then collect a crackable digest of your password); needed only if your provider uses servers outside that set, e.g. an unrelated Record-Route edge. |
 | `max_calls` | int | `4` | hot | Concurrent calls; further INVITEs get 486. At least 1. |
 | `prack` | `disabled\|supported\|required` | `"supported"` | hot | Reliable provisional responses (RFC 3262) when we answer. `disabled`: never (`420` to `Require: 100rel`, `100rel` not advertised). `supported`: reliable 180 only if the caller sends `Require: 100rel`. `required`: reliable 180 whenever the caller lists `100rel` in `Supported` or `Require`. The 200 waits for the PRACK; the 180 is retransmitted at T1, 2*T1, ... and the call is rejected with 504 after 64*T1 without PRACK. Outgoing calls PRACK reliable 18x unless `disabled`. |
 | `session_timers` | bool | `true` | hot | RFC 4028. Advertises `Supported: timer`; sends `Session-Expires`/`Min-SE` on outgoing calls; as UAS honours the caller's interval (`422` + `Min-SE` below `min_se`) and picks the refresher (the caller if it supports `timer`, else us). The refresher role refreshes at half the interval with UPDATE (if the peer's `Allow` has it) or a re-INVITE with an unchanged SDP (`o=` version stays); a peer that fails to refresh before `interval - min(32, interval/3)` gets a BYE (`Reason: SIP;cause=408`, call ends with code 408). `false`: `Session-Expires` ignored, `Require: timer` gets `420`. |
@@ -522,8 +528,8 @@ pickup_target = ""      # optional: dial this instead of <prefix><ext>
 
 ### BLF subscription health
 
-`blf.list` (and `status`) report per entry `subscription {phase, last_code, last_reason, expires_at, retry_at}` and
-`stale`. `phase` is `pending`, `active`, `retrying` (an attempt is scheduled at `retry_at`) or `failed` (refused for
+`blf.list` (and `status`) report per entry `subscription {phase, last_code, last_reason, last_problem, expires_at, subscribed_at, last_refreshed_at, retry_at}` and
+`stale`. `last_problem` is the plain-language `{kind, title, hint}` of the last failure (absent while healthy). `subscribed_at` is when the current subscription was first confirmed (a 2xx to SUBSCRIBE); refreshes keep it, while a failure, a termination or a new dialog (resubscribe, also after a 481 to a refresh) resets it. `last_refreshed_at` is the last 2xx SUBSCRIBE of that dialog; both are `null` until confirmed and after a failure. `phase` is `pending`, `active`, `retrying` (an attempt is scheduled at `retry_at`) or `failed` (refused for
 good, `last_code` is the SIP status). `stale` is true while retrying (the last known `state` stays and `retry_at` says when the next attempt runs) and when neither a NOTIFY nor a refresh arrived
 within 30 s after `expires_at`; the last known `state` is kept. With many entries consider a longer `blf_expires`: each
 entry is its own SUBSCRIBE dialog.

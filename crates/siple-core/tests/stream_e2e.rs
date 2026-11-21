@@ -299,7 +299,7 @@ async fn preconditions_and_reuse() {
         .unwrap_or_else(|| panic!("no closed event: {ev}"));
     assert_eq!(closed["data"]["reason"], "client_close");
 
-    // The call is free again (I4) and the base source is back: reopen works.
+    // The call is free again and the base source is back: reopen works.
     let st2 = open(&r, &ring_call, json!({"rx": false})).await;
     drop(st2);
 }
@@ -341,7 +341,7 @@ async fn dtmf_and_state_events_are_forwarded() {
     assert_eq!(d["digit"], "5");
 }
 
-/// Depends on the RX hub (B3): until it is merged `subscribe()` fails and the stream falls back
+/// Depends on the RX hub: if `subscribe()` fails the stream falls back
 /// to TX-only with an `rx_unavailable` notice, so this test fails.
 #[tokio::test]
 async fn rx_frames_carry_the_far_side_tone() {

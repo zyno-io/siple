@@ -9,6 +9,7 @@ pub mod tcp;
 pub mod tcp_listener;
 #[cfg(all(feature = "platform-tokio", feature = "rustls"))]
 pub mod tls;
+pub mod tls_platform;
 pub mod transport_layer;
 // siple: raw wire-level trace hook
 pub mod wire_tap;
@@ -22,6 +23,7 @@ pub use sip_addr::SipAddr;
 pub use tcp_listener::TcpListenerConnection;
 #[cfg(all(feature = "platform-tokio", feature = "rustls"))]
 pub use tls::{TlsConfig, TlsListenerConnection};
+pub use tls_platform::PlatformTlsConnection;
 pub use transport_layer::TransportLayer;
 pub use transport_layer::TransportWhitelist;
 // siple:

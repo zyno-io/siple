@@ -1,16 +1,91 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!-- AppStream metadata for Flathub and the Linux tarball (share/metainfo). Add a <release> (newest first) when
+     CHANGELOG.md gets the version heading; CI checks it (scripts/flatpak-check-release.sh). Screenshots are the
+     visual-test goldens at a release tag. -->
 <component type="desktop-application">
   <id>io.zyno.siple</id>
   <name>Siple</name>
   <summary>SIP softphone with an API for agents</summary>
-  <metadata_license>MIT</metadata_license>
+  <metadata_license>CC0-1.0</metadata_license>
   <project_license>FSL-1.1-ALv2</project_license>
+  <developer id="io.zyno">
+    <name>Signal24 LLC</name>
+  </developer>
   <description>
-    <p>Siple is a SIP softphone with multiple accounts, a scriptable control API and an MCP server for AI agents.</p>
+    <p>Siple is a desktop SIP softphone for any standards-based PBX or SIP provider: Asterisk, FreePBX, FreeSWITCH or a
+      hosted service. It handles several accounts and lines, hold, transfers and busy lamps, over TLS with SRTP.</p>
+    <p>Everything Siple shows and does is also available to scripts and AI agents, through a local JSON-RPC API, the
+      siple-cli command-line client and an MCP server.</p>
+    <ul>
+      <li>Several accounts and concurrent lines, call waiting, hold, mute and DTMF</li>
+      <li>Blind and attended transfer, busy lamp field keys, directed pickup and voicemail lamps</li>
+      <li>UDP, TCP and TLS with certificate pinning; SRTP; Opus, G.722 and G.711</li>
+      <li>Live configuration: edit the settings file while Siple runs</li>
+    </ul>
+    <p>Siple is source-available under the Functional Source License 1.1; each release becomes Apache-2.0 two years
+      after it is published.</p>
   </description>
   <launchable type="desktop-id">io.zyno.siple.desktop</launchable>
+  <url type="homepage">https://siple.app/</url>
+  <url type="bugtracker">https://github.com/zyno-io/siple/issues</url>
+  <url type="help">https://zyno-io.github.io/siple/guide/quick-start</url>
+  <url type="faq">https://zyno-io.github.io/siple/guide/faq</url>
+  <url type="vcs-browser">https://github.com/zyno-io/siple</url>
+  <url type="contribute">https://zyno-io.github.io/siple/project/contributing</url>
   <provides>
     <binary>siple</binary>
+    <binary>siple-cli</binary>
   </provides>
-  <content_rating type="oars-1.1"/>
+  <keywords>
+    <keyword>SIP</keyword><keyword>VoIP</keyword><keyword>softphone</keyword><keyword>telephony</keyword>
+    <keyword>PBX</keyword><keyword>MCP</keyword>
+  </keywords>
+  <branding>
+    <color type="primary" scheme_preference="light">#a7ebe0</color>
+    <color type="primary" scheme_preference="dark">#123a7a</color>
+  </branding>
+  <content_rating type="oars-1.1">
+    <content_attribute id="social-audio">intense</content_attribute>
+  </content_rating>
+  <screenshots>
+    <!-- base: https://raw.githubusercontent.com/zyno-io/siple/v0.1.2/crates/siple/tests/snapshots/ -->
+    <screenshot type="default"><caption>Two calls: one active, one on hold</caption>
+      <image>https://raw.githubusercontent.com/zyno-io/siple/v0.1.2/crates/siple/tests/snapshots/two_lines_light_wide.png</image></screenshot>
+    <screenshot><caption>An incoming call</caption><image>https://raw.githubusercontent.com/zyno-io/siple/v0.1.2/crates/siple/tests/snapshots/incoming_light_wide.png</image></screenshot>
+    <screenshot><caption>Busy lamp field keys</caption><image>https://raw.githubusercontent.com/zyno-io/siple/v0.1.2/crates/siple/tests/snapshots/blf_keys_light_wide.png</image></screenshot>
+    <screenshot><caption>An attended transfer</caption><image>https://raw.githubusercontent.com/zyno-io/siple/v0.1.2/crates/siple/tests/snapshots/transfer_consult_light_wide.png</image></screenshot>
+    <screenshot><caption>Account settings</caption><image>https://raw.githubusercontent.com/zyno-io/siple/v0.1.2/crates/siple/tests/snapshots/settings_accounts_light_wide.png</image></screenshot>
+    <screenshot><caption>Dark appearance</caption><image>https://raw.githubusercontent.com/zyno-io/siple/v0.1.2/crates/siple/tests/snapshots/idle_dark_wide.png</image></screenshot>
+  </screenshots>
+  <releases>
+    <release version="0.2.0" date="2026-11-21">
+      <url type="details">https://github.com/zyno-io/siple/releases/tag/v0.2.0</url>
+      <description><ul>
+        <li>Plain-language errors: failed registrations, calls, busy lamps and transfers say what went wrong and what to try</li>
+        <li>Setup links: an administrator can send a link that fills in an account, reviewed before anything is saved</li>
+        <li>First Flatpak build, in preparation for Flathub</li>
+        <li>Updated SIP stack: registering over TCP or TLS works with Kamailio registrars, and digest authentication fixes</li>
+      </ul></description>
+    </release>
+    <release version="0.1.2" date="2026-11-19">
+      <url type="details">https://github.com/zyno-io/siple/releases/tag/v0.1.2</url>
+      <description><ul>
+        <li>Store editions tell you about updates; direct downloads can install an update in place after checking its signature</li>
+        <li>New app icon</li>
+        <li>Interface polish: aligned field heights, segmented controls, icons instead of text arrows</li>
+      </ul></description>
+    </release>
+    <release version="0.1.1" date="2026-11-18">
+      <url type="details">https://github.com/zyno-io/siple/releases/tag/v0.1.1</url>
+      <description><p>First builds for the Mac App Store and the Microsoft Store.</p></description>
+    </release>
+    <release version="0.1.0" date="2026-11-17">
+      <url type="details">https://github.com/zyno-io/siple/releases/tag/v0.1.0</url>
+      <description><ul>
+        <li>First public release: several accounts and lines, hold, transfers, busy lamps, TLS and SRTP</li>
+        <li>A JSON-RPC control API, siple-cli and an MCP server for agents</li>
+        <li>Keyboard shortcuts and an update check</li>
+      </ul></description>
+    </release>
+  </releases>
 </component>

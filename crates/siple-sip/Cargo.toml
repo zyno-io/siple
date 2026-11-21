@@ -10,7 +10,8 @@ publish.workspace = true
 [dependencies]
 siple-config = { path = "../siple-config" }
 siple-media = { path = "../siple-media" }
-rsipstack = { path = "../../vendor/rsipstack", default-features = false, features = ["platform-tokio", "rustls", "srv_lookup"] }
+siple-problem = { path = "../siple-problem" }
+rsipstack = { path = "../../vendor/rsipstack", default-features = false, features = ["platform-tokio", "rustls-ring", "srv_lookup"] }
 
 anyhow = "1"
 async-trait = "0.1"
@@ -22,7 +23,7 @@ rcgen = { version = "0.14", default-features = false, features = ["ring", "pem"]
 ring = "0.17"
 rustls = { version = "0.23", default-features = false, features = ["ring", "tls12", "std", "logging"] }
 rustls-pki-types = { version = "1", features = ["std"] }
-rustls-platform-verifier = "0.6"
+rustls-platform-verifier = "0.7"
 serde = { version = "1", features = ["derive"] }
 socket2 = { version = "0.6", features = ["all"] }
 thiserror = "2"

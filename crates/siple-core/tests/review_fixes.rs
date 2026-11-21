@@ -1,6 +1,5 @@
-//! Regression tests for the review findings in the core / control layer (see the individual
-//! test names). Reproductions of the original reports live in the review scratchpad; these
-//! assert the fixed behaviour.
+//! Regression tests for review fixes in the core / control layer (see the individual test
+//! names); each asserts the fixed behaviour.
 #![cfg(unix)]
 
 mod common;
@@ -391,7 +390,7 @@ async fn dtmf_arguments_are_bounded() {
     r.app.shutdown().await;
 }
 
-// ---- item 7: device choices live in the config file (D3) -------------------------------------
+// ---- item 7: device choices live in the config file -------------------------------------
 
 #[tokio::test(flavor = "multi_thread")]
 async fn device_choice_is_written_to_config_and_survives_restarts_and_unrelated_edits() {

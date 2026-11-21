@@ -61,7 +61,7 @@ cargo build --release        # target/release/siple (GUI) and siple-cli (console
 ### Packages
 
 ```sh
-scripts/package-linux.sh            # dist/Siple-<ver>-linux-x86_64.tar.gz (run in rust:1.94-bookworm)
+scripts/package-linux.sh            # dist/Siple-<ver>-linux-x86_64.tar.gz (run in rust:1.100-bookworm)
 scripts/package-macos.sh            # dist/Siple.app (universal), dist/Siple-<ver>-macos.zip
 ```
 ```powershell
@@ -143,7 +143,7 @@ ALSA is a hard runtime dependency of both binaries (`libasound.so.2`); GUI libra
 `siple`, the headless CLI needs nothing else.
 
 **Tarball.** `dist/Siple-<ver>-linux-x86_64.tar.gz` unpacks to `siple-<ver>/{bin,share}`. It is built in
-`rust:1.94-bookworm` (glibc 2.36), so it runs on Debian 12+ and Ubuntu 23.04+. `scripts/package-linux.sh` fails if a
+`rust:1.100-bookworm` (glibc 2.36), so it runs on Debian 12+ and Ubuntu 23.04+. `scripts/package-linux.sh` fails if a
 binary links anything beyond libasound, libc, libm and libgcc_s, and prints the highest `GLIBC_` version used. Runtime
 packages: `libasound2` (`libasound2t64` on Ubuntu 24.04+/Debian 13), `ca-certificates` for `tls_verify = true`; for the
 GUI also `libxkbcommon0 libxkbcommon-x11-0 libwayland-client0 libwayland-egl1 libx11-6 libx11-xcb1 libxcursor1 libxrandr2
@@ -230,7 +230,8 @@ details). Use `srtp = "mandatory"` to test that a PBX really negotiates SRTP;
 
 ## Development
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+See [CONTRIBUTING.md](CONTRIBUTING.md) and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Open work and known limitations are in
+[docs/ROADMAP.md](docs/ROADMAP.md).
 
 ```sh
 cargo test --workspace                 # unit + in-process integration (UDP/TCP/TLS peer accounts, no PBX)
@@ -260,7 +261,8 @@ crates/siple-core     engine: audio devices, media thread, logging, event log, c
 crates/siple          GUI binary (egui/wgpu); also `--headless`
 crates/siple-cli      console binary: run --headless, ctl, events, mcp, methods, config-example, skill
 vendor/rsipstack      vendored rsipstack 0.7.3 with Siple patches (see its SIPLE_PATCHES.md)
-docs/                 ARCHITECTURE.md, CONFIG.md, API.md (generated from API-intro.md + the code)
+docs/                 ARCHITECTURE.md, CONFIG.md, API.md (generated from API-intro.md + the code), RELEASING.md,
+                      ROADMAP.md, STORE.md
 packaging/, scripts/  icons, Info.plist, entitlements, manifest; package-*.sh, gen-api-docs.sh, gen-licenses.sh
 deny.toml, about.toml dependency licence policy and licence bundle config
 ```

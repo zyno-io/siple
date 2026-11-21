@@ -310,7 +310,7 @@ fn device_row(
                 }
             });
     });
-    // Every choice is in config.toml now (D3), so there is no "Set in config" badge; only a
+    // Every choice is in config.toml now, so there is no "Set in config" badge; only a
     // device that went missing is flagged.
     if fallback {
         ui.add_space(-(SP_S - 4.0));

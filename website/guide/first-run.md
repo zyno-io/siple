@@ -15,7 +15,7 @@ opens the setup. The setup has three steps: **Add your SIP account**, **Check yo
 1. Fill in **Display name** (optional), **Username / extension**, **Password** and **Domain / server**.
 2. To keep the password out of the settings file, turn on **Store in system keychain** (see
    [Store the password in the keychain](#store-the-password-in-the-keychain)).
-3. Open **Advanced options** only if your IT team asks for it. It holds **Auth username**, **Outbound proxy**,
+3. Open **Advanced options** only if your IT team asks for it. It holds **Auth username**, **Registrar**, **Outbound proxy**,
    **Transport**, **Verify TLS certificate**, **SRTP** (call encryption) and **Phone profile**.
 4. Choose **Test & continue**. Siple signs in once on a private connection to check the details before anything is saved. The
    check does not disturb accounts that are already running.
@@ -25,6 +25,14 @@ If you prefer to edit the file yourself, choose **Skip, I'll edit config.toml**.
 ::: details In config.toml
 The check is the `account.test` API method. It registers once on a private socket, so it never touches running accounts.
 :::
+
+## Use a setup link
+
+Your administrator can send you a **setup link** (it starts with `siple:`) that fills in the account for you. Click it, or
+choose **Paste a setup link** in the first step (in **Settings › Accounts** the button is **Add from setup link**). Siple shows
+a **Check this setup link** screen first. Nothing is saved or sent yet. Check the server name and continue only if your
+administrator sent the link. You still type the password yourself, and the account is only saved once the test works.
+See [Send a setup link](/guide/setup-links).
 
 ## If the test fails
 
@@ -75,7 +83,7 @@ On macOS this step shows **Allow microphone access** if Siple does not have it y
 
 On the last step, turn on or off:
 
-- **Open sip:, tel: and callto: links with Siple**
+- **Open phone and setup links with Siple**
 - **Show in the tray / menu bar**
 - **Desktop notifications**
 

@@ -42,7 +42,7 @@ impl Recorder {
     }
 }
 
-const REGISTER: &str = "REGISTER sip:bob@example.com SIP/2.0\r\nVia: SIP/2.0/UDP 127.0.0.1:5061;branch=z9hG4bKnashd92\r\nCSeq: 1 REGISTER\r\n\r\n";
+const REGISTER: &str = "REGISTER sip:bob@example.com SIP/2.0\r\nVia: SIP/2.0/UDP 127.0.0.1:5061;branch=z9hG4bKnashd92\r\nCSeq: 1 REGISTER\r\nContent-Length: 0\r\n\r\n";
 
 #[tokio::test]
 async fn test_wire_tap_udp_send_recv_exact_bytes() -> Result<()> {
@@ -156,7 +156,7 @@ async fn test_wire_tap_tcp_send_recv_and_unparsable() -> Result<()> {
     let c = client.clone();
     tokio::spawn(async move {
         use crate::transport::stream::StreamConnection;
-        c.serve_loop(tx).await
+        c.serve_loop(tx, std::time::Duration::ZERO).await
     });
 
     // send path
@@ -174,7 +174,8 @@ async fn test_wire_tap_tcp_send_recv_and_unparsable() -> Result<()> {
     server.write_all(b).await?;
     tokio::time::timeout(Duration::from_secs(2), rx.recv())
         .await
-        .expect("timeout");
+        .expect("timeout")
+        .expect("the connection must deliver the message, not close");
 
     let recs = tap.take();
     assert_eq!(recs.len(), 2, "{recs:?}");

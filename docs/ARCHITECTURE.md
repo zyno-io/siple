@@ -10,16 +10,18 @@ siple-cli    ─┴─►  siple-core  ─►  siple-sip  ─►  vendor/rsipsta
                        │               │
                        └───────────────┴─►  siple-media     (pure, no I/O)
                        └───────────────────►  siple-config   (schema, edit, paths)
+                       siple-sip  ─────────►  siple-problem  (error catalog; leaf)
 ```
 
 | Crate | Role |
 |---|---|
+| `siple-problem` | The stable error catalog: `enum Problem` (stable snake_case kinds, each with an English title and hint) and the SIP status → kind table per request kind (REGISTER, INVITE, SUBSCRIBE, in-dialog). Pure, depends on `serde` only. `siple-sip` classifies failures into it (`siple_sip::problem`, re-exported as `siple_core::problem`); problems are computed from the failure, never stored. `docs/PROBLEMS.md` is generated from it (`siple-cli problems --markdown`). |
 | `siple-config` | Config schema, parsing, validation, default paths, vendor profiles (`generic`, `yealink`, `polycom`, `cisco`, `grandstream`), typed `edit` (comment-preserving `toml_edit` writer), log-level parsing, one-time legacy-directory migration. No async. |
 | `siple-media` | Sans-I/O media primitives: RTP/RTCP, SRTP (SDES), Opus/G.722/G.711, DTMF, tone generation and Goertzel detection, VAD, jitter buffer with PLC, SDP offer/answer negotiation. No sockets, no tokio; callers own pacing and transport. |
 | `siple-sip` | SIP on top of rsipstack: a `SipStack` registry of per-account actors, registration state machine, calls (inbound/outbound, early media, hold, session timers, PRACK, transfers and transfer sessions, line policy), BLF/MWI/generic subscriptions, directed pickup, DNS (SRV), wire tap, and the network monitor (`net/`). Media is reached through the `MediaProvider` trait, so the crate has no audio dependency. |
 | `siple-core` | The engine, `App`. Owns the stack, media engine, audio devices, event log, config watcher and actor, control server, logging, SIP trace writer, agent audio. Implements the control API (`AppBackend`). |
 | `siple` | GUI binary (eframe/egui on wgpu). Also runs `--headless`. Reads engine state through a polled `Snapshot` and acts through thin wrappers (`actions.rs`). |
-| `siple-cli` | Console binary: `run --headless`, `ctl`, `events`, `stream`, `mcp`, `methods`, `config-example`, `skill` (prints the agent skill). The MCP bridge is hand-rolled (stdio JSON-RPC) and proxies to a running instance. |
+| `siple-cli` | Console binary: `run --headless`, `ctl`, `events`, `stream`, `mcp`, `methods`, `problems`, `config-example`, `skill` (prints the agent skill). The MCP bridge is hand-rolled (stdio JSON-RPC) and proxies to a running instance. |
 | `vendor/rsipstack` | Upstream rsipstack 0.7.3 with Siple patches (per-connection TLS verifier, wire tap, `use_sips_for_tls`, SNI override, ...). Every change is marked `// siple:` and listed in `vendor/rsipstack/SIPLE_PATCHES.md`. Excluded from the workspace: never run `cargo fmt --all`. |
 
 ## Process, threads and actors
@@ -120,7 +122,7 @@ account actor reacts by re-probing; on a changed path it re-registers (and re-su
 trace (`sip_trace.rs`) is fed by rsipstack's `WireTap` and writes one file tree per account; the tap is installed only while
 `sip_trace` is on. `redact.rs` masks credentials and SRTP keys when `[logging] redact_credentials` / `redact_srtp_keys` are set.
 Plaintext passwords are never logged. There is no telemetry; the one network request Siple makes on its own is the optional,
-anonymous update check (`siple-core/src/update/`, `[updates]`): the project's GitHub releases list for direct builds, Apple's lookup of Siple's listing on the Mac App Store, and a question to Windows' Store service on the Microsoft Store. The source is chosen at run time from the distribution channel; the cargo feature `store` only removes code (the GitHub source, the downloader and the installer). Direct builds can also install a release in place, on request (`update/install/`: signed checksum list, download, per-OS verification and swap, a state machine that never swaps or restarts during a call); the stores never install.
+anonymous update check (`siple-core/src/update/`, `[updates]`): the project's GitHub releases list for direct builds, Apple's lookup of Siple's listing on the Mac App Store, and a question to Windows' Store service on the Microsoft Store (Flatpak: no check; Flatpak updates it). The source is chosen at run time from the distribution channel; the cargo feature `store` only removes code (the GitHub source, the downloader and the installer). Direct builds can also install a release in place, on request (`update/install/`: signed checksum list, download, per-OS verification and swap, a state machine that never swaps or restarts during a call); the stores never install.
 
 ## Testing
 

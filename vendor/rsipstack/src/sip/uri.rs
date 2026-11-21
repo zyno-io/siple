@@ -54,14 +54,25 @@ impl fmt::Display for Auth {
     }
 }
 
+/// Escapes the octets that RFC 3261 section 25.1 does not allow unescaped.
+///
+/// The parser keeps the user and password as written, escapes included, so an
+/// existing `%HH` escape is written unchanged: escaping its `%` again would
+/// turn `alice%40example.com` into `alice%2540example.com`, a different user.
 fn percent_encode_component(input: &str, allowed: &[u8]) -> String {
+    let bytes = input.as_bytes();
     let mut out = String::with_capacity(input.len());
-    for byte in input.as_bytes() {
-        if byte.is_ascii_alphanumeric() || allowed.contains(byte) {
+    for (i, byte) in bytes.iter().enumerate() {
+        let is_escape = *byte == b'%'
+            && bytes.get(i + 1).is_some_and(u8::is_ascii_hexdigit)
+            && bytes.get(i + 2).is_some_and(u8::is_ascii_hexdigit);
+        if byte.is_ascii_alphanumeric() || allowed.contains(byte) || is_escape {
             out.push(char::from(*byte));
         } else {
+            const HEX: &[u8; 16] = b"0123456789ABCDEF";
             out.push('%');
-            out.push_str(&format!("{:02X}", byte));
+            out.push(char::from(HEX[usize::from(byte >> 4)]));
+            out.push(char::from(HEX[usize::from(byte & 0x0f)]));
         }
     }
     out
@@ -120,14 +131,35 @@ impl From<IpAddr> for Host {
     }
 }
 
+/// Hostname characters accepted in `sip`/`sips` URIs.
+///
+/// RFC 3261 section 25.1 `hostname` allows alphanumerics, `-` and `.`; the
+/// widely deployed additions `_` (SRV-style labels), a trailing dot and
+/// IDN octets are accepted so existing deployments keep working. Everything
+/// that would break serialization — separators, quotes, angle brackets,
+/// control octets — is rejected.
+fn is_valid_domain(s: &str) -> bool {
+    !s.is_empty()
+        && s.bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.') || b >= 0x80)
+}
+
 impl FromStr for Host {
     type Err = Error;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let s = s.trim();
+        if s.is_empty() {
+            return Err(Error::ParseError("empty host".into()));
+        }
+        if s.chars().any(char::is_whitespace) {
+            return Err(Error::ParseError("invalid host".into()));
+        }
         if let Ok(ip) = s.parse::<IpAddr>() {
             Ok(Host::IpAddr(ip))
-        } else {
+        } else if is_valid_domain(s) {
             Ok(Host::Domain(Domain::from(s)))
+        } else {
+            Err(Error::ParseError(format!("invalid host: {}", s)))
         }
     }
 }
@@ -265,7 +297,9 @@ fn parse_host_with_port(s: &str) -> Result<HostWithPort, Error> {
 
     if let Some(colon_pos) = s.rfind(':') {
         let after = &s[colon_pos + 1..];
-        if after.chars().all(|c| c.is_ascii_digit()) {
+        // A port is 1*DIGIT: an empty or non-digit tail means this ':' belongs
+        // to the host, which the host parser below then rejects.
+        if !after.is_empty() && after.chars().all(|c| c.is_ascii_digit()) {
             let port: u16 = after
                 .parse()
                 .map_err(|_| Error::ParseError(format!("invalid port: {}", after)))?;
@@ -323,9 +357,32 @@ impl fmt::Display for Param {
     }
 }
 
+fn is_token(s: &str) -> bool {
+    !s.is_empty()
+        && s.bytes().all(|b| {
+            b.is_ascii_alphanumeric()
+                || matches!(
+                    b,
+                    b'-' | b'.' | b'!' | b'%' | b'*' | b'_' | b'+' | b'`' | b'\'' | b'~'
+                )
+        })
+}
+
 impl TryFrom<(&str, Option<&str>)> for Param {
     type Error = Error;
     fn try_from((name, value): (&str, Option<&str>)) -> Result<Self, Self::Error> {
+        if !is_token(name) {
+            return Err(Error::ParseError("invalid parameter name".into()));
+        }
+        if let Some(v) = value {
+            // RFC 3261 grammar: parameter values are tokens or quoted
+            // strings, neither of which contains control octets. Values are
+            // otherwise kept verbatim (quoted strings included) so printing
+            // a parsed URI round-trips.
+            if v.chars().any(|c| c.is_control() && c != '\t') {
+                return Err(Error::ParseError("invalid parameter value".into()));
+            }
+        }
         match (name, value) {
             (n, Some(v)) if n.eq_ignore_ascii_case("transport") => Ok(Param::Transport(v.parse()?)),
             (n, Some(v)) if n.eq_ignore_ascii_case("user") => Ok(Param::User(User::new(v))),
@@ -338,6 +395,8 @@ impl TryFrom<(&str, Option<&str>)> for Param {
             }
             (n, Some(v)) if n.eq_ignore_ascii_case("tag") => Ok(Param::Tag(Tag::new(v))),
             (n, Some(v)) if n.eq_ignore_ascii_case("expires") => {
+                v.parse::<u32>()
+                    .map_err(|_| Error::ParseError("invalid expires".into()))?;
                 Ok(Param::Expires(Expires::new(v)))
             }
             (n, Some(v)) if n.eq_ignore_ascii_case("q") => Ok(Param::Q(Q::new(v))),
@@ -362,9 +421,12 @@ impl FromStr for Param {
     type Err = Error;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let s = s.trim_start_matches(';').trim();
+        if s.is_empty() {
+            return Err(Error::ParseError("empty parameter".into()));
+        }
         if let Some(eq) = s.find('=') {
-            let name = &s[..eq];
-            let value = &s[eq + 1..];
+            let name = s[..eq].trim();
+            let value = s[eq + 1..].trim();
             Param::try_from((name, Some(value)))
         } else {
             Param::try_from((s, None))
@@ -428,8 +490,14 @@ string_newtype!(OtherParam);
 string_newtype!(OtherParamValue);
 
 impl Received {
+    /// The address. RFC 3261 writes IPv6 bare, but some stacks bracket it
+    /// (RFC 5118 §4.5): both are read.
     pub fn parse(&self) -> Result<IpAddr, core::net::AddrParseError> {
-        self.0.parse()
+        let s = self.0.as_str();
+        s.strip_prefix('[')
+            .and_then(|s| s.strip_suffix(']'))
+            .unwrap_or(s)
+            .parse()
     }
 }
 
@@ -527,43 +595,94 @@ impl FromStr for Uri {
     }
 }
 
+fn is_scheme(s: &str) -> bool {
+    let mut chars = s.chars();
+    matches!(chars.next(), Some(c) if c.is_ascii_alphabetic())
+        && chars.all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.'))
+}
+
+/// Opaque URIs (`tel:`, or any scheme `rsipstack` does not understand) keep a
+/// lenient host: the text after the scheme is stored verbatim as a domain so
+/// subscribers such as `+1-201-555-0123` survive. Only the characters that
+/// make serialization non-idempotent are rejected.
+fn parse_opaque_host(s: &str) -> Result<Host, Error> {
+    if s.is_empty()
+        || s.chars()
+            .any(|c| c.is_whitespace() || c.is_control() || matches!(c, '<' | '>' | '"' | '\\'))
+    {
+        return Err(Error::ParseError(format!("invalid opaque host: {}", s)));
+    }
+    match s.parse::<IpAddr>() {
+        Ok(ip) => Ok(Host::IpAddr(ip)),
+        Err(_) => Ok(Host::Domain(Domain::from(s))),
+    }
+}
+
 pub fn parse_uri(s: &str) -> Result<Uri, Error> {
     let s = s.trim();
-    let s = s.trim_start_matches('<');
-    let s = s.trim_end_matches('>');
-    let s = s.trim();
-
-    let (main, hdrs_str) = if let Some(q) = s.find('?') {
-        (&s[..q], Some(&s[q + 1..]))
+    // Strip a matching `<...>` pair (name-addr leftovers); a stray angle
+    // bracket is never part of a URI and must not be silently trimmed.
+    let s = if s.len() >= 2 && s.starts_with('<') && s.ends_with('>') {
+        &s[1..s.len() - 1]
     } else {
-        (s, None)
+        s
     };
+    let s = s.trim();
+    if s.contains('<') || s.contains('>') {
+        return Err(Error::ParseError("unexpected '<' or '>' in uri".into()));
+    }
 
-    let (host_part, params_str) = split_at_first_semicolon(main);
-
-    let (scheme, user_host) = if let Some(colon) = host_part.find(':') {
-        let potential_scheme = &host_part[..colon];
-        if potential_scheme.chars().all(|c| c.is_ascii_alphabetic()) {
-            (
-                Some(potential_scheme.parse::<Scheme>()?),
-                &host_part[colon + 1..],
-            )
+    let scheme_end = s.find(['@', ';', '?']).unwrap_or(s.len());
+    let (scheme, after_scheme) = if let Some(colon) = s[..scheme_end].find(':') {
+        let potential_scheme = &s[..colon];
+        if is_scheme(potential_scheme) {
+            (Some(potential_scheme.parse::<Scheme>()?), &s[colon + 1..])
         } else {
-            (None, host_part)
+            (None, s)
         }
     } else {
-        (None, host_part)
+        (None, s)
     };
 
-    let (auth, host_str) = if let Some(at) = user_host.rfind('@') {
-        (Some(Auth::from(&user_host[..at])), &user_host[at + 1..])
+    let is_opaque = matches!(scheme, Some(Scheme::Other(_))) && !after_scheme.starts_with("//");
+
+    let (auth, rest) = if is_opaque {
+        (None, after_scheme)
+    } else if let Some(at) = after_scheme.rfind('@') {
+        (
+            Some(Auth::from(&after_scheme[..at])),
+            &after_scheme[at + 1..],
+        )
     } else {
-        (None, user_host)
+        (None, after_scheme)
     };
 
-    let host_with_port = parse_host_with_port(host_str)?;
+    let (main, hdrs_str) = if let Some(q) = rest.find('?') {
+        (&rest[..q], Some(&rest[q + 1..]))
+    } else {
+        (rest, None)
+    };
 
-    let params = parse_params(params_str.unwrap_or(""))?;
+    let (host_str, params_str) = split_at_first_semicolon(main);
+
+    let host_with_port = if is_opaque {
+        HostWithPort {
+            host: parse_opaque_host(host_str)?,
+            port: None,
+        }
+    } else {
+        parse_host_with_port(host_str)?
+    };
+
+    let params = match params_str {
+        Some(p) => {
+            if p.trim().is_empty() {
+                return Err(Error::ParseError("empty parameter".into()));
+            }
+            parse_params(p)?
+        }
+        None => vec![],
+    };
 
     let headers = if let Some(h) = hdrs_str {
         h.split('&')
@@ -595,15 +714,52 @@ fn split_at_first_semicolon(s: &str) -> (&str, Option<&str>) {
     }
 }
 
+// siple: backport of upstream #259 (021e308); this function and its use in parse_params.
+/// Split parameters at `;` outside quoted strings. RFC 3261 `gen-value`
+/// may be a `quoted-string`, which may contain `;`: a registrar's
+/// `received="sip:192.0.2.1:5061;transport=tls"` Contact parameter is one
+/// parameter, not two.
+fn split_unquoted_semicolons(s: &str) -> Result<Vec<&str>, Error> {
+    let mut parts = Vec::new();
+    let mut start = 0;
+    let mut in_quotes = false;
+    let mut escaped = false;
+    for (i, ch) in s.char_indices() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        match ch {
+            '\\' if in_quotes => escaped = true,
+            '"' => in_quotes = !in_quotes,
+            ';' if !in_quotes => {
+                parts.push(&s[start..i]);
+                start = i + 1;
+            }
+            _ => {}
+        }
+    }
+    if in_quotes || escaped {
+        return Err(Error::ParseError("unterminated quoted parameter".into()));
+    }
+    parts.push(&s[start..]);
+    Ok(parts)
+}
+
 pub fn parse_params(s: &str) -> Result<Vec<Param>, Error> {
+    let s = s.trim();
     if s.is_empty() {
         return Ok(vec![]);
     }
+    let s = s.strip_suffix(';').map(str::trim).unwrap_or(s);
+    if s.is_empty() {
+        return Err(Error::ParseError("empty parameter".into()));
+    }
     let mut params = Vec::new();
-    for part in s.split(';') {
+    for part in split_unquoted_semicolons(s)? {
         let part = part.trim();
         if part.is_empty() {
-            continue;
+            return Err(Error::ParseError("empty parameter".into()));
         }
         let param = part.parse::<Param>()?;
         params.push(param);
@@ -856,6 +1012,26 @@ mod tests {
     }
 
     #[test]
+    fn uri_display_keeps_escapes_from_the_wire() {
+        // RFC 4475 section 3.1.1.13 (esc01) and escaped user parts in general:
+        // printing a parsed URI must not escape the '%' of an existing escape.
+        for raw in [
+            "sip:sips%3Auser%40example.com@example.net",
+            "sip:alice%40example.com@example.net",
+            "sip:%2A72%23@example.com",
+            "sip:al%20ice:pa%3Ass@restsend.com",
+        ] {
+            let printed = parse_uri(raw).unwrap().to_string();
+            assert_eq!(printed, raw);
+            assert_eq!(parse_uri(&printed).unwrap().to_string(), raw);
+        }
+        // A '%' that starts no escape is still escaped, once.
+        let printed = parse_uri("sip:100%@example.com").unwrap().to_string();
+        assert_eq!(printed, "sip:100%25@example.com");
+        assert_eq!(parse_uri(&printed).unwrap().to_string(), printed);
+    }
+
+    #[test]
     fn user_param_is_parsed_as_uri_param() {
         let uri = parse_uri("sip:alice@restsend.com;user=phone").unwrap();
         assert!(matches!(uri.params.first(), Some(Param::User(value)) if value.value() == "phone"));
@@ -974,6 +1150,19 @@ mod tests {
     }
 
     #[test]
+    fn uri_without_a_host_is_rejected() {
+        for s in ["", "<>", "sip:", "sip:bob@", "sip:bob@;transport=udp"] {
+            assert!(parse_uri(s).is_err(), "{s:?} was accepted");
+        }
+        for s in ["", "  ", ":5060"] {
+            assert!(
+                super::HostWithPort::try_from(s).is_err(),
+                "{s:?} was accepted"
+            );
+        }
+    }
+
+    #[test]
     fn uri_host_only_no_user() {
         let uri = parse_uri("sip:restsend.com").unwrap();
         assert!(uri.auth.is_none());
@@ -1026,5 +1215,133 @@ mod tests {
     fn uri_anonymous() {
         let uri = parse_uri("sip:anonymous@anonymous.invalid").unwrap();
         assert_eq!(uri.auth.unwrap().user, "anonymous");
+    }
+
+    #[test]
+    fn uri_preserves_semicolons_in_user_part() {
+        let uri = parse_uri("sip:user;par=u%40example.net@example.com;transport=udp?subject=test")
+            .unwrap();
+        assert_eq!(uri.auth.as_ref().unwrap().user, "user;par=u%40example.net");
+        assert_eq!(uri.host_with_port.host, Host::Domain("example.com".into()));
+        assert_eq!(uri.params.len(), 1);
+        assert_eq!(uri.headers, vec![("subject".into(), "test".into())]);
+    }
+
+    #[test]
+    fn uri_params_allow_whitespace_around_equals_and_reject_empty_segments() {
+        let uri = parse_uri("sip:alice@example.com;tag = 123 ;lr").unwrap();
+        assert_eq!(uri.tag(), Some("123"));
+        assert!(uri.has_lr());
+
+        assert!(parse_uri("sip:alice@example.com;;tag=123").is_err());
+        assert!(parse_uri("sip:alice@example.com;;;;").is_err());
+        assert!(parse_uri("sip:alice@example.com;expires=99999999999999999999").is_err());
+    }
+
+    #[test]
+    fn opaque_non_sip_uri_preserves_colons_without_port_split() {
+        for raw in ["urn:service:sos", "urn:3gpp:ns:1", "urn:example:id:100000"] {
+            let uri = parse_uri(raw).unwrap();
+            assert_eq!(uri.scheme, Some(Scheme::Other("urn".into())));
+            assert_eq!(uri.host_with_port.port, None);
+            assert_eq!(uri.to_string(), raw);
+        }
+    }
+
+    // ── issue #258: hosts, ports and angle brackets must round-trip ───────────────
+
+    #[test]
+    fn host_rejects_characters_that_break_serialization() {
+        for raw in [
+            "sip:bob@example.com>x",
+            "sip:<bob@example.com",
+            "sip:bob@\"example.com\"",
+            "sip:bob@example.com\\path",
+            "sip:bob@exa mple.com",
+            "sip:example.com>x",
+            "sip:ih./\u{3}<sip:alice;tranAsport=tcp>;",
+        ] {
+            assert!(parse_uri(raw).is_err(), "expected {:?} to be rejected", raw);
+        }
+    }
+
+    #[test]
+    fn host_accepts_deployed_hostname_forms() {
+        for raw in [
+            "sip:alice@example.com",
+            "sip:alice@EXAMPLE.com",
+            "sip:alice@_sip._udp.example.com",
+            "sip:alice@pbx-1.example.com.",
+            "sip:alice@192.168.1.1",
+            "sip:alice@[::1]",
+            "sip:alice@xn--80ak6aa92e.com",
+        ] {
+            let uri = parse_uri(raw).unwrap();
+            assert_eq!(uri.to_string(), raw, "round trip failed for {:?}", raw);
+        }
+    }
+
+    #[test]
+    fn opaque_tel_uri_keeps_subscriber_characters() {
+        for raw in [
+            "tel:+1-201-555-0123",
+            "tel:+1234",
+            "tel:7042;phone-context=example.com",
+        ] {
+            let uri = parse_uri(raw).unwrap();
+            assert_eq!(uri.to_string(), raw, "round trip failed for {:?}", raw);
+        }
+        assert!(parse_uri("tel:+1-201-555-0123>x").is_err());
+        assert!(parse_uri("tel:\u{7}").is_err());
+    }
+
+    #[test]
+    fn port_must_be_digits() {
+        assert!(parse_uri("sip:alice@example.com:5060").is_ok());
+        assert!(parse_uri("sip:alice@[::1]:5060").is_ok());
+        assert!(parse_uri("sip:alice@example.com:").is_err());
+        assert!(parse_uri("sip:alice@example.com: ;tag=x").is_err());
+        assert!(parse_uri("sip:alice@example.com:5060x").is_err());
+        let uri = parse_uri("sip:alice@[::1]:5060").unwrap();
+        assert_eq!(uri.host_with_port.to_string(), "[::1]:5060");
+    }
+
+    #[test]
+    fn matching_bracket_pair_is_stripped_but_stray_brackets_are_rejected() {
+        let uri = parse_uri("<sip:alice@example.com>").unwrap();
+        assert_eq!(uri.to_string(), "sip:alice@example.com");
+
+        for raw in [
+            "sip:alice@example.com>x",
+            "<sip:alice@example.com",
+            "sip:alice@example.com>",
+            "<sip:alice@example.com>>",
+        ] {
+            assert!(parse_uri(raw).is_err(), "expected {:?} to be rejected", raw);
+        }
+    }
+
+    #[test]
+    fn param_value_rejects_control_characters() {
+        assert!(parse_uri("sip:bob@example.com;tag=a\u{7}b").is_err());
+        assert!(parse_uri("sip:bob@example.com;tag=a\u{1b}b").is_err());
+        assert!(parse_uri("sip:bob@example.com;tag=abc").is_ok());
+    }
+
+    #[test]
+    fn parse_and_print_is_idempotent() {
+        for raw in [
+            "sip:alice@example.com",
+            // Transport values are normalized to uppercase on display.
+            "sip:alice@example.com:5060;transport=TCP;lr",
+            "sip:alice:secret@192.168.1.1:5060",
+            "sip:%2A72%23@example.com;tag=a1b2",
+            "sips:alice@[2001:db8::1];transport=TLS",
+        ] {
+            let once = parse_uri(raw).unwrap().to_string();
+            assert_eq!(once, raw, "first print differs for {:?}", raw);
+            let twice = parse_uri(&once).unwrap().to_string();
+            assert_eq!(twice, once, "second print differs for {:?}", raw);
+        }
     }
 }

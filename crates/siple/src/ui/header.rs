@@ -6,8 +6,12 @@ use eframe::egui::{self, Align, Color32, CornerRadius, Layout, Margin, RichText,
 use siple_core::update::UpdateAction;
 use siple_sip::AccountStatus;
 
+use super::form::problem_lines;
 use super::{Cx, LayoutMode, UiAction, UiState, reg_pill_label, reg_tone, rpc, short_time};
-use crate::snapshot::{ConfigErrorView, RegClass, mwi_label, reg_class, reg_label, reg_tooltip};
+use crate::snapshot::{
+    ConfigErrorView, RegClass, mwi_label, reg_class, reg_failure, reg_label, reg_time_lines,
+    reg_tooltip,
+};
 use crate::theme::{
     self, FS_BODY, FS_MICRO, FS_SMALL, FS_TITLE, Palette, R_LG, R_MD, SP_XS, icon as ic,
 };
@@ -528,9 +532,20 @@ fn account_chip(
         if a.dnd { ", do not disturb" } else { "" }
     );
     resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, label.clone()));
+    let mut tip = label;
+    // The label already carries the problem's title: add its hint and details, then the times
+    // (developer tools only).
+    let mut lines = reg_failure(a)
+        .map(|f| f.lines().split_off(1))
+        .unwrap_or_default();
+    lines.extend(reg_time_lines(a, cx.vm.snap.ui.developer_tools));
+    for l in lines {
+        tip.push('\n');
+        tip.push_str(&l);
+    }
     let resp = resp
         .on_hover_cursor(egui::CursorIcon::PointingHand)
-        .on_hover_text(label);
+        .on_hover_text(tip);
     egui::Popup::from_toggle_button_response(&resp)
         .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
         .show(|ui| account_menu(ui, cx, a, out));
@@ -567,14 +582,18 @@ fn account_menu(ui: &mut egui::Ui, cx: &Cx, a: &AccountStatus, out: &mut Vec<UiA
         });
     });
     ui.add(egui::Label::new(mono(&a.aor, FS_SMALL).color(p.muted)).truncate());
-    ui.add(
-        egui::Label::new(
-            RichText::new(reg_tooltip(a, cx.vm.now))
-                .size(FS_SMALL)
-                .color(p.muted),
-        )
-        .wrap(),
-    );
+    if let Some(f) = reg_failure(a) {
+        problem_lines(ui, p, p.err, &f.title, f.hint, &f.detail);
+    } else {
+        ui.add(
+            egui::Label::new(
+                RichText::new(reg_tooltip(a, cx.vm.now))
+                    .size(FS_SMALL)
+                    .color(p.muted),
+            )
+            .wrap(),
+        );
+    }
     hairline(ui, p);
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 8.0;
@@ -600,12 +619,6 @@ fn account_menu(ui: &mut egui::Ui, cx: &Cx, a: &AccountStatus, out: &mut Vec<UiA
                     .size(FS_SMALL)
                     .color(p.text),
             );
-        });
-    }
-    if class == RegClass::Failed {
-        ui.horizontal(|ui| {
-            ui.label(icon(ic::WARNING_CIRCLE, 15.0).color(p.err.ink));
-            ui.label(RichText::new(reg_label(a)).size(FS_SMALL).color(p.err.ink));
         });
     }
     if a.pending_rebuild {

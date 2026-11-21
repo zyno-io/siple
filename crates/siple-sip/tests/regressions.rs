@@ -1,4 +1,4 @@
-//! Regression tests for the Phase 1-4 review findings (runtime leaks, unregister races, flow
+//! Regression tests for review findings (runtime leaks, unregister races, flow
 //! loss, Contact parsing, disable with calls, SNI scope, hot User-Agent, tls_fingerprint, ...).
 //! No PBX: peer-mode accounts over loopback and a scripted fake registrar.
 
@@ -840,6 +840,10 @@ async fn register_false_to_true_with_unresolvable_host_rebuilds() {
         |s| matches!(&s.registration, RegState::Failed { reason, .. } if reason.contains("DNS")),
     )
     .await;
+    assert_eq!(
+        s.registration.problem(),
+        Some(siple_sip::Problem::DnsFailed)
+    );
     let RegState::Failed { reason, .. } = s.registration else {
         unreachable!()
     };

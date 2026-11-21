@@ -37,6 +37,8 @@ use crate::types::SipEvent;
 
 /// Fraction of the granted lifetime after which a subscription is refreshed.
 pub const REFRESH_FRACTION: f64 = 0.85;
+/// Prefix of the failure text when the notifier ended the subscription.
+pub(crate) const TERMINATED: &str = "subscription terminated: ";
 /// Default lifetime of `message-summary` subscriptions (no config knob).
 const MWI_EXPIRES: u32 = 3600;
 /// Default lifetime of generic subscriptions.
@@ -314,8 +316,31 @@ enum Action {
     NewDialog,
 }
 
+/// Confirmation times of the current subscription (BLF health).
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+struct SubTimes {
+    subscribed_at: Option<DateTime<Utc>>,
+    last_refreshed_at: Option<DateTime<Utc>>,
+}
+
+impl SubTimes {
+    /// A SUBSCRIBE (initial or refresh) was answered 2xx at `now`. The first success of a dialog
+    /// sets `subscribed_at`; in-dialog refreshes keep it. A new dialog (481 on refresh, restart,
+    /// rebuild) goes through [`SubTimes::reset`] first, so it counts as a new subscription.
+    fn confirm(&mut self, now: DateTime<Utc>) {
+        self.subscribed_at.get_or_insert(now);
+        self.last_refreshed_at = Some(now);
+    }
+
+    /// The subscription ended, failed, or a new dialog replaces it.
+    fn reset(&mut self) {
+        *self = Self::default();
+    }
+}
+
 struct SubShared {
     info: SubscriptionInfo,
+    times: SubTimes,
     /// As configured / requested (BLF: `[[account.blf]].uri`).
     spec: String,
     target: Uri,
@@ -412,6 +437,8 @@ impl SubShared {
             last_code: self.last_error.as_ref().map(|e| e.0).filter(|c| *c != 0),
             last_reason: self.last_error.as_ref().map(|e| e.1.clone()),
             expires_at: self.info.expires_at,
+            subscribed_at: self.times.subscribed_at,
+            last_refreshed_at: self.times.last_refreshed_at,
             retry_at: self.retry_at.filter(|_| self.retrying),
         }
     }
@@ -749,6 +776,7 @@ impl SubManager {
         let id = format!("s{n}");
         let (tx, rx) = unbounded_channel();
         let shared = Arc::new(Mutex::new(SubShared {
+            times: SubTimes::default(),
             info: SubscriptionInfo {
                 id: id.clone(),
                 account: self.account.clone(),
@@ -1084,6 +1112,7 @@ impl SubManager {
                 s.notify_since_send = true;
                 s.ended = true;
                 s.info.expires_at = None;
+                s.times.reset();
                 // Only a subscription that stayed up for a while resets the back-off.
                 if s.stable_since
                     .take()
@@ -1102,7 +1131,7 @@ impl SubManager {
                         s.next = None;
                         s.retrying = false;
                         let reason = format!(
-                            "subscription terminated: {}",
+                            "{TERMINATED}{}",
                             sub_state.reason.as_deref().unwrap_or("no reason")
                         );
                         s.set_state(SubState::Failed { code: 0, reason }, ev);
@@ -1111,7 +1140,7 @@ impl SubManager {
                         s.last_error = Some((
                             0,
                             format!(
-                                "subscription terminated: {}",
+                                "{TERMINATED}{}",
                                 sub_state.reason.as_deref().unwrap_or("no reason")
                             ),
                         ));
@@ -1276,6 +1305,7 @@ impl SubTask {
             s.stable_since = None;
             s.tracker = BlfTracker::default();
             s.info.expires_at = None;
+            s.times.reset();
             s.retrying = false;
             let ev = self.mgr.events.clone();
             s.set_state(state, &ev);
@@ -1304,6 +1334,7 @@ impl SubTask {
             s.stable_since = None;
             s.remote_cseq = None;
             s.tracker.new_dialog();
+            s.times.reset();
             old
         };
         let mut g = lock(&self.mgr.inner);
@@ -1400,6 +1431,7 @@ impl SubTask {
             s.ended = true;
             s.next = None;
             s.info.expires_at = None;
+            s.times.reset();
             let call_id = s.call_id.clone();
             s.set_state(SubState::Terminated, &ev);
             drop(s);
@@ -1408,6 +1440,7 @@ impl SubTask {
             return;
         }
         let granted = resp.expires.unwrap_or(sent_expires);
+        s.times.confirm(Utc::now());
         if !s.notify_since_send {
             s.set_expires(granted);
             s.next =
@@ -1423,6 +1456,7 @@ impl SubTask {
         let mut s = self.sh();
         tracing::warn!(account = %self.mgr.account, sub = %s.info.id, uri = %s.info.uri, code, %reason, "SUBSCRIBE failed");
         let established = !s.ended && s.to_tag.is_some();
+        s.times.reset();
         if code == 0 || retryable(code) {
             s.fail_count += 1;
             let d = retry_delay(retry_after, s.fail_count);
@@ -1611,6 +1645,24 @@ impl SubTask {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn sub_times_keep_on_refresh_reset_on_new_dialog() {
+        let t0 = Utc::now();
+        let mut t = SubTimes::default();
+        t.confirm(t0);
+        assert_eq!((t.subscribed_at, t.last_refreshed_at), (Some(t0), Some(t0)));
+        // A refresh keeps subscribed_at, even one that arrives late.
+        let t1 = t0 + chrono::Duration::seconds(100);
+        t.confirm(t1);
+        assert_eq!((t.subscribed_at, t.last_refreshed_at), (Some(t0), Some(t1)));
+        // A new dialog resets; its first 2xx starts a new subscription.
+        t.reset();
+        assert_eq!(t, SubTimes::default());
+        let t2 = t1 + chrono::Duration::seconds(5);
+        t.confirm(t2);
+        assert_eq!((t.subscribed_at, t.last_refreshed_at), (Some(t2), Some(t2)));
+    }
+
     use super::*;
 
     #[test]

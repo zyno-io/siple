@@ -21,6 +21,7 @@ struct State {
     ui: UiState,
     actions: Vec<UiAction>,
     live: crate::ui::LiveAudio,
+    notice: Option<crate::snapshot::Notice>,
 }
 
 impl eframe::App for State {
@@ -30,7 +31,7 @@ impl eframe::App for State {
             now: now(),
             config_path: Path::new("config.toml"),
             has_log_dir: false,
-            notice: None,
+            notice: self.notice.as_ref(),
             live: self.live.clone(),
         };
         self.actions.extend(draw(ui, &vm, &mut self.ui));
@@ -52,6 +53,7 @@ fn harness_ui(snap: Snapshot, size: egui::Vec2, ui: UiState) -> Harness<'static,
             ui,
             actions: Vec::new(),
             live: Default::default(),
+            notice: None,
         }
     })
 }
@@ -325,6 +327,26 @@ fn settings_without_a_source_say_so() {
     assert!(
         h.query_by_label("Not available").is_some()
             || h.query_by_label_contains("Not available").is_some()
+    );
+    assert!(h.query_by_label("Channel").is_none());
+}
+
+#[test]
+fn settings_of_the_flatpak_edition_say_flatpak_updates_it() {
+    let mut snap = base_snapshot();
+    snap.update = siple_core::update::UpdateStatus {
+        source: SourceName::None,
+        disabled_reason: Some(siple_core::update::DisabledReason::ManagedByFlatpak),
+        enabled: false,
+        ..update_status("", false)
+    };
+    let mut h = harness(snap, WIDE);
+    h.state_mut().ui.settings.open = true;
+    h.state_mut().ui.settings.section = crate::ui::settings::Section::Advanced;
+    h.run();
+    assert!(
+        h.query_by_label("Updated by Flatpak").is_some()
+            || h.query_by_label_contains("Updated by Flatpak").is_some()
     );
     assert!(h.query_by_label("Channel").is_none());
 }
@@ -1055,11 +1077,11 @@ fn session_panel_unconfirmed_and_failure_messaging() {
     let mut h = harness(snap, WIDE);
     h.state_mut().ui.selected_line = Some("c1".into());
     h.run();
-    assert!(h.query_by_label_contains("failed: 486 Busy Here").is_some());
+    assert!(h.query_by_label_contains("failed: Busy.").is_some());
     click_first(&mut h, "Dismiss");
     assert!(h.state().ui.dismissed_sessions.contains("t1"));
     h.run();
-    assert!(h.query_by_label_contains("failed: 486").is_none());
+    assert!(h.query_by_label_contains("failed: Busy").is_none());
 }
 
 #[test]
@@ -1097,7 +1119,7 @@ fn clicking_the_other_leg_in_a_consult_swaps_the_session() {
 
 // ---- BLF --------------------------------------------------------------------------------------
 
-/// D5: a click on a BLF key places a call to it on its owning account (`blf.dial`); the dial box
+/// A click on a BLF key places a call to it on its owning account (`blf.dial`); the dial box
 /// is left alone.
 #[test]
 fn blf_click_dials_the_key_on_its_owning_account() {
@@ -1141,7 +1163,7 @@ fn blf_click_prefill_fills_the_dial_field_instead() {
     assert_eq!(h.state().ui.dial_account.as_deref(), Some("desk-1001"));
 }
 
-/// D7: a ringing key whose pickup is configured picks up (key or "Pick up" button); every other
+/// A ringing key whose pickup is configured picks up (key or "Pick up" button); every other
 /// key still dials. `blf_click_ringing = "call"` makes the key itself dial.
 #[test]
 fn ringing_blf_with_pickup_configured_picks_up() {
@@ -1238,12 +1260,14 @@ fn blf_tooltips_say_what_a_click_does_and_show_health() {
     h.run_steps(60);
     assert!(h.query_by_label_contains("Click to call").is_some());
     assert!(h.query_by_label_contains("Stale:").is_some());
-    // Failed: the text carries the code, so it never differs from Busy by colour alone.
+    // Failed: the key reads "Failed" (never differing from Busy by colour alone); the tooltip
+    // names the problem and shows the server's answer.
     h.get_by_label("Old lobby (desk-1001)").hover();
     h.run_steps(60);
-    assert!(h.query_by_label_contains("Sub failed 404").is_some());
+    assert!(h.query_by_label_contains("Failed").is_some());
+    assert!(h.query_by_label_contains("Extension not found").is_some());
     assert!(
-        h.query_by_label_contains("Subscription: Not Found")
+        h.query_by_label_contains("Details: 404 Not Found")
             .is_some()
     );
 }
@@ -1261,7 +1285,10 @@ fn blf_keys_expose_state_and_staleness_to_assistive_tech() {
         value(&h, "Support queue (desk-1001)"),
         "1004, Ringing, with Dana, stale"
     );
-    assert_eq!(value(&h, "Old lobby (desk-1001)"), "1099, Sub failed 404");
+    assert_eq!(
+        value(&h, "Old lobby (desk-1001)"),
+        "1099, Failed, Extension not found"
+    );
     assert_eq!(value(&h, "Bob Martin (desk-1001)"), "1003, Busy");
 }
 
@@ -1330,6 +1357,32 @@ fn disabled_account_and_config_error_still_show() {
     );
     click_first(&mut h, "Open config");
     assert_eq!(take(&mut h)[0], UiAction::OpenConfig);
+}
+
+/// The footer Log / Open logs / Open config buttons and the log pane need `developer_tools`.
+#[test]
+fn footer_dev_controls_follow_developer_tools() {
+    let mut snap = base_snapshot();
+    snap.logs = vec!["INFO hello-log-line".into()];
+    let mut h = harness(snap.clone(), WIDE);
+    h.run();
+    assert!(h.query_by_label_contains("Open config").is_none());
+    assert!(h.query_by_label_contains("Log").is_none());
+
+    snap.ui.developer_tools = true;
+    let mut h = harness(snap.clone(), WIDE);
+    h.run();
+    click_first(&mut h, "Log");
+    assert_eq!(take(&mut h), [UiAction::LogsVisible(true)]);
+    assert!(h.query_by_label_contains("hello-log-line").is_some());
+    assert!(h.query_by_label_contains("Open config").is_some());
+
+    // Turning the setting off closes the open pane and stops log capture.
+    h.state_mut().snap.ui.developer_tools = false;
+    h.run_steps(4);
+    assert!(!h.state().ui.show_logs);
+    assert_eq!(take(&mut h), [UiAction::LogsVisible(false)]);
+    assert!(h.query_by_label_contains("hello-log-line").is_none());
 }
 
 /// A double click (two quick pointer clicks) places one call, not two.
@@ -1559,7 +1612,7 @@ fn stale_ringing_blf_does_not_offer_pickup() {
     );
 }
 
-/// Retrying keeps the last known state and the tooltip says "Retrying (503)".
+/// Retrying keeps the last known state; the tooltip names the problem, the code and the retry.
 #[test]
 fn retrying_blf_tooltip_shows_code_and_keeps_state() {
     let mut snap = base_snapshot();
@@ -1574,7 +1627,11 @@ fn retrying_blf_tooltip_shows_code_and_keeps_state() {
     h.get_by_label("Support queue (desk-1001)").hover();
     h.run_steps(60);
     assert!(
-        h.query_by_label_contains("Retrying (503), next attempt")
+        h.query_by_label_contains("The server had a problem")
+            .is_some()
+    );
+    assert!(
+        h.query_by_label_contains("Details: 503 Service Unavailable, next attempt")
             .is_some()
     );
     assert!(h.query_by_label_contains("Stale:").is_some());
@@ -1709,13 +1766,60 @@ fn many_identical_failures_collapse_into_one_banner() {
     let mut h = harness_ext(snap, WIDE);
     h.run();
     assert!(
-        h.query_by_label_contains("BLF rejected by PBX (489)")
+        h.query_by_label_contains("desk-1001: Line status not available")
+            .is_some()
+    );
+    assert!(
+        h.query_by_label_contains("6 extensions are affected.")
             .is_some()
     );
     // A single failure shows no banner.
     let mut h = harness_ext(base_snapshot(), WIDE);
     h.run();
-    assert!(h.query_by_label_contains("BLF rejected by PBX").is_none());
+    assert!(
+        h.query_by_label_contains("extensions are affected")
+            .is_none()
+    );
+}
+
+/// Local failures (code 0) group by problem too: six keys refused with "noresource".
+#[test]
+fn many_local_failures_collapse_into_one_banner() {
+    let mut snap = base_snapshot();
+    snap.blf = (0..6)
+        .map(|i| {
+            let mut b = blf(&format!("20{i}"), &format!("Ext {i}"), BlfState::Failed);
+            b.subscription.last_code = None;
+            b.subscription.last_reason = Some("subscription terminated: noresource".into());
+            b
+        })
+        .collect();
+    let mut h = harness_ext(snap, WIDE);
+    h.run();
+    assert!(
+        h.query_by_label_contains("desk-1001: Extension not found")
+            .is_some()
+    );
+}
+
+/// `other` and `refused` cover unrelated causes: they never collapse into one banner.
+#[test]
+fn unclassified_failures_keep_their_own_lamps() {
+    let mut snap = base_snapshot();
+    snap.blf = (0..6)
+        .map(|i| {
+            let mut b = blf(&format!("20{i}"), &format!("Ext {i}"), BlfState::Failed);
+            b.subscription.last_code = None;
+            b.subscription.last_reason = Some(format!("gremlin {i}"));
+            b
+        })
+        .collect();
+    let mut h = harness_ext(snap, WIDE);
+    h.run();
+    assert!(
+        h.query_by_label_contains("extensions are affected")
+            .is_none()
+    );
 }
 
 #[test]
@@ -1730,6 +1834,600 @@ fn narrow_returns_to_the_stage_after_a_blf_action() {
         [UiAction::BlfDial("desk-1001".into(), "1002".into())]
     );
     assert!(!h.state().ui.ext_tab);
+}
+
+// ---- setup links -------------------------------------------------------------------------------
+
+use crate::ui::wizard::{Offer, Origin, Step as WStep};
+use siple_core::config::{Profile, SrtpPolicy, Transport};
+use siple_core::provision::{SetupAccount, SetupLink};
+
+fn link_for(username: &str, domain: &str) -> SetupLink {
+    SetupLink::new(SetupAccount {
+        username: username.into(),
+        domain: domain.into(),
+        display_name: "Front desk".into(),
+        registrar: "pbx.example.test:5061".into(),
+        transport: Some(Transport::Tls),
+        srtp: Some(SrtpPolicy::Mandatory),
+        profile: Some(Profile::Yealink),
+        ..Default::default()
+    })
+}
+
+fn offer(
+    h: &mut Harness<'_, State>,
+    link: SetupLink,
+    origin: Origin,
+    at: chrono::DateTime<chrono::Utc>,
+) -> Offer {
+    let snap = h.state().snap.clone();
+    let r = h.state_mut().ui.wizard.offer_link(link, origin, &snap, at);
+    // The Review screen keeps repainting while Continue is locked.
+    h.run_steps(4);
+    r
+}
+
+fn secs(n: i64) -> chrono::Duration {
+    chrono::Duration::seconds(n)
+}
+
+#[test]
+fn a_setup_link_only_opens_the_review_and_does_nothing_by_itself() {
+    let mut h = harness_ui(wizard_snapshot(), WIDE, UiState::default());
+    h.run();
+    assert_eq!(
+        offer(
+            &mut h,
+            link_for("1001", "example.test"),
+            Origin::Opened,
+            now()
+        ),
+        Offer::Opened
+    );
+    h.run_steps(10);
+    assert!(h.query_by_label("Check this setup link").is_some());
+    assert!(h.query_by_label("Step 1 of 3").is_some());
+    // The server leads, the password is not in the link.
+    assert!(h.query_by_label("Server: pbx.example.test:5061").is_some());
+    assert!(h.query_by_label_contains("not in the link").is_some());
+    assert!(
+        take(&mut h).is_empty(),
+        "no action without a click: {:?}",
+        h.state().actions
+    );
+    // Continue is locked for a second after the screen appeared.
+    assert!(h.get_by_label("Continue").accesskit_node().is_disabled());
+    h.get_by_label("Continue").click_accesskit();
+    h.run();
+    assert!(
+        h.query_by_label("Check this setup link").is_some(),
+        "locked Continue must not act"
+    );
+    assert!(take(&mut h).is_empty());
+    assert!(h.state().ui.wizard.form.username.is_empty());
+}
+
+#[test]
+fn continue_is_enabled_once_the_delay_has_passed() {
+    let mut h = harness_ui(wizard_snapshot(), WIDE, UiState::default());
+    h.run();
+    offer(
+        &mut h,
+        link_for("1001", "example.test"),
+        Origin::Opened,
+        now() - secs(2),
+    );
+    assert!(!h.get_by_label("Continue").accesskit_node().is_disabled());
+    // Right on the edge.
+    let mut h = harness_ui(wizard_snapshot(), WIDE, UiState::default());
+    h.run();
+    offer(
+        &mut h,
+        link_for("1001", "example.test"),
+        Origin::Opened,
+        now() - chrono::Duration::milliseconds(999),
+    );
+    assert!(h.get_by_label("Continue").accesskit_node().is_disabled());
+}
+
+#[test]
+fn the_full_flow_needs_every_step_and_ends_in_the_audio_step() {
+    let mut h = harness_ui(wizard_snapshot(), WIDE, UiState::default());
+    h.run();
+    offer(
+        &mut h,
+        link_for("1001", "example.test"),
+        Origin::Opened,
+        now() - secs(2),
+    );
+    click_first(&mut h, "Continue");
+    // The form is prefilled and the advanced block shows the registrar; no password yet.
+    assert!(h.query_by_label("Welcome to Siple").is_some());
+    assert_eq!(h.state().ui.wizard.step, WStep::Account);
+    assert_eq!(h.state().ui.wizard.form.username, "1001");
+    assert_eq!(h.state().ui.wizard.form.registrar, "pbx.example.test:5061");
+    assert!(h.state().ui.wizard.form.password.is_empty());
+    assert!(h.query_by_label("Registrar").is_some());
+    assert!(
+        h.query_by_label_contains("Filled in from a setup link")
+            .is_some()
+    );
+    assert!(take(&mut h).is_empty(), "Continue sends nothing");
+    // Test needs the password step; the draft carries the link fields plus transport.
+    type_into(&mut h, "Password", "pw-typed");
+    h.get_by_label("Test & continue").click_accesskit();
+    h.run();
+    let req = only_edit(take(&mut h));
+    assert_eq!(req.method, "account.test");
+    let f = &req.params["draft"]["fields"];
+    assert_eq!(f["username"], "1001");
+    assert_eq!(f["domain"], "example.test");
+    assert_eq!(f["registrar"], "pbx.example.test:5061");
+    assert_eq!(f["transport"], "tls");
+    assert_eq!(f["srtp"], "mandatory");
+    assert_eq!(f["profile"], "yealink");
+    assert_eq!(f["display_name"], "Front desk");
+    assert_eq!(f["password"], "pw-typed");
+    assert_eq!(req.params["draft"]["id"], "1001.example.test");
+    deliver(
+        &mut h,
+        RpcTag::TestDraft,
+        Ok(json!({"diagnosis": "ok", "ok": true, "message": "Registered"})),
+    );
+    let edits = rpc::edits_of(&only_edit(take(&mut h)));
+    let [
+        ConfigEdit::AddAccount {
+            draft,
+            replace_example: true,
+        },
+    ] = &edits[..]
+    else {
+        panic!("{edits:?}")
+    };
+    assert_eq!(
+        draft.fields.get(&AccountField::Registrar),
+        Some(&EditValue::Str("pbx.example.test:5061".into()))
+    );
+    assert_eq!(
+        draft.fields.get(&AccountField::Transport),
+        Some(&EditValue::Str("tls".into()))
+    );
+    deliver(&mut h, RpcTag::WizardAdd, Ok(json!({"applied": true})));
+    assert!(h.query_by_label("Step 2 of 3").is_some());
+    assert!(h.state().ui.wizard.form.password.is_empty());
+}
+
+#[test]
+fn test_and_save_waits_for_the_password_of_a_link_account() {
+    let mut h = harness(base_snapshot(), WIDE);
+    h.run();
+    offer(
+        &mut h,
+        link_for("2001", "example.test"),
+        Origin::Opened,
+        now() - secs(2),
+    );
+    click_first(&mut h, "Continue");
+    assert!(h.get_by_label("Test & save").accesskit_node().is_disabled());
+    h.get_by_label("Test & save").click_accesskit();
+    h.run();
+    assert!(
+        take(&mut h).is_empty(),
+        "no account.test without a password"
+    );
+    type_into(&mut h, "Password", "pw");
+    assert!(!h.get_by_label("Test & save").accesskit_node().is_disabled());
+}
+
+/// First run: after Continue a new link is refused, so Cancel must exist to drop the current one.
+#[test]
+fn first_run_link_can_be_cancelled_to_open_a_corrected_one() {
+    let mut h = harness_ui(wizard_snapshot(), WIDE, UiState::default());
+    h.run();
+    offer(
+        &mut h,
+        link_for("1001", "example.test"),
+        Origin::Opened,
+        now() - secs(2),
+    );
+    click_first(&mut h, "Continue");
+    assert!(h.query_by_label("Test & continue").is_some());
+    assert!(h.query_by_label("Skip, I'll edit config.toml").is_some());
+    h.get_by_label("Cancel").click_accesskit();
+    h.run();
+    assert!(h.state().ui.wizard.link.is_none());
+    assert!(
+        h.query_by_label("Cancel").is_none(),
+        "plain form: no Cancel"
+    );
+    assert!(take(&mut h).is_empty());
+    // The corrected link opens its own Review.
+    assert_eq!(
+        offer(
+            &mut h,
+            link_for("1002", "example.test"),
+            Origin::Opened,
+            now()
+        ),
+        Offer::Opened
+    );
+    assert!(h.query_by_label("Check this setup link").is_some());
+}
+
+#[test]
+fn a_link_on_a_configured_install_is_a_short_flow_that_ends_with_close() {
+    let mut h = harness(base_snapshot(), WIDE);
+    h.run();
+    offer(
+        &mut h,
+        link_for("2001", "example.test"),
+        Origin::Opened,
+        now() - secs(2),
+    );
+    assert!(h.query_by_label("Set up an account").is_some());
+    assert!(h.query_by_label_contains("Step 1 of 3").is_none());
+    click_first(&mut h, "Continue");
+    type_into(&mut h, "Password", "pw");
+    h.get_by_label("Test & save").click_accesskit();
+    h.run();
+    assert_eq!(only_edit(take(&mut h)).method, "account.test");
+    deliver(
+        &mut h,
+        RpcTag::TestDraft,
+        Ok(json!({"diagnosis": "ok", "ok": true, "message": "Registered"})),
+    );
+    let edit = only_edit(take(&mut h));
+    assert_eq!(edit.method, "config.edit");
+    // A link account is an addition: it never takes the example account's slot.
+    assert!(matches!(
+        &rpc::edits_of(&edit)[..],
+        [ConfigEdit::AddAccount {
+            replace_example: false,
+            ..
+        }]
+    ));
+    deliver(&mut h, RpcTag::WizardAdd, Ok(json!({"applied": true})));
+    assert!(h.query_by_label("Account added").is_some());
+    assert!(h.state().ui.wizard.form.password.is_empty());
+    // A new link is not taken while the done screen is up.
+    let r = offer(
+        &mut h,
+        link_for("3001", "example.test"),
+        Origin::Opened,
+        now(),
+    );
+    assert!(matches!(r, Offer::Refused(_)));
+    h.get_by_label("Close").click_accesskit();
+    h.run();
+    assert!(h.query_by_label("Account added").is_none());
+    assert!(rail_shown(&h), "the main window is back");
+}
+
+#[test]
+fn cancel_at_review_and_at_the_form_sends_nothing_and_drops_the_password() {
+    let mut h = harness(base_snapshot(), WIDE);
+    h.run();
+    offer(
+        &mut h,
+        link_for("2001", "example.test"),
+        Origin::Opened,
+        now() - secs(2),
+    );
+    h.get_by_label("Cancel").click_accesskit();
+    h.run();
+    assert!(take(&mut h).is_empty());
+    assert!(rail_shown(&h));
+    assert!(h.state().ui.wizard.link.is_none());
+    // At the form, with a password typed.
+    offer(
+        &mut h,
+        link_for("2001", "example.test"),
+        Origin::Opened,
+        now() - secs(2),
+    );
+    click_first(&mut h, "Continue");
+    type_into(&mut h, "Password", "pw-secret");
+    h.get_by_label("Cancel").click_accesskit();
+    h.run();
+    assert!(take(&mut h).is_empty());
+    assert!(h.state().ui.wizard.form.password.is_empty());
+    assert!(h.state().ui.wizard.link.is_none());
+    assert!(rail_shown(&h));
+    // First run: Cancel at Review returns to the plain account form.
+    let mut h = harness_ui(wizard_snapshot(), WIDE, UiState::default());
+    h.run();
+    offer(
+        &mut h,
+        link_for("1001", "example.test"),
+        Origin::Opened,
+        now() - secs(2),
+    );
+    h.get_by_label("Cancel").click_accesskit();
+    h.run();
+    assert!(h.query_by_label("Add your SIP account").is_some());
+    assert!(h.state().ui.wizard.form.username.is_empty());
+    assert!(take(&mut h).is_empty());
+}
+
+#[test]
+fn a_link_for_an_account_you_already_have_cannot_be_added() {
+    let mut h = harness(base_snapshot(), WIDE);
+    h.run();
+    // desk-1001 is user 1001 at pbx.example.test (domain compared case-insensitively).
+    offer(
+        &mut h,
+        link_for("1001", "PBX.Example.Test"),
+        Origin::Opened,
+        now() - secs(2),
+    );
+    assert!(
+        h.query_by_label_contains("You already have this account")
+            .is_some()
+    );
+    assert!(h.query_by_label("Continue").is_none());
+    h.get_by_label("Open Settings").click_accesskit();
+    h.run();
+    assert!(h.state().ui.settings.open);
+    assert_eq!(h.state().ui.settings.account.as_deref(), Some("desk-1001"));
+    assert!(h.state().ui.wizard.link.is_none());
+    assert!(take(&mut h).is_empty());
+}
+
+#[test]
+fn a_link_never_replaces_work_in_progress() {
+    let mut h = harness_ui(wizard_snapshot(), WIDE, UiState::default());
+    h.run();
+    type_into(&mut h, "Password", "half-typed");
+    let before = h.state().ui.wizard.form.clone();
+    let r = offer(
+        &mut h,
+        link_for("1001", "example.test"),
+        Origin::Opened,
+        now(),
+    );
+    assert!(matches!(r, Offer::Refused(_)), "{r:?}");
+    assert_eq!(h.state().ui.wizard.form, before, "the form is unchanged");
+    assert!(h.query_by_label("Check this setup link").is_none());
+    // A pasted one is the user's own doing: it may replace the form.
+    let r = offer(
+        &mut h,
+        link_for("1001", "example.test"),
+        Origin::Pasted,
+        now(),
+    );
+    assert_eq!(r, Offer::Opened);
+    assert!(h.state().ui.wizard.form.password.is_empty());
+    // After Continue and typing a password, links are refused again.
+    let mut h = harness_ui(wizard_snapshot(), WIDE, UiState::default());
+    h.run();
+    offer(
+        &mut h,
+        link_for("1001", "example.test"),
+        Origin::Opened,
+        now() - secs(2),
+    );
+    click_first(&mut h, "Continue");
+    type_into(&mut h, "Password", "typed");
+    let r = offer(&mut h, link_for("9999", "evil.test"), Origin::Opened, now());
+    assert!(matches!(r, Offer::Refused(_)));
+    assert_eq!(h.state().ui.wizard.form.username, "1001");
+    assert_eq!(h.state().ui.wizard.form.password, "typed");
+    // Pasted links too: once continued, the form is not replaced.
+    let r = offer(&mut h, link_for("9999", "evil.test"), Origin::Pasted, now());
+    assert_eq!(
+        r,
+        Offer::Refused("Finish or cancel the current setup first")
+    );
+    assert_eq!(h.state().ui.wizard.form.username, "1001");
+    assert_eq!(h.state().ui.wizard.form.password, "typed");
+    assert_eq!(
+        h.state().ui.wizard.link.as_ref().unwrap().account.username,
+        "1001"
+    );
+    // Audio and done steps and a running test refuse too.
+    for step in [WStep::Audio, WStep::Done] {
+        h.state_mut().ui.wizard.step = step;
+        let r = offer(&mut h, link_for("9999", "evil.test"), Origin::Pasted, now());
+        assert!(matches!(r, Offer::Refused(_)), "{step:?}");
+    }
+    h.state_mut().ui.wizard.step = WStep::Account;
+    h.run();
+    h.get_by_label("Test & continue").click_accesskit();
+    h.run();
+    take(&mut h);
+    let r = offer(&mut h, link_for("9999", "evil.test"), Origin::Pasted, now());
+    assert!(matches!(r, Offer::Refused(_)), "a test is running");
+    assert_eq!(h.state().ui.wizard.form.username, "1001");
+}
+
+#[test]
+fn replacing_the_link_restarts_the_delay_and_warns() {
+    let mut h = harness_ui(wizard_snapshot(), WIDE, UiState::default());
+    h.run();
+    offer(
+        &mut h,
+        link_for("1001", "example.test"),
+        Origin::Opened,
+        now() - secs(2),
+    );
+    assert!(!h.get_by_label("Continue").accesskit_node().is_disabled());
+    assert!(h.query_by_label_contains("link changed").is_none());
+    let r = offer(
+        &mut h,
+        link_for("1001", "other.test"),
+        Origin::Opened,
+        now(),
+    );
+    assert_eq!(r, Offer::Replaced);
+    assert!(h.get_by_label("Continue").accesskit_node().is_disabled());
+    assert!(
+        h.query_by_label_contains("The setup link changed")
+            .is_some()
+    );
+    assert!(h.query_by_label("Server: pbx.example.test:5061").is_some());
+    assert_eq!(
+        h.state().ui.wizard.link.as_ref().unwrap().account.domain,
+        "other.test"
+    );
+}
+
+#[test]
+fn a_window_that_was_away_starts_the_delay_again() {
+    let mut h = harness_ui(wizard_snapshot(), WIDE, UiState::default());
+    h.run();
+    offer(
+        &mut h,
+        link_for("1001", "example.test"),
+        Origin::Opened,
+        now(),
+    );
+    // Drawn, then not drawn for a while, while Continue was still locked: the delay starts again.
+    h.state_mut().ui.wizard.review_seen = Some(now() - secs(30));
+    h.state_mut().ui.wizard.review_at = Some(now() - chrono::Duration::milliseconds(900));
+    h.run_steps(2);
+    assert_eq!(h.state().ui.wizard.review_at, Some(now()));
+    assert!(h.get_by_label("Continue").accesskit_node().is_disabled());
+}
+
+#[test]
+fn the_wizard_paste_field_opens_the_review_or_says_what_is_wrong() {
+    let mut h = harness_ui(wizard_snapshot(), WIDE, UiState::default());
+    h.run();
+    h.get_by_label("Paste a setup link").click_accesskit();
+    h.run();
+    type_into(&mut h, "Setup link", "https://example.test/not-a-link");
+    h.get_by_label("Review link").click_accesskit();
+    h.run();
+    assert!(h.state().ui.wizard.paste_error.is_some());
+    assert!(h.query_by_label("Check this setup link").is_none());
+    let good = link_for("1001", "example.test").encode().unwrap();
+    h.state_mut().ui.wizard.paste = Some(format!("<{good}>"));
+    h.run();
+    h.get_by_label("Review link").click_accesskit();
+    h.run();
+    assert!(h.query_by_label("Check this setup link").is_some());
+    assert!(h.state().ui.wizard.paste.is_none());
+    assert!(take(&mut h).is_empty());
+    // A call link is not a setup link.
+    let mut h = harness_ui(wizard_snapshot(), WIDE, UiState::default());
+    h.run();
+    h.state_mut().ui.wizard.paste = Some("sip:bob@example.test".into());
+    h.run();
+    h.get_by_label("Review link").click_accesskit();
+    h.run();
+    assert!(
+        h.state()
+            .ui
+            .wizard
+            .paste_error
+            .as_deref()
+            .unwrap()
+            .contains("call link")
+    );
+}
+
+#[test]
+fn settings_copy_setup_link_asks_for_a_link_without_a_password() {
+    let mut h = settings_harness(base_snapshot(), Section::Accounts, WIDE);
+    h.get_by_label("Copy setup link").click_accesskit();
+    h.run();
+    let req = only_edit(take(&mut h));
+    assert_eq!(req.method, "provision.build");
+    assert_eq!(req.params, json!({"account": "desk-1001"}));
+    assert_eq!(req.tag, RpcTag::ShareLink("desk-1001".into()));
+    deliver(
+        &mut h,
+        RpcTag::ShareLink("desk-1001".into()),
+        Ok(
+            json!({"link": "siple:provision?d=e30", "length": 21, "fields": {}, "omitted": ["password", "bind_address"]}),
+        ),
+    );
+    assert_eq!(
+        h.state().ui.settings.copy_pending,
+        None,
+        "copied on the frame after the reply"
+    );
+    assert!(
+        h.query_by_label_contains("Setup link copied. It has no password.")
+            .is_some()
+    );
+    assert!(
+        h.query_by_label_contains("Not included: password, bind_address")
+            .is_some()
+    );
+    // Unsaved edits disable it, like Test.
+    h.state_mut().ui.settings.set_field(
+        "desk-1001",
+        AccountField::AutoAnswer,
+        &EditValue::Bool(false),
+        EditValue::Bool(true),
+        "hash-0",
+    );
+    h.run();
+    assert!(
+        h.get_by_label("Copy setup link")
+            .accesskit_node()
+            .is_disabled()
+    );
+}
+
+#[test]
+fn settings_add_from_setup_link_opens_the_link_only_wizard() {
+    let mut h = settings_harness(base_snapshot(), Section::Accounts, WIDE);
+    h.get_by_label("Add from setup link").click_accesskit();
+    h.run();
+    let good = link_for("2001", "example.test").encode().unwrap();
+    type_into(&mut h, "Setup link", &good);
+    h.get_by_label("Review link").click_accesskit();
+    h.run();
+    assert!(h.query_by_label("Check this setup link").is_some());
+    assert!(h.state().ui.wizard.link_only);
+    assert_eq!(
+        h.state().ui.settings.select_after.as_deref(),
+        Some("2001.example.test")
+    );
+    assert!(take(&mut h).is_empty());
+    // Cancel returns to Settings.
+    h.get_by_label("Cancel").click_accesskit();
+    h.run();
+    assert!(h.query_by_label("Check this setup link").is_none());
+    assert!(
+        h.query_by_label("Run setup again").is_some(),
+        "Settings is back"
+    );
+}
+
+#[test]
+fn an_unparsable_config_blocks_continue() {
+    let mut snap = wizard_snapshot();
+    snap.config_unparsable = true;
+    let mut h = harness_ui(snap, WIDE, UiState::default());
+    h.run();
+    offer(
+        &mut h,
+        link_for("1001", "example.test"),
+        Origin::Opened,
+        now() - secs(2),
+    );
+    assert!(
+        h.query_by_label_contains("Fix the config file first")
+            .is_some()
+    );
+    assert!(h.get_by_label("Continue").accesskit_node().is_disabled());
+}
+
+#[test]
+fn a_notice_is_visible_while_the_wizard_is_up() {
+    let mut h = harness_ui(wizard_snapshot(), WIDE, UiState::default());
+    h.state_mut().notice = Some(crate::snapshot::Notice::plain(
+        "Ignored link: this is not a Siple setup link",
+    ));
+    h.run();
+    assert!(
+        h.query_by_label_contains("Ignored link: this is not a Siple setup link")
+            .is_some()
+    );
 }
 
 // ---- review fixes -----------------------------------------------------------------------------
@@ -1828,10 +2526,8 @@ fn connected_consult_shows_a_failed_refer() {
     let mut h = harness(snap, WIDE);
     h.run();
     assert!(
-        h.query_by_label_contains(
-            "Transfer failed: 486 Busy Here. You're still talking to Carol Diaz"
-        )
-        .is_some()
+        h.query_by_label_contains("Transfer failed: Busy. You're still talking to Carol Diaz")
+            .is_some()
     );
 }
 
@@ -3160,6 +3856,21 @@ fn passwords_are_dropped_when_the_wizard_ends_or_the_add_form_is_left() {
     h.get_by_label_contains("Skip").click_accesskit();
     h.run();
     assert!(h.state().ui.wizard.form.password.is_empty());
+    // Ending a link flow also drops the password and the link.
+    let mut h = harness(base_snapshot(), WIDE);
+    h.run();
+    offer(
+        &mut h,
+        link_for("2001", "example.test"),
+        Origin::Opened,
+        now() - secs(2),
+    );
+    click_first(&mut h, "Continue");
+    type_into(&mut h, "Password", "pw-from-link-flow");
+    h.get_by_label("Cancel").click_accesskit();
+    h.run();
+    let w = &h.state().ui.wizard;
+    assert!(w.form.password.is_empty() && w.link.is_none() && !w.link_only);
     let mut h = settings_harness(base_snapshot(), Section::Accounts, WIDE);
     h.get_by_label("New account").click_accesskit();
     h.run();
@@ -4106,4 +4817,155 @@ fn composer_actions_fit_inside_a_medium_call_card() {
         close.right() <= field.right() + 1.0,
         "Close is clipped: {close:?} vs field {field:?}"
     );
+}
+
+// ---- problems: plain-language failures --------------------------------------------------------
+
+#[test]
+fn failed_account_menu_names_the_problem_its_hint_and_the_servers_answer() {
+    let mut h = harness(base_snapshot(), WIDE);
+    h.run();
+    // The chip's accessible name carries the title, not "failed: 403 Forbidden".
+    assert!(
+        h.query_by_label_contains("Account legacy-fs: Wrong username or password")
+            .is_some()
+    );
+    open_account_menu(&mut h, "Account legacy-fs");
+    assert!(h.query_by_label("Wrong username or password").is_some());
+    assert!(
+        h.query_by_label("Check the account's username, auth username and password.")
+            .is_some()
+    );
+    assert!(h.query_by_label_contains("403 Forbidden").is_some());
+    assert!(h.query_by_label_contains("next attempt").is_some());
+    assert!(h.query_by_label_contains("failed: 403").is_none());
+}
+
+#[test]
+fn ended_call_shows_the_problem_chip_with_details_and_the_hint() {
+    let mut snap = two_calls();
+    snap.calls[0].state = CallState::Ended;
+    snap.calls[0].ended_at = Some(now());
+    snap.calls[0].end = Some(siple_sip::CallEnd {
+        code: 486,
+        reason: "Busy Here".into(),
+        by: siple_sip::EndedBy::Remote,
+        missed: false,
+        q850_cause: None,
+        cause: siple_sip::EndCause::Rejected,
+    });
+    let mut h = harness(snap, WIDE);
+    h.state_mut().ui.selected_line = Some("c1".into());
+    h.run();
+    assert!(h.query_by_label("Busy").is_some());
+    assert!(
+        h.query_by_label("The other side is on another call; try again later.")
+            .is_some()
+    );
+    // The raw answer is on hover, no longer the chip text.
+    assert!(h.query_by_label("486 Busy Here").is_none());
+    h.get_by_label("Busy").hover();
+    h.run_steps(60);
+    assert!(
+        h.query_by_label_contains("Details: 486 Busy Here")
+            .is_some()
+    );
+}
+
+#[test]
+fn ended_call_without_a_failure_shows_no_hint() {
+    let mut snap = two_calls();
+    snap.calls[0].state = CallState::Ended;
+    snap.calls[0].ended_at = Some(now());
+    snap.calls[0].end = Some(siple_sip::CallEnd {
+        code: 200,
+        reason: "OK".into(),
+        by: siple_sip::EndedBy::Remote,
+        missed: false,
+        q850_cause: None,
+        cause: siple_sip::EndCause::RemoteHangup,
+    });
+    let mut h = harness(snap, WIDE);
+    h.state_mut().ui.selected_line = Some("c1".into());
+    h.run();
+    assert!(h.query_by_label_contains("try again later").is_none());
+    assert!(h.query_by_label_contains("Call back").is_some());
+}
+
+#[test]
+fn account_test_with_a_problem_shows_title_hint_and_evidence() {
+    let mut h = settings_harness(base_snapshot(), Section::Accounts, WIDE);
+    deliver(
+        &mut h,
+        RpcTag::TestAccount("desk-1001".into()),
+        Ok(json!({"diagnosis": "auth_failed", "ok": false, "code": 403,
+            "problem": siple_sip::problem::Problem::AuthFailed,
+            "message": "Wrong username or password (the server answered 403)"})),
+    );
+    assert!(h.query_by_label("Wrong username or password").is_some());
+    assert!(
+        h.query_by_label("Check the account's username, auth username and password.")
+            .is_some()
+    );
+    assert!(h.query_by_label("Server answer: 403").is_some());
+    assert!(
+        h.query_by_label_contains("the server answered 403")
+            .is_none()
+    );
+    // The fingerprint stays visible before it is trusted.
+    let fp = "cd".repeat(32);
+    deliver(
+        &mut h,
+        RpcTag::TestAccount("desk-1001".into()),
+        Ok(
+            json!({"diagnosis": "tls_untrusted", "ok": false, "fingerprint": fp,
+            "problem": siple_sip::problem::Problem::TlsUntrusted,
+            "message": "The server's TLS certificate is not trusted"}),
+        ),
+    );
+    assert!(
+        h.query_by_label("The server's certificate is not trusted")
+            .is_some()
+    );
+    assert!(
+        h.query_by_label(&format!("Certificate SHA-256: {fp}"))
+            .is_some()
+    );
+    assert!(h.query_by_label("Trust this certificate").is_some());
+    // `other`, or a server without problems: the one-line message as before.
+    deliver(
+        &mut h,
+        RpcTag::TestAccount("desk-1001".into()),
+        Ok(json!({"diagnosis": "other", "ok": false,
+            "problem": siple_sip::problem::Problem::Other,
+            "message": "503 Service Unavailable"})),
+    );
+    assert!(h.query_by_label("503 Service Unavailable").is_some());
+    assert!(h.query_by_label("Something went wrong").is_none());
+}
+
+#[test]
+fn notice_shows_its_text_and_the_raw_answer_on_hover() {
+    let mut h = harness(base_snapshot(), WIDE);
+    h.state_mut().notice = Some(crate::snapshot::Notice {
+        text: "Dial failed: Busy. The other side is on another call; try again later.".into(),
+        detail: Some("486 Busy Here".into()),
+    });
+    h.run();
+    // The footer settles its height after the first frames: hover where the label is now.
+    h.run_steps(5);
+    h.get_by_label_contains("Dial failed: Busy.").hover();
+    h.run_steps(60);
+    assert!(
+        h.query_by_label_contains("Details: 486 Busy Here")
+            .is_some()
+    );
+    // A plain notice has no details.
+    h.state_mut().notice = Some(crate::snapshot::Notice::plain(
+        "Dial failed: account lab-tls is not registered",
+    ));
+    h.run_steps(5);
+    h.get_by_label_contains("Dial failed: account").hover();
+    h.run_steps(60);
+    assert!(h.query_by_label_contains("Details:").is_none());
 }

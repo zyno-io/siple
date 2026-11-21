@@ -24,6 +24,7 @@ mod keys;
 mod rail;
 pub(crate) mod rpc;
 pub(crate) mod settings;
+mod setup_link;
 mod stage;
 mod transfer;
 pub(crate) mod wizard;
@@ -42,7 +43,7 @@ use siple_sip::{AccountStatus, AnswerMode, CallDirection, CallInfo, CallState, C
 use siple_sip::{RegState, TransferSession};
 
 use crate::actions::{Actions, open_path, open_store_page, open_url};
-use crate::snapshot::{RegClass, Shared, Snapshot, reg_class, visible_calls};
+use crate::snapshot::{Notice, RegClass, Shared, Snapshot, reg_class, visible_calls};
 use crate::theme::{
     self, FS_BODY, FS_TITLE, NARROW_BREAKPOINT, Palette, R_MD, SP_L, SP_S, Tone, WIDE_BREAKPOINT,
     icon as ic,
@@ -64,7 +65,7 @@ pub struct ViewModel<'a> {
     /// A log directory exists (shows "Open logs").
     pub has_log_dir: bool,
     /// Transient failure message (last action that failed).
-    pub notice: Option<&'a str>,
+    pub notice: Option<&'a Notice>,
     /// Microphone level and echo-test progress (meters).
     pub live: LiveAudio,
 }
@@ -838,6 +839,28 @@ impl PhoneUi {
         }
     }
 
+    /// Routes a link that arrived from outside: a call link prefills the dial field, a setup link
+    /// opens the Review screen. Neither dials, tests, contacts a server or writes anything.
+    pub fn open_incoming(&mut self, link: &siple_core::uri::IncomingLink) {
+        match link {
+            siple_core::uri::IncomingLink::Dial(l) => self.prefill_dial(&l.target),
+            siple_core::uri::IncomingLink::Setup(l) => self.open_setup_link(l.clone()),
+        }
+    }
+
+    /// Opens the Review screen of a setup link (see [`wizard::WizardState::offer_link`]); when
+    /// the wizard cannot take it, a notice says why.
+    pub fn open_setup_link(&mut self, link: siple_core::provision::SetupLink) {
+        let snap = self.shared.snapshot();
+        let offer = self
+            .state
+            .wizard
+            .offer_link(link, wizard::Origin::Opened, &snap, Utc::now());
+        if let wizard::Offer::Refused(why) = offer {
+            self.shared.set_notice(why.to_string());
+        }
+    }
+
     /// Opens the Settings page (tray / app menu "Settings…").
     pub fn open_settings(&mut self) {
         self.state.settings.open = true;
@@ -935,7 +958,7 @@ impl eframe::App for PhoneUi {
             now: Utc::now(),
             config_path: &self.shared.config_path,
             has_log_dir: self.shared.log_dir.is_some(),
-            notice: notice.as_deref(),
+            notice: notice.as_ref(),
             live,
         };
         let actions = draw(ui, &vm, &mut self.state);

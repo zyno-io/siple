@@ -1,0 +1,108 @@
+# Flatpak (io.zyno.siple): builds x86_64 + aarch64 in Flathub's build image the way Flathub does, lints with
+# flatpak-builder-lint, smoke-tests in the container and uploads the .flatpak bundles as workflow artifacts (test
+# installs only: a bundle never updates itself, and it is never attached to a release). Its own run, like store.yml:
+# it never blocks release.yml. docs/RELEASING.md, "Flatpak (Flathub)".
+name: Flatpak
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+  pull_request:
+    paths:
+      - packaging/flatpak/**
+      - packaging/linux/**
+      - packaging/icons/**
+      - scripts/flatpak-*
+      - scripts/flathub-manifest.sh
+      - .github/workflows/flatpak.yml
+      - Cargo.lock
+      - Cargo.toml
+      - CHANGELOG.md
+  schedule:
+    - cron: "17 5 * * 1" # weekly: runtime, Rust extension and linter drift
+
+permissions:
+  contents: read
+
+concurrency:
+  group: flatpak-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CARGO_TERM_COLOR: always
+  IS_TAG: ${{ startsWith(github.ref, 'refs/tags/v') }}
+
+jobs:
+  sources:
+    name: Sources and notices
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: The metainfo lists the release being prepared or tagged
+        run: scripts/flatpak-check-release.sh "${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}"
+      - name: Screenshot URLs resolve
+        # Only the <image> elements: comments may hold a base URL that is not a file.
+        run: |
+          urls=$(sed -n 's|.*<image>\(https://[^<]*\)</image>.*|\1|p' packaging/linux/io.zyno.siple.metainfo.xml)
+          test -n "$urls"
+          for u in $urls; do curl -fsSIL -o /dev/null "$u"; done
+      - uses: taiki-e/install-action@25f51f6b1bf4e18876107cece836f4f77ac17c8c # v2.90.7
+        with:
+          tool: cargo-about
+      - name: Cargo sources cross-check rejects tampered fixtures
+        run: scripts/flatpak-cargo-sources.sh --self-test
+      - name: Offline cargo sources (pinned generator, verified against Cargo.lock)
+        run: scripts/flatpak-cargo-sources.sh
+      - name: Third-party notices
+        run: SIPLE_RELEASE=1 scripts/gen-licenses.sh packaging/flatpak/THIRD-PARTY-NOTICES.html
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: flatpak-sources
+          path: |
+            packaging/flatpak/cargo-sources.json
+            packaging/flatpak/THIRD-PARTY-NOTICES.html
+          if-no-files-found: error
+          retention-days: ${{ startsWith(github.ref, 'refs/tags/v') && 90 || 7 }}
+
+  build:
+    name: Build ${{ matrix.arch }}
+    needs: sources
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-latest
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    container:
+      # Flathub's build image, pinned by digest (multi-arch). Bump: docs/RELEASING.md, "Flatpak (Flathub)".
+      image: ghcr.io/flathub-infra/flatpak-github-actions:freedesktop-26.08@sha256:6ed6921bb5a9e1a916989971844f159b854b7b225880c381fa34f7a158863039
+      options: --privileged
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: flatpak-sources
+          path: packaging/flatpak
+      - name: Build, lint and smoke-test
+        run: scripts/flatpak-build.sh --arch ${{ matrix.arch }}
+        env:
+          SIPLE_TAG: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: flatpak-${{ matrix.arch }}
+          path: dist/flatpak/*.flatpak
+          if-no-files-found: error
+          retention-days: ${{ startsWith(github.ref, 'refs/tags/v') && 90 || 14 }}
+      - name: Summary
+        run: |
+          {
+            echo "### Flatpak ${{ matrix.arch }}"
+            echo
+            find dist/flatpak -name '*.flatpak' -exec du -h {} + | sed 's/^/    /'
+            echo
+            echo "Test install (pulls the runtime from Flathub): flatpak install --user ./Siple-*.flatpak"
+          } >> "$GITHUB_STEP_SUMMARY"

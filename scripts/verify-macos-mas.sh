@@ -13,9 +13,8 @@
 #
 # Needs: vtool, codesign, PlistBuddy, otool (Xcode command line tools); pkgutil for the .pkg.
 #
-# The CLI embedded-Info.plist check needs crates/siple-cli/build.rs (plan task T5) to have landed in the
-# build; until then it FAILS with an explicit message. It is a hard requirement: without it the sandbox traps
-# siple-cli at start.
+# The CLI must embed an Info.plist (crates/siple-cli/build.rs, `--features store`); without it the check
+# FAILS with an explicit message. It is a hard requirement: without it the sandbox traps siple-cli at start.
 set -uo pipefail
 
 MODE=full
@@ -60,6 +59,10 @@ enc="$(plist_get "$IP" ITSAppUsesNonExemptEncryption)"
 [ -n "$enc" ] && pass "ITSAppUsesNonExemptEncryption=$enc" || fail "ITSAppUsesNonExemptEncryption missing"
 check "PrivacyInfo.xcprivacy present and valid" plutil -lint "$APP/Contents/Resources/PrivacyInfo.xcprivacy"
 check "NSMicrophoneUsageDescription present" "$PB" -c "Print :NSMicrophoneUsageDescription" "$IP"
+urltypes="$("$PB" -c "Print :CFBundleURLTypes" "$IP" 2>&1)"
+for scheme in sip sips tel callto siple; do
+  grep -qxE "[[:space:]]*$scheme" <<<"$urltypes" && pass "URL scheme $scheme declared" || fail "CFBundleURLTypes does not declare the $scheme scheme"
+done
 
 echo "== build: binaries (SDK >= 26.0, minos 13.0, both architectures) =="
 for bin in "$GUI" "$CLI"; do
@@ -81,7 +84,7 @@ done
 echo "== build: store feature =="
 # A store binary checks for updates against the App Store only. Markers (all in crates/siple-core/src/update/):
 #   absent:  the GitHub releases API path (github.rs), any release asset download URL, the minisign signature
-#            name (the in-app installer, phase 2) - compiled out by --features store.
+#            name - compiled out by --features store.
 #   present: the App Store lookup (appstore.rs: HOST and PATH are separate constants).
 # (Not the bare github.com host: the config example text and the release page link mention it.)
 check_store_markers() {
@@ -100,13 +103,13 @@ check_store_markers() {
 check_store_markers "$GUI" siple
 check_store_markers "$CLI" siple-cli
 
-echo "== build: siple-cli embedded Info.plist (needed by the sandbox; crates/siple-cli/build.rs, task T5) =="
+echo "== build: siple-cli embedded Info.plist (needed by the sandbox; crates/siple-cli/build.rs) =="
 if [ -f "$CLI" ]; then
   sect="$(otool -s __TEXT __info_plist "$CLI" 2>/dev/null | grep -c '^[0-9a-f]\{8,\}')"
   if [ "$sect" -gt 0 ] && grep -aq '<key>CFBundleIdentifier</key>' "$CLI" && grep -aq 'io\.zyno\.siple-cli' "$CLI"; then
     pass "siple-cli has a __TEXT,__info_plist section with CFBundleIdentifier io.zyno.siple-cli"
   else
-    fail "siple-cli has NO embedded __TEXT,__info_plist (expected CFBundleIdentifier io.zyno.siple-cli). It comes from crates/siple-cli/build.rs with --features store (plan task T5); a sandboxed CLI without it is killed at start"
+    fail "siple-cli has NO embedded __TEXT,__info_plist (expected CFBundleIdentifier io.zyno.siple-cli). It comes from crates/siple-cli/build.rs with --features store; a sandboxed CLI without it is killed at start"
   fi
 fi
 

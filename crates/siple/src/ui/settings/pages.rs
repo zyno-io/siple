@@ -283,7 +283,7 @@ pub(super) fn notifications(ui: &mut egui::Ui, cx: &Cx, out: &mut Vec<UiAction>)
             out,
             "ui",
             "handle_links",
-            "Open sip:, sips:, tel: and callto: links",
+            "Open sip:, sips:, tel:, callto: and siple: setup links",
             "",
             &v,
         );
@@ -428,7 +428,10 @@ pub(super) fn advanced(ui: &mut egui::Ui, cx: &Cx, st: &mut UiState, out: &mut V
                 info_row(ui, p, &a.id, &set.join(", "));
             }
         }
-        if small_button(ui, p, "Open config", true).clicked() {
+        if small_button(ui, p, "Open config", true)
+            .on_hover_text(cx.vm.config_path.display().to_string())
+            .clicked()
+        {
             out.push(UiAction::OpenConfig);
         }
     });
@@ -458,6 +461,9 @@ fn updates_help(u: &siple_core::update::UpdateStatus) -> &'static str {
         }
         (SourceName::None, Some(DisabledReason::Sideloaded)) => {
             "This copy was not installed from the Microsoft Store, so there is nothing to check; update it the way you installed it."
+        }
+        (SourceName::None, Some(DisabledReason::ManagedByFlatpak)) => {
+            "Flatpak keeps Siple up to date: updates come from Flathub through your software center or the flatpak update command. Siple makes no update check of its own."
         }
         (SourceName::None, _) => "Update checks are not available in this installation.",
     }
@@ -541,6 +547,8 @@ fn updates_group(ui: &mut egui::Ui, cx: &Cx, st: &mut UiState, out: &mut Vec<UiA
         }
         let result = if st.settings.update_checking {
             "Checking...".to_string()
+        } else if u.disabled_reason == Some(siple_core::update::DisabledReason::ManagedByFlatpak) {
+            "Updated by Flatpak".to_string()
         } else if u.source == siple_core::update::SourceName::None {
             "Not available".to_string()
         } else if !u.enabled {
@@ -697,10 +705,10 @@ pub(super) fn developer(ui: &mut egui::Ui, cx: &Cx, out: &mut Vec<UiAction>) {
             .size(FS_SMALL)
             .color(p.muted),
         );
-        let snippet = "{\n  \"mcpServers\": {\n    \"siple\": { \"command\": \"siple-cli\", \"args\": [\"mcp\"] }\n  }\n}";
-        ui.add(egui::Label::new(mono(snippet, 11.5).color(p.text)).selectable(true));
+        let snippet = mcp_snippet(siple_core::config::channel::current());
+        ui.add(egui::Label::new(mono(&snippet, 11.5).color(p.text)).selectable(true));
         if small_button(ui, p, "Copy snippet", true).clicked() {
-            ui.ctx().copy_text(snippet.to_string());
+            ui.ctx().copy_text(snippet);
         }
     });
     group(ui, p, "Developer tools", |ui| {
@@ -711,7 +719,7 @@ pub(super) fn developer(ui: &mut egui::Ui, cx: &Cx, out: &mut Vec<UiAction>) {
             "ui",
             "developer_tools",
             "Show developer tools",
-            "",
+            "Show the log pane and the Open config / Open logs buttons in the footer, and registration and subscription times in the account and extension tooltips",
             &v,
         );
         ui.horizontal(|ui| {
@@ -738,7 +746,22 @@ pub(in crate::ui) fn sec_toggle_pub(
     sec_toggle(ui, p, out, section, key, label, "", v);
 }
 
-/// Value of the "Speech commands" info row: the Mac App Store edition cannot run them at all.
+/// The MCP client configuration for `channel`: the Flatpak edition's CLI is reached through
+/// `flatpak run`, every other edition has `siple-cli` on its path.
+fn mcp_snippet(channel: &siple_core::config::channel::Channel) -> String {
+    use siple_core::config::channel::ChannelKind;
+    if channel.kind == ChannelKind::Flatpak {
+        format!(
+            "{{\n  \"mcpServers\": {{\n    \"siple\": {{\n      \"command\": \"flatpak\",\n      \"args\": [\"run\", \"--command=siple-cli\", \"{}\", \"mcp\"]\n    }}\n  }}\n}}",
+            siple_core::config::APP_ID
+        )
+    } else {
+        "{\n  \"mcpServers\": {\n    \"siple\": { \"command\": \"siple-cli\", \"args\": [\"mcp\"] }\n  }\n}"
+            .to_string()
+    }
+}
+
+/// Value of the "Speech commands" info row: the Mac App Store and Flatpak editions cannot run them at all.
 fn speech_commands_label(
     configured: bool,
     channel: &siple_core::config::channel::Channel,
@@ -763,7 +786,31 @@ mod speech_label_tests {
             speech_commands_label(true, &Channel::MAC_APP_STORE),
             "not available in this edition"
         );
+        assert_eq!(
+            speech_commands_label(true, &Channel::FLATPAK),
+            "not available in this edition"
+        );
         assert_eq!(speech_commands_label(true, &Channel::DIRECT), "configured");
         assert_eq!(speech_commands_label(false, &Channel::DIRECT), "(none)");
+    }
+}
+
+#[cfg(test)]
+mod mcp_snippet_tests {
+    use super::mcp_snippet;
+    use siple_core::config::channel::Channel;
+
+    #[test]
+    fn the_flatpak_snippet_goes_through_flatpak_run() {
+        let direct = mcp_snippet(&Channel::DIRECT);
+        assert!(direct.contains("\"command\": \"siple-cli\""));
+        let f: serde_json::Value = serde_json::from_str(&mcp_snippet(&Channel::FLATPAK)).unwrap();
+        assert_eq!(f["mcpServers"]["siple"]["command"], "flatpak");
+        assert_eq!(
+            f["mcpServers"]["siple"]["args"],
+            serde_json::json!(["run", "--command=siple-cli", "io.zyno.siple", "mcp"])
+        );
+        let d: serde_json::Value = serde_json::from_str(&direct).unwrap();
+        assert_eq!(d["mcpServers"]["siple"]["args"], serde_json::json!(["mcp"]));
     }
 }

@@ -119,6 +119,8 @@ pub(crate) fn blf(uri: &str, label: &str, state: BlfState) -> BlfStatus {
             last_code: (state == BlfState::Failed).then_some(404),
             last_reason: (state == BlfState::Failed).then(|| "Not Found".to_string()),
             expires_at: None,
+            subscribed_at: None,
+            last_refreshed_at: None,
             retry_at: None,
         },
         stale: false,
@@ -479,7 +481,7 @@ struct TestApp {
     snap: Snapshot,
     state: UiState,
     config_path: PathBuf,
-    notice: Option<String>,
+    notice: Option<crate::snapshot::Notice>,
     live: crate::ui::LiveAudio,
 }
 
@@ -490,7 +492,7 @@ impl eframe::App for TestApp {
             now: now(),
             config_path: &self.config_path,
             has_log_dir: true,
-            notice: self.notice.as_deref(),
+            notice: self.notice.as_ref(),
             live: self.live.clone(),
         };
         let _ = draw(ui, &vm, &mut self.state);
@@ -648,7 +650,9 @@ fn visual_blf_list() {
 #[test]
 fn visual_config_error() {
     render_all("config_error", config_error, |h| {
-        h.state_mut().notice = Some("Dial failed: account lab-tls is not registered".into());
+        h.state_mut().notice = Some(crate::snapshot::Notice::plain(
+            "Dial failed: account lab-tls is not registered",
+        ));
     });
 }
 
@@ -713,6 +717,7 @@ fn visual_settings_accounts() {
             RpcReply {
                 tag: RpcTag::TestAccount("desk-1001".into()),
                 result: Ok(serde_json::json!({"diagnosis": "tls_untrusted", "ok": false,
+                    "problem": siple_sip::problem::Problem::TlsUntrusted,
                     "fingerprint": "ab12".repeat(16),
                     "message": "The server's TLS certificate is not trusted (self-signed certificate)"})),
             },
@@ -775,6 +780,8 @@ fn visual_wizard_account() {
             RpcReply {
                 tag: RpcTag::TestDraft,
                 result: Ok(serde_json::json!({"diagnosis": "auth_failed", "ok": false,
+                    "code": 403,
+                    "problem": siple_sip::problem::Problem::AuthFailed,
                     "message": "Wrong username or password (the server answered 403)"})),
             },
             &snap,
@@ -796,6 +803,57 @@ fn visual_wizard_done() {
     render_wn("wizard_done", wizard_snapshot, |h| {
         h.state_mut().state.wizard.restart();
         h.state_mut().state.wizard.step = crate::ui::wizard::Step::Done;
+    });
+}
+
+/// A setup link whose registrar is outside its domain (the Review screen warns about it).
+pub(crate) fn setup_link_outside() -> siple_core::provision::SetupLink {
+    use siple_core::config::{Profile, SrtpPolicy, Transport};
+    use siple_core::provision::{SetupAccount, SetupLink};
+    SetupLink::new(SetupAccount {
+        username: "1001".into(),
+        domain: "example.test".into(),
+        display_name: "Front desk".into(),
+        registrar: "pbx.vendor-hosting.test:5061".into(),
+        transport: Some(Transport::Tls),
+        srtp: Some(SrtpPolicy::Mandatory),
+        profile: Some(Profile::Yealink),
+        ..Default::default()
+    })
+}
+
+#[test]
+fn visual_setup_review() {
+    use crate::ui::wizard::Origin;
+    render_wn("setup_review", wizard_snapshot, |h| {
+        let snap = h.state().snap.clone();
+        // Seen for two seconds already: Continue is enabled.
+        h.state_mut().state.wizard.offer_link(
+            setup_link_outside(),
+            Origin::Opened,
+            &snap,
+            now() - Duration::seconds(2),
+        );
+    });
+}
+
+#[test]
+fn visual_setup_account_from_link() {
+    use crate::ui::draft::DraftForm;
+    use crate::ui::wizard::{Origin, Step};
+    render_wn("setup_account_from_link", base_snapshot, |h| {
+        let snap = h.state().snap.clone();
+        let link = setup_link_outside();
+        let w = &mut h.state_mut().state.wizard;
+        w.offer_link(
+            link.clone(),
+            Origin::Opened,
+            &snap,
+            now() - Duration::seconds(2),
+        );
+        // What Continue does.
+        w.form = DraftForm::from_link(&link.account);
+        w.step = Step::Account;
     });
 }
 

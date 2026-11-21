@@ -13,6 +13,7 @@ use siple_core::App;
 use siple_core::audio::{AudioStatus, DeviceInfo, DeviceList, MicPermission, mic_permission};
 use siple_core::state::EffectiveDevices;
 use siple_core::update::{InstallStatus, SourceName, UpdateAction};
+use siple_sip::problem::{Context, Problem, classify};
 use siple_sip::{AccountStatus, CallInfo, CallState, RegState};
 use tokio::sync::Notify;
 
@@ -165,6 +166,24 @@ pub struct ConfigErrorView {
     pub errors: Vec<String>,
 }
 
+/// A transient message in the footer: `text` is what is shown, `detail` (the server's raw answer)
+/// goes to a hover.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Notice {
+    pub text: String,
+    pub detail: Option<String>,
+}
+
+impl Notice {
+    /// A message without a details line.
+    pub fn plain(text: impl Into<String>) -> Self {
+        Self {
+            text: text.into(),
+            detail: None,
+        }
+    }
+}
+
 /// State shared between the UI thread and the tokio tasks.
 pub struct Shared {
     snapshot: Mutex<Arc<Snapshot>>,
@@ -172,7 +191,7 @@ pub struct Shared {
     pub want_logs: AtomicBool,
     /// Wakes the poller early (events, user actions).
     pub wake: Notify,
-    notice: Mutex<Option<(String, Instant)>>,
+    notice: Mutex<Option<(Notice, Instant)>>,
     /// Answers of in-process control-API calls, waiting for the UI thread.
     replies: Mutex<Vec<crate::ui::rpc::RpcReply>>,
     /// The egui context (set by the first frame), to repaint when a reply arrives.
@@ -278,11 +297,16 @@ impl Shared {
 
     /// Records a transient message for the UI (action failures).
     pub fn set_notice(&self, msg: impl Into<String>) {
-        *lock(&self.notice) = Some((msg.into(), Instant::now()));
+        self.set_notice_full(Notice::plain(msg));
+    }
+
+    /// Like [`Shared::set_notice`], with a details line for the hover.
+    pub fn set_notice_full(&self, notice: Notice) {
+        *lock(&self.notice) = Some((notice, Instant::now()));
     }
 
     /// The current message, if it is younger than `ttl`.
-    pub fn notice(&self, ttl: Duration) -> Option<String> {
+    pub fn notice(&self, ttl: Duration) -> Option<Notice> {
         lock(&self.notice)
             .as_ref()
             .filter(|(_, at)| at.elapsed() < ttl)
@@ -476,8 +500,15 @@ pub fn reg_label(s: &AccountStatus) -> String {
         RegState::Registered { .. } => "registered".into(),
         RegState::Registering => "registering".into(),
         RegState::WaitingForNetwork => "waiting for network".into(),
-        RegState::Failed { code, reason, .. } if *code == 0 => format!("failed: {reason}"),
-        RegState::Failed { code, reason, .. } => format!("failed: {code} {reason}"),
+        // An unclassified failure's title is the raw text: keep "failed" in it, so the state is
+        // not conveyed by the lamp colour alone.
+        RegState::Failed { .. } => reg_failure(s).map_or_else(
+            || "failed".into(),
+            |f| match f.problem {
+                Problem::Other => format!("failed: {}", f.title),
+                _ => f.title,
+            },
+        ),
         RegState::Disabled => "disabled".into(),
         RegState::Unregistered => "not registered".into(),
     }
@@ -506,8 +537,156 @@ pub fn reg_tooltip(s: &AccountStatus, now: DateTime<Utc>) -> String {
             local(expires_at),
             format_duration(remaining)
         )
+    } else if let Some(f) = reg_failure(s) {
+        f.tooltip()
     } else {
         reg_label(s)
+    }
+}
+
+/// `403 Forbidden`; just the text for a local failure (code 0). Trimmed.
+pub fn sip_detail(code: u16, reason: &str) -> String {
+    if code == 0 {
+        reason.trim().to_string()
+    } else {
+        format!("{code} {reason}").trim().to_string()
+    }
+}
+
+/// A failure as the views show it: the catalog title and hint (rendered from the in-process
+/// `Problem`, never from API strings) and the server's raw answer as a details line.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FailureView {
+    pub problem: Problem,
+    /// The catalog title; for `Other` the raw text (a vague title would hide what happened).
+    pub title: String,
+    pub hint: &'static str,
+    /// The raw answer (`403 Forbidden`); empty for `Other`, whose title already is the raw text.
+    pub detail: String,
+}
+
+impl FailureView {
+    /// Title, hint and details as plain lines (tooltips, BLF keys).
+    pub fn lines(&self) -> Vec<String> {
+        let mut v = vec![self.title.clone(), self.hint.to_string()];
+        if !self.detail.is_empty() {
+            v.push(format!("Details: {}", self.detail));
+        }
+        v
+    }
+
+    fn tooltip(&self) -> String {
+        self.lines().join("\n")
+    }
+}
+
+/// The view of `p` for a failure whose raw answer is `code` / `reason`.
+pub fn failure_view(p: Problem, code: u16, reason: &str) -> FailureView {
+    let raw = sip_detail(code, reason);
+    if p == Problem::Other {
+        FailureView {
+            problem: p,
+            title: if raw.is_empty() {
+                p.title().into()
+            } else {
+                raw
+            },
+            hint: p.hint(),
+            detail: String::new(),
+        }
+    } else {
+        FailureView {
+            problem: p,
+            title: p.title().into(),
+            hint: p.hint(),
+            detail: raw,
+        }
+    }
+}
+
+fn next_attempt(at: DateTime<Utc>) -> String {
+    format!(
+        "next attempt {}",
+        at.with_timezone(&chrono::Local).format("%H:%M:%S")
+    )
+}
+
+/// The failure of an enabled account whose registration failed; the details also say when the
+/// next attempt happens.
+pub fn reg_failure(s: &AccountStatus) -> Option<FailureView> {
+    if !s.enabled {
+        return None;
+    }
+    let RegState::Failed {
+        code,
+        reason,
+        retry_at,
+    } = &s.registration
+    else {
+        return None;
+    };
+    let mut f = failure_view(s.registration.problem()?, *code, reason);
+    let next = next_attempt(*retry_at);
+    f.detail = if f.detail.is_empty() {
+        next
+    } else {
+        format!("{} \u{b7} {next}", f.detail)
+    };
+    Some(f)
+}
+
+/// The failure behind a BLF key whose subscription failed or is being retried.
+pub fn blf_failure(b: &siple_sip::BlfStatus) -> Option<FailureView> {
+    use siple_sip::SubscriptionPhase::{Failed, Retrying};
+    let sub = &b.subscription;
+    if !matches!(sub.phase, Failed | Retrying) {
+        return None;
+    }
+    let mut f = failure_view(
+        sub.problem()?,
+        sub.last_code.unwrap_or(0),
+        sub.last_reason.as_deref().unwrap_or(""),
+    );
+    if sub.phase == Retrying
+        && let Some(at) = sub.retry_at
+    {
+        let next = next_attempt(at);
+        f.detail = if f.detail.is_empty() {
+            next
+        } else {
+            format!("{}, {next}", f.detail)
+        };
+    }
+    Some(f)
+}
+
+/// The failure that ended a call; `None` for a normal end.
+pub fn end_failure(e: &siple_sip::CallEnd) -> Option<FailureView> {
+    Some(failure_view(e.problem()?, e.code, &e.reason))
+}
+
+/// The failure of a transfer session: its last error, else a failed `refer` NOTIFY.
+pub fn transfer_failure(t: &siple_sip::TransferSession) -> Option<FailureView> {
+    if let Some(e) = &t.last_error
+        && let Some(p) = e.problem()
+    {
+        return Some(failure_view(p, e.code, &e.reason));
+    }
+    let n = t.last_notify.as_ref().filter(|n| n.code >= 300)?;
+    let p = classify(Context::Call, n.code, &n.reason).unwrap_or(Problem::Other);
+    Some(failure_view(p, n.code, &n.reason))
+}
+
+/// The footer notice of a failed action: `"Dial failed: Busy. The other side is on another call;
+/// try again later."` with the raw error as details. Without a named problem the raw text is shown
+/// as it always was.
+pub fn action_notice(what: &str, problem: Option<Problem>, raw: &str) -> Notice {
+    match problem {
+        Some(p) if p != Problem::Other => Notice {
+            text: format!("{what} failed: {}. {}", p.title(), p.hint()),
+            detail: Some(raw.to_string()),
+        },
+        _ => Notice::plain(format!("{what} failed: {raw}")),
     }
 }
 
@@ -543,14 +722,12 @@ pub fn blf_state_label(s: siple_sip::BlfState) -> &'static str {
     s.name()
 }
 
-/// State text of a BLF key: the state name, but a failed subscription says so with its code
-/// (`Sub failed 404`), so Busy and Failed never differ by colour alone.
+/// State text of a BLF key: the state name; a failed subscription reads `Failed` (the problem and
+/// the code are in the tooltip, the accessible value and the banner), so Busy and Failed never
+/// differ by colour alone.
 pub fn blf_state_text(b: &siple_sip::BlfStatus) -> String {
     if b.state == siple_sip::BlfState::Failed {
-        match b.subscription.last_code {
-            Some(c) => format!("Sub failed {c}"),
-            None => "Sub failed".into(),
-        }
+        "Failed".into()
     } else {
         let s = blf_state_label(b.state);
         let mut c = s.chars();
@@ -560,38 +737,78 @@ pub fn blf_state_text(b: &siple_sip::BlfStatus) -> String {
     }
 }
 
-/// Extra tooltip lines about the subscription health of a BLF key: the failure reason, the
-/// retry (`Retrying (503), next attempt 12:04:05`) and the stale marker.
+/// Extra tooltip lines about the subscription health of a BLF key: the problem (title, hint and
+/// the server's answer with the next attempt) and the stale marker.
 pub fn blf_health_lines(b: &siple_sip::BlfStatus) -> Vec<String> {
-    use siple_sip::SubscriptionPhase::*;
-    let sub = &b.subscription;
-    let mut v = Vec::new();
-    match sub.phase {
-        Retrying => {
-            let mut l = match sub.last_code {
-                Some(c) => format!("Retrying ({c})"),
-                None => "Retrying".to_string(),
-            };
-            if let Some(at) = sub.retry_at {
-                let local = at.with_timezone(&chrono::Local);
-                l.push_str(&format!(", next attempt {}", local.format("%H:%M:%S")));
-            }
-            v.push(l);
-            if let Some(r) = &sub.last_reason {
-                v.push(format!("Subscription: {r}"));
-            }
-        }
-        Failed => {
-            if let Some(r) = &sub.last_reason {
-                v.push(format!("Subscription: {r}"));
-            }
-        }
-        Pending | Active => {}
-    }
+    let mut v = blf_failure(b).map(|f| f.lines()).unwrap_or_default();
     if b.stale {
         v.push("Stale: this state may be out of date".into());
     }
     v
+}
+
+/// `14:02:11`, or `2026-11-19 14:02:11` when the local date is not `today`.
+fn local_time_text(at: DateTime<Utc>, today: chrono::NaiveDate) -> String {
+    let local = at.with_timezone(&chrono::Local);
+    if local.date_naive() == today {
+        local.format("%H:%M:%S").to_string()
+    } else {
+        local.format("%Y-%m-%d %H:%M:%S").to_string()
+    }
+}
+
+/// Tooltip lines with the registration times of a registered account, shown only with
+/// developer tools on. Absolute local times: the GUI only repaints on snapshot changes, so
+/// relative ones would go stale while hovering.
+pub fn reg_time_lines(a: &AccountStatus, developer_tools: bool) -> Vec<String> {
+    if !developer_tools {
+        return Vec::new();
+    }
+    reg_time_lines_on(a, chrono::Local::now().date_naive())
+}
+
+fn reg_time_lines_on(a: &AccountStatus, today: chrono::NaiveDate) -> Vec<String> {
+    // A disabled account can still report Registered until its unREGISTER completes.
+    if !a.enabled {
+        return Vec::new();
+    }
+    match &a.registration {
+        RegState::Registered {
+            registered_at,
+            last_renewed_at,
+            expires_at,
+            granted_secs,
+        } => vec![
+            format!("Registered {}", local_time_text(*registered_at, today)),
+            format!("Last renewal {}", local_time_text(*last_renewed_at, today)),
+            format!(
+                "Expires {} ({granted_secs} s granted)",
+                local_time_text(*expires_at, today)
+            ),
+        ],
+        _ => Vec::new(),
+    }
+}
+
+/// Tooltip lines with the subscription times of a BLF key, only the known ones, shown only with
+/// developer tools on.
+pub fn blf_time_lines(b: &siple_sip::BlfStatus, developer_tools: bool) -> Vec<String> {
+    if !developer_tools {
+        return Vec::new();
+    }
+    blf_time_lines_on(b, chrono::Local::now().date_naive())
+}
+
+fn blf_time_lines_on(b: &siple_sip::BlfStatus, today: chrono::NaiveDate) -> Vec<String> {
+    let sub = &b.subscription;
+    [
+        ("Subscribed", sub.subscribed_at),
+        ("Last refresh", sub.last_refreshed_at),
+        ("Expires", sub.expires_at),
+    ]
+    .into_iter()
+    .filter_map(|(label, at)| at.map(|at| format!("{label} {}", local_time_text(at, today))))
+    .collect()
 }
 
 /// Tooltip lines for the dialogs behind a BLF state (`ringing from 1019 (Dana)`).
@@ -796,18 +1013,168 @@ mod tests {
             reg_class(&status(false, RegState::WaitingForNetwork)),
             RegClass::Inactive
         );
-        assert_eq!(reg_label(&status(true, failed)), "failed: 403 Forbidden");
+        // A named problem reads as its title; the raw answer goes to the details.
         assert_eq!(
-            reg_label(&status(
-                true,
-                RegState::Failed {
-                    code: 0,
-                    reason: "dns".into(),
-                    retry_at: at
-                }
-            )),
-            "failed: dns"
+            reg_label(&status(true, failed.clone())),
+            "Wrong username or password"
         );
+        let f = reg_failure(&status(true, failed.clone())).unwrap();
+        assert_eq!(f.problem, Problem::AuthFailed);
+        assert_eq!(f.hint, Problem::AuthFailed.hint());
+        assert!(
+            f.detail.starts_with("403 Forbidden \u{b7} next attempt "),
+            "{}",
+            f.detail
+        );
+        let tip = reg_tooltip(&status(true, failed.clone()), at);
+        let lines: Vec<&str> = tip.lines().collect();
+        assert_eq!(lines[0], "Wrong username or password");
+        assert_eq!(lines[1], Problem::AuthFailed.hint());
+        assert!(lines[2].starts_with("Details: 403 Forbidden"), "{tip}");
+        // Disabled accounts show no failure.
+        assert!(reg_failure(&status(false, failed)).is_none());
+        assert!(reg_failure(&status(true, RegState::Registering)).is_none());
+        // A local failure keeps its text as the detail; one the catalog cannot name shows the
+        // raw text as the title.
+        let dns = status(
+            true,
+            RegState::Failed {
+                code: 0,
+                reason: "DNS: no such host".into(),
+                retry_at: at,
+            },
+        );
+        assert_eq!(reg_label(&dns), "Can't find the server");
+        assert!(
+            reg_failure(&dns)
+                .unwrap()
+                .detail
+                .starts_with("DNS: no such host")
+        );
+        let odd = status(
+            true,
+            RegState::Failed {
+                code: 0,
+                reason: "gremlins".into(),
+                retry_at: at,
+            },
+        );
+        assert_eq!(reg_label(&odd), "failed: gremlins");
+        let f = reg_failure(&odd).unwrap();
+        assert_eq!(f.problem, Problem::Other);
+        assert!(f.detail.starts_with("next attempt "), "{}", f.detail);
+    }
+
+    #[test]
+    fn sip_detail_and_failure_views() {
+        assert_eq!(sip_detail(403, "Forbidden"), "403 Forbidden");
+        assert_eq!(sip_detail(403, ""), "403");
+        assert_eq!(sip_detail(0, "  DNS: x "), "DNS: x");
+        let v = failure_view(Problem::Busy, 486, "Busy Here");
+        assert_eq!(
+            (v.title.as_str(), v.detail.as_str()),
+            ("Busy", "486 Busy Here")
+        );
+        assert_eq!(
+            v.lines(),
+            ["Busy", Problem::Busy.hint(), "Details: 486 Busy Here"]
+        );
+        let v = failure_view(Problem::Other, 599, "Weird");
+        assert_eq!((v.title.as_str(), v.detail.as_str()), ("599 Weird", ""));
+    }
+
+    #[test]
+    fn action_notices_name_the_problem_and_keep_the_raw_text() {
+        let n = action_notice("Dial", Some(Problem::Busy), "486 Busy Here");
+        assert_eq!(
+            n.text,
+            format!("Dial failed: Busy. {}", Problem::Busy.hint())
+        );
+        assert_eq!(n.detail.as_deref(), Some("486 Busy Here"));
+        // No problem, or `other`: today's text, no details.
+        for p in [None, Some(Problem::Other)] {
+            let n = action_notice("Dial", p, "account lab is not registered");
+            assert_eq!(
+                n,
+                Notice::plain("Dial failed: account lab is not registered")
+            );
+        }
+    }
+
+    #[test]
+    fn notices_expire_and_carry_details() {
+        let shared = Shared::new(
+            crate::visual_tests::base_snapshot(),
+            std::path::PathBuf::new(),
+            None,
+        );
+        assert!(shared.notice(Duration::from_secs(60)).is_none());
+        shared.set_notice("plain");
+        assert_eq!(
+            shared.notice(Duration::from_secs(60)),
+            Some(Notice::plain("plain"))
+        );
+        shared.set_notice_full(Notice {
+            text: "t".into(),
+            detail: Some("d".into()),
+        });
+        assert_eq!(
+            shared
+                .notice(Duration::from_secs(60))
+                .unwrap()
+                .detail
+                .as_deref(),
+            Some("d")
+        );
+        assert!(shared.notice(Duration::ZERO).is_none());
+    }
+
+    #[test]
+    fn end_and_transfer_failures() {
+        use siple_sip::{CallEnd, EndCause, EndedBy, TransferError, TransferNotify};
+        let end = |cause, by, code, reason: &str| CallEnd {
+            code,
+            reason: reason.into(),
+            by,
+            missed: false,
+            q850_cause: None,
+            cause,
+        };
+        let busy =
+            end_failure(&end(EndCause::Rejected, EndedBy::Remote, 486, "Busy Here")).unwrap();
+        assert_eq!(busy.problem, Problem::Busy);
+        assert_eq!(busy.detail, "486 Busy Here");
+        assert!(end_failure(&end(EndCause::Hangup, EndedBy::Local, 200, "OK")).is_none());
+        assert!(end_failure(&end(EndCause::Rejected, EndedBy::Local, 486, "Busy Here")).is_none());
+
+        let at = Utc::now();
+        let mut t = crate::visual_tests::session(siple_sip::TransferPhase::ConsultConnected);
+        assert!(transfer_failure(&t).is_none());
+        t.last_error = Some(TransferError {
+            stage: "refer".into(),
+            code: 403,
+            reason: "Forbidden".into(),
+        });
+        assert_eq!(transfer_failure(&t).unwrap().problem, Problem::Forbidden);
+        // A superseded session has no problem; a failed NOTIFY stands in.
+        t.last_error = Some(TransferError {
+            stage: "superseded".into(),
+            code: 0,
+            reason: "replaced".into(),
+        });
+        assert!(transfer_failure(&t).is_none());
+        t.last_notify = Some(TransferNotify {
+            code: 486,
+            reason: "Busy Here".into(),
+            at,
+        });
+        assert_eq!(transfer_failure(&t).unwrap().problem, Problem::Busy);
+        t.last_notify = Some(TransferNotify {
+            code: 180,
+            reason: "Ringing".into(),
+            at,
+        });
+        assert!(transfer_failure(&t).is_none());
     }
 
     #[test]
@@ -871,6 +1238,8 @@ mod tests {
                 last_code: None,
                 last_reason: None,
                 expires_at: None,
+                subscribed_at: None,
+                last_refreshed_at: None,
                 retry_at: None,
             },
             stale: false,
@@ -883,13 +1252,21 @@ mod tests {
         assert!(blf_health_lines(&b).is_empty());
         b.state = BlfState::Failed;
         b.subscription.phase = siple_sip::SubscriptionPhase::Failed;
-        assert_eq!(blf_state_text(&b), "Sub failed");
+        assert_eq!(blf_state_text(&b), "Failed");
         b.subscription.last_code = Some(404);
         b.subscription.last_reason = Some("Not Found".into());
-        assert_eq!(blf_state_text(&b), "Sub failed 404");
-        assert_eq!(blf_health_lines(&b), ["Subscription: Not Found"]);
+        // The key reads plain "Failed"; the problem and the server's answer are in the tooltip.
+        assert_eq!(blf_state_text(&b), "Failed");
+        assert_eq!(
+            blf_health_lines(&b),
+            [
+                "Extension not found",
+                Problem::ExtensionNotFound.hint(),
+                "Details: 404 Not Found"
+            ]
+        );
         b.stale = true;
-        assert_eq!(blf_health_lines(&b).len(), 2);
+        assert_eq!(blf_health_lines(&b).len(), 4);
         // Retrying keeps the last known state and says when it tries again.
         b.state = BlfState::Ringing;
         b.subscription.phase = siple_sip::SubscriptionPhase::Retrying;
@@ -898,9 +1275,13 @@ mod tests {
         b.subscription.retry_at = Some(Utc::now() + chrono::Duration::seconds(30));
         assert_eq!(blf_state_text(&b), "Ringing");
         let l = blf_health_lines(&b);
-        assert!(l[0].starts_with("Retrying (503), next attempt "), "{l:?}");
-        assert_eq!(l[1], "Subscription: Service Unavailable");
-        assert_eq!(l[2], "Stale: this state may be out of date");
+        assert_eq!(l[0], "The server had a problem");
+        assert_eq!(l[1], Problem::ServerError.hint());
+        assert!(
+            l[2].starts_with("Details: 503 Service Unavailable, next attempt "),
+            "{l:?}"
+        );
+        assert_eq!(l[3], "Stale: this state may be out of date");
         b.state = BlfState::Ringing;
         b.stale = false;
         assert_eq!(blf_dialog_lines(&b), ["early from Dana <sip:1019@x>"]);
@@ -912,5 +1293,83 @@ mod tests {
     fn call_state_labels() {
         assert_eq!(call_state_label(CallState::Held), "On hold");
         assert_eq!(call_state_label(CallState::Ringing), "Ringing");
+    }
+
+    fn blf_fixture() -> siple_sip::BlfStatus {
+        siple_sip::BlfStatus {
+            account: "a".into(),
+            uri: "1018".into(),
+            label: String::new(),
+            state: siple_sip::BlfState::Idle,
+            dialogs: Vec::new(),
+            updated_at: Utc::now(),
+            group: String::new(),
+            pickup: siple_sip::PickupMode::Off,
+            subscription: siple_sip::BlfSubscription {
+                phase: siple_sip::SubscriptionPhase::Active,
+                last_code: None,
+                last_reason: None,
+                expires_at: None,
+                subscribed_at: None,
+                last_refreshed_at: None,
+                retry_at: None,
+            },
+            stale: false,
+        }
+    }
+
+    fn local_utc(y: i32, m: u32, d: u32, h: u32, mi: u32, sec: u32) -> DateTime<Utc> {
+        chrono::Local
+            .with_ymd_and_hms(y, m, d, h, mi, sec)
+            .unwrap()
+            .with_timezone(&Utc)
+    }
+
+    #[test]
+    fn reg_time_lines_format_and_date_prefix() {
+        let today = chrono::NaiveDate::from_ymd_opt(2026, 11, 19).unwrap();
+        let st = status(
+            true,
+            RegState::Registered {
+                registered_at: local_utc(2026, 11, 19, 14, 2, 11),
+                last_renewed_at: local_utc(2026, 11, 19, 14, 32, 5),
+                expires_at: local_utc(2026, 11, 20, 0, 2, 5),
+                granted_secs: 3600,
+            },
+        );
+        assert_eq!(
+            reg_time_lines_on(&st, today),
+            [
+                "Registered 14:02:11",
+                "Last renewal 14:32:05",
+                "Expires 2026-11-20 00:02:05 (3600 s granted)"
+            ]
+        );
+        assert!(reg_time_lines_on(&status(true, RegState::Registering), today).is_empty());
+        // Disabled while the unREGISTER is still in flight: no times.
+        assert!(reg_time_lines_on(&status(false, st.registration.clone()), today).is_empty());
+        // Developer tools only.
+        assert!(reg_time_lines(&st, false).is_empty());
+        assert_eq!(reg_time_lines(&st, true).len(), 3);
+    }
+
+    #[test]
+    fn blf_time_lines_only_known() {
+        let today = chrono::NaiveDate::from_ymd_opt(2026, 11, 19).unwrap();
+        let mut b = blf_fixture();
+        assert!(blf_time_lines_on(&b, today).is_empty());
+        b.subscription.subscribed_at = Some(local_utc(2026, 11, 19, 14, 2, 11));
+        b.subscription.expires_at = Some(local_utc(2026, 11, 19, 15, 32, 5));
+        assert_eq!(
+            blf_time_lines_on(&b, today),
+            ["Subscribed 14:02:11", "Expires 15:32:05"]
+        );
+        assert!(blf_time_lines(&b, false).is_empty(), "developer tools only");
+        assert_eq!(blf_time_lines(&b, true).len(), 2);
+        b.subscription.last_refreshed_at = Some(local_utc(2026, 11, 18, 23, 0, 0));
+        assert_eq!(
+            blf_time_lines_on(&b, today)[1],
+            "Last refresh 2026-11-18 23:00:00"
+        );
     }
 }

@@ -600,6 +600,7 @@ async fn account_test_by_id_and_by_draft() {
             .starts_with("Registered via UDP in ")
     );
     assert!(!r.to_string().contains(PW));
+    assert!(r.get("problem").is_none(), "{r}");
     assert_eq!(
         account_state(&mut c, "kr-test").await["local_addr"],
         before,
@@ -614,12 +615,14 @@ async fn account_test_by_id_and_by_draft() {
     assert_eq!(r["diagnosis"], "auth_failed");
     assert_eq!(r["code"], 401);
     assert_eq!(r["ok"], false);
+    assert_eq!(r["problem"]["kind"], "auth_failed");
     let r = c
         .call("account.test", json!({"account":"t-mute","timeout_secs":1}))
         .await
         .unwrap();
     assert_eq!(r["diagnosis"], "timeout", "{r}");
     assert!(r["hint"].as_str().unwrap().contains("TCP or TLS"));
+    assert_eq!(r["problem"]["kind"], "no_response");
 
     // Drafts: nothing is saved; the password is used but never echoed.
     let draft = |reg: &Registrar| {
@@ -631,6 +634,7 @@ async fn account_test_by_id_and_by_draft() {
     assert_eq!(r["diagnosis"], "ok", "{r}");
     let r = c.call("account.test", draft(&reg_404)).await.unwrap();
     assert_eq!(r["diagnosis"], "not_found");
+    assert_eq!(r["problem"]["kind"], "user_not_found");
     assert!(!r.to_string().contains(PW));
     let text_after = env.text();
     assert!(!text_after.contains("2000"), "nothing was saved");

@@ -5,7 +5,7 @@ use siple_config::channel::Channel;
 
 /// `{channel, sandboxed, store, version}` for `channel`.
 ///
-/// `channel` is `direct`, `mas` or `msix`; `store` says whether the binary was compiled with the
+/// `channel` is `direct`, `mas`, `msix` or `flatpak`; `store` says whether the binary was compiled with the
 /// `store` feature (store edition: no GitHub update source, no installer); `version` is the Cargo package version.
 pub fn build_info(channel: &Channel) -> Value {
     json!({
@@ -29,5 +29,8 @@ mod tests {
         assert!(v["version"].is_string());
         assert_eq!(build_info(&Channel::DIRECT)["channel"], "direct");
         assert_eq!(build_info(&Channel::msix("a_b", None))["channel"], "msix");
+        let f = build_info(&Channel::FLATPAK);
+        assert_eq!(f["channel"], "flatpak");
+        assert_eq!(f["sandboxed"], true);
     }
 }

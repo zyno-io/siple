@@ -428,7 +428,7 @@ impl Inner {
     }
 
     /// Writes a device choice into `[audio]` of the config file through the ConfigActor, which
-    /// reloads and applies it (D3: the config is the only home of settings).
+    /// reloads and applies it (the config is the only home of settings).
     pub(crate) async fn set_user_devices(
         &self,
         sel: &PartialSelection,
@@ -1584,6 +1584,66 @@ mod tests {
             })
             .is_none()
         );
+    }
+
+    #[test]
+    fn failures_carry_a_problem_on_the_wire() {
+        use chrono::Utc;
+        use siple_sip::{
+            CallDirection, CallEnd, CallInfo, CallState, EndCause, EndedBy, HoldFlags,
+        };
+        let (_, _, _, data) = sip_event_to_wire(&SipEvent::Registration {
+            account: "a".into(),
+            state: RegState::Failed {
+                code: 403,
+                reason: "Forbidden".into(),
+                retry_at: Utc::now(),
+            },
+        })
+        .unwrap();
+        assert_eq!(data["state"], "failed");
+        assert_eq!(data["code"], 403);
+        assert_eq!(data["problem"]["kind"], "auth_failed");
+
+        let call = CallInfo {
+            id: "c1".into(),
+            account: "a".into(),
+            direction: CallDirection::Outbound,
+            state: CallState::Ended,
+            remote_uri: "sip:x@y".into(),
+            remote_display: None,
+            local_uri: "sip:a@y".into(),
+            sip_call_id: "sip".into(),
+            created_at: Utc::now(),
+            answered_at: None,
+            ended_at: Some(Utc::now()),
+            end: Some(CallEnd {
+                code: 486,
+                reason: "Busy Here".into(),
+                by: EndedBy::Remote,
+                missed: false,
+                q850_cause: None,
+                cause: EndCause::Rejected,
+            }),
+            hold: HoldFlags::default(),
+            hold_changed_at: None,
+            pending: None,
+            muted: false,
+            negotiated: None,
+            early_media: false,
+            alert_info: None,
+            pai: None,
+            rpid: None,
+            srtp_fallback: false,
+            transferred_from: None,
+            replaces: None,
+            transfer: None,
+            reconnecting: false,
+        };
+        let (kind, _, _, data) = sip_event_to_wire(&SipEvent::CallState { call }).unwrap();
+        assert_eq!(kind, "call.state");
+        assert_eq!(data["end"]["code"], 486);
+        assert_eq!(data["end"]["problem"]["kind"], "busy");
     }
 
     #[test]

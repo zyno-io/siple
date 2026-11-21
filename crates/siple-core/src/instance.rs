@@ -176,6 +176,9 @@ impl ControlEndpoints {
 /// Default control socket for `config_dir`: `<config_dir>/control.sock`, or a short fallback when
 /// that exceeds `sun_path`.
 ///
+/// Flatpak: the fallback is `$XDG_RUNTIME_DIR/app/$FLATPAK_ID/` (see [`short_socket_dir`]), shared by
+/// every instance of the app and the host, never the sandbox-private `/tmp`.
+///
 /// Mac App Store: the fallback is `<group container>/s.sock` for the default config dir and
 /// `<group container>/s-<hash>.sock` for any other (inside the container, reachable from the
 /// unsandboxed world; the sandbox's own `$TMPDIR` is not), never `temp_dir()`. When even that is
@@ -240,6 +243,16 @@ pub fn short_socket_dir() -> io::Result<PathBuf> {
         });
     }
     #[cfg(target_os = "linux")]
+    if siple_config::channel::current().kind == siple_config::channel::ChannelKind::Flatpak {
+        // SAFETY: geteuid has no preconditions and cannot fail.
+        let euid = unsafe { libc::geteuid() };
+        return flatpak_socket_dir_in(
+            std::env::var_os("XDG_RUNTIME_DIR").as_deref(),
+            std::env::var("FLATPAK_ID").ok().as_deref(),
+            euid,
+        );
+    }
+    #[cfg(target_os = "linux")]
     {
         // SAFETY: geteuid has no preconditions and cannot fail.
         let euid = unsafe { libc::geteuid() };
@@ -270,6 +283,52 @@ fn short_socket_dir_in(
     let dir = tmp_root.join(format!("siple-{euid}"));
     ensure_private_dir(&dir, euid)?;
     Ok(dir)
+}
+
+/// Flatpak core of [`short_socket_dir`]: `<xdg>/app/<app id>`, the directory Flatpak shares between
+/// all sandboxes of the app and the host. No `/tmp` fallback: the sandbox's `/tmp` is private to
+/// each instance, so a socket there could not be reached by `flatpak run --command=siple-cli`.
+#[cfg(unix)]
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+fn flatpak_socket_dir_in(
+    xdg: Option<&std::ffi::OsStr>,
+    app_id: Option<&str>,
+    euid: u32,
+) -> io::Result<PathBuf> {
+    let valid_id = |id: &str| {
+        !id.is_empty()
+            && !id.starts_with('.')
+            && id
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-'))
+    };
+    let unavailable = |what: String| {
+        io::Error::new(
+            io::ErrorKind::NotFound,
+            format!(
+                "{what}; set [control] tcp_listen or a shorter [control] unix_socket inside \
+                 ~/.var/app/io.zyno.siple/"
+            ),
+        )
+    };
+    let (Some(xdg), Some(id)) = (
+        xdg.filter(|d| !d.is_empty()),
+        app_id.filter(|i| valid_id(i)),
+    ) else {
+        return Err(unavailable(
+            "the Flatpak runtime directory is not available (XDG_RUNTIME_DIR or FLATPAK_ID is missing or invalid)"
+                .into(),
+        ));
+    };
+    let d = Path::new(xdg).join("app").join(id);
+    if usable_runtime_dir(&d, euid) {
+        Ok(d)
+    } else {
+        Err(unavailable(format!(
+            "the Flatpak runtime directory {} is not available",
+            d.display()
+        )))
+    }
 }
 
 /// Short, stable socket path (`<short_socket_dir>/siple-<hash of key>.sock`).
@@ -771,6 +830,32 @@ mod tests {
             assert!(real.is_dir(), "{real:?}");
             let p = real.join("siple-0123456789ab.sock");
             assert!(p.as_os_str().len() < 104, "{p:?}");
+        }
+
+        #[test]
+        fn flatpak_socket_dir_needs_the_shared_app_runtime_dir() {
+            use super::super::flatpak_socket_dir_in;
+            let t = tempfile::tempdir().unwrap();
+            let app = t.path().join("app").join("io.zyno.siple");
+            std::fs::create_dir_all(&app).unwrap();
+            let xdg = t.path().as_os_str();
+            let id = Some("io.zyno.siple");
+            assert_eq!(flatpak_socket_dir_in(Some(xdg), id, euid()).unwrap(), app);
+            // Missing directory, bad or absent id, absent xdg.
+            assert!(flatpak_socket_dir_in(Some(xdg), Some("io.zyno.other"), euid()).is_err());
+            assert!(flatpak_socket_dir_in(Some(xdg), Some("../x"), euid()).is_err());
+            assert!(flatpak_socket_dir_in(Some(xdg), Some(".hidden"), euid()).is_err());
+            assert!(flatpak_socket_dir_in(Some(xdg), Some(""), euid()).is_err());
+            assert!(flatpak_socket_dir_in(Some(xdg), None, euid()).is_err());
+            assert!(flatpak_socket_dir_in(None, id, euid()).is_err());
+            assert!(flatpak_socket_dir_in(Some("".as_ref()), id, euid()).is_err());
+            // Not ours.
+            assert!(flatpak_socket_dir_in(Some(xdg), id, euid().wrapping_add(1)).is_err());
+            // A symlink is refused.
+            let real = t.path().join("real");
+            std::fs::create_dir(&real).unwrap();
+            std::os::unix::fs::symlink(&real, t.path().join("app").join("link")).unwrap();
+            assert!(flatpak_socket_dir_in(Some(xdg), Some("link"), euid()).is_err());
         }
 
         #[test]

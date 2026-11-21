@@ -13,6 +13,7 @@ const ROUTES: Record<string, string> = {
   'API.md': '/agents/api-reference',
   'API-intro.md': '/agents/api-reference',
   'ARCHITECTURE.md': '/reference/architecture',
+  'ROADMAP.md': '/project/roadmap',
   'CONTRIBUTING.md': '/project/contributing',
   'SECURITY.md': '/project/security',
   'CHANGELOG.md': '/project/changelog'
@@ -114,6 +115,7 @@ export default defineConfig({
             { text: 'Quick start', link: '/guide/quick-start' },
             { text: 'Install', link: '/guide/install' },
             { text: 'Set up your account', link: '/guide/first-run' },
+            { text: 'Send a setup link', link: '/guide/setup-links' },
             { text: 'Questions and answers', link: '/guide/faq' }
           ]
         },
@@ -169,6 +171,7 @@ export default defineConfig({
           items: [
             { text: 'Build from source', link: '/project/build' },
             { text: 'Contributing', link: '/project/contributing' },
+            { text: 'Roadmap', link: '/project/roadmap' },
             { text: 'Security', link: '/project/security' },
             { text: 'Licence', link: '/project/licence' },
             { text: 'Changelog', link: '/project/changelog' }
@@ -188,6 +191,7 @@ export default defineConfig({
           'agents/api-reference.md': 'docs/API.md',
           'reference/architecture.md': 'docs/ARCHITECTURE.md',
           'project/contributing.md': 'CONTRIBUTING.md',
+          'project/roadmap.md': 'docs/ROADMAP.md',
           'project/security.md': 'SECURITY.md',
           'project/changelog.md': 'CHANGELOG.md'
         }
