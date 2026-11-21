@@ -174,6 +174,10 @@ foreach ($arch in $Archs) {
         throw "[$arch] inner identity mismatch: $($id.Name) / $($id.Publisher) / $($id.Version) / $($id.ProcessorArchitecture)"
     }
     if (-not (Test-Path (Join-Path $vi 'resources.pri'))) { throw "[$arch] resources.pri missing in the package" }
+    $protocols = @($mx.SelectNodes("//*[local-name()='Protocol']") | ForEach-Object { $_.GetAttribute('Name') })
+    foreach ($scheme in 'sip', 'sips', 'tel', 'callto', 'siple') {
+        if ($protocols -notcontains $scheme) { throw "[$arch] the manifest does not declare the $scheme protocol" }
+    }
     foreach ($exe in 'siple.exe', 'siple-cli.exe') {
         $m = Get-PeMachine (Join-Path $vi $exe)
         if ($m -ne $PeMachine[$arch]) { throw "[$arch] $exe machine type is $m, expected $($PeMachine[$arch])" }

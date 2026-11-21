@@ -133,3 +133,58 @@ async fn ui_methods_reach_the_host_and_hand_off_works() {
     assert_eq!(got[6], UiRequest::Show);
     app.shutdown().await;
 }
+
+const SETUP: &str = "siple:provision?d=eyJ2IjoxLCJhY2NvdW50Ijp7InVzZXJuYW1lIjoiMTAwMSIsImRvbWFpbiI6ImV4YW1wbGUudGVzdCIsImRpc3BsYXlfbmFtZSI6IkZyb250IGRlc2siLCJyZWdpc3RyYXIiOiJwYnguZXhhbXBsZS50ZXN0OjUwNjEiLCJ0cmFuc3BvcnQiOiJ0bHMiLCJzcnRwIjoibWFuZGF0b3J5In19";
+
+/// A setup link reaches the host as exactly `OpenSetup`; nothing is written or added.
+#[tokio::test]
+async fn setup_links_only_open_the_review() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.toml");
+    std::fs::write(&path, "").unwrap();
+    let app = start_app(&path).await;
+    let host = Arc::new(Recorder::default());
+    app.set_ui_host(host.clone());
+    let mut c = client(&app, "t").await;
+    let before = std::fs::read(&path).unwrap();
+    c.call("app.open_uri", json!({"uri": SETUP})).await.unwrap();
+    // No parameter skips the review.
+    let e = c
+        .call("app.open_uri", json!({"uri": SETUP, "confirm": true}))
+        .await
+        .unwrap_err();
+    assert_eq!(kind(e), ErrorKind::InvalidParams);
+    // A refused link reaches the host as LinkRefused with a fixed message, and the caller
+    // gets the code.
+    let bad = "siple:provision?d=eyJ2IjoxLCJhY2NvdW50Ijp7InBhc3N3b3JkIjoic2VjcmV0In19";
+    let e = c
+        .call("app.open_uri", json!({"uri": bad}))
+        .await
+        .unwrap_err();
+    match e {
+        ClientError::Api(a) => {
+            assert_eq!(a.kind, ErrorKind::InvalidParams);
+            assert_eq!(a.extra.as_ref().unwrap()["code"], "password_not_allowed");
+            assert!(!a.message.contains("secret"));
+        }
+        other => panic!("{other}"),
+    }
+    use siple_core::uri::{HandOff, hand_off};
+    assert_eq!(hand_off(dir.path(), Some(SETUP)).await, HandOff::Done);
+    let got = host.0.lock().unwrap().clone();
+    assert_eq!(got.len(), 3, "{got:?}");
+    let UiRequest::OpenSetup(l) = &got[0] else {
+        panic!("{:?}", got[0])
+    };
+    assert_eq!(l.account.username, "1001");
+    assert_eq!(l.account.next_hop(), "pbx.example.test:5061");
+    let UiRequest::LinkRefused(m) = &got[1] else {
+        panic!("{:?}", got[1])
+    };
+    assert!(m.contains("password") && !m.contains("secret"), "{m}");
+    assert!(matches!(&got[2], UiRequest::OpenSetup(_)));
+    assert_eq!(std::fs::read(&path).unwrap(), before, "config changed");
+    let list = c.call("account.list", json!({})).await.unwrap();
+    assert_eq!(list["accounts"], json!([]));
+    app.shutdown().await;
+}

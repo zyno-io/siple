@@ -52,7 +52,15 @@ fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     m.lock().unwrap_or_else(|e| e.into_inner())
 }
 
+/// Longest URL taken from an Apple Event, in bytes. A setup link is at most 2 KiB; anything far
+/// beyond that is not one of ours, and is dropped before it is queued or parsed.
+const MAX_URL_BYTES: usize = 8 * 1024;
+
 fn deliver_url(url: String) {
+    if url.len() > MAX_URL_BYTES {
+        tracing::warn!(len = url.len(), "ignoring an oversized URL");
+        return;
+    }
     match lock(&SINK).as_ref() {
         Some(tx) => tx.send(super::ShellMsg::Url(url)),
         None => {

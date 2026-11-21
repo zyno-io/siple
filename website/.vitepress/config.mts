@@ -114,6 +114,7 @@ export default defineConfig({
             { text: 'Quick start', link: '/guide/quick-start' },
             { text: 'Install', link: '/guide/install' },
             { text: 'Set up your account', link: '/guide/first-run' },
+            { text: 'Send a setup link', link: '/guide/setup-links' },
             { text: 'Questions and answers', link: '/guide/faq' }
           ]
         },

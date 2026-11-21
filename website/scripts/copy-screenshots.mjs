@@ -20,6 +20,7 @@ export const shots = {
   'wizard-account': 'wizard_account',
   'config-error': 'config_error',
   'wizard-audio': 'wizard_audio',
+  'setup-review': 'setup_review',
   incoming: 'incoming',
   'transfer-composer': 'transfer_composer',
   'blf-list': 'blf_list'

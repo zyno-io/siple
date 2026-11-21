@@ -633,6 +633,7 @@ pub fn backend_methods() -> Vec<MethodInfo> {
         .chain(subscription_methods())
         .chain(agent_methods())
         .chain(ui_methods())
+        .chain(crate::provision::provision_methods())
         .chain(update_methods())
         .chain(std::iter::once(crate::agent::stream::method_info()))
         .collect()
@@ -717,6 +718,9 @@ impl ControlBackend for AppBackend {
             m if SUBSCRIPTION_METHODS.contains(&m) => self.subscription_method(m, params).await,
             m if AGENT_METHODS.contains(&m) => self.agent_method(m, params).await,
             m if UI_METHODS.contains(&m) => self.ui_method(m, params).await,
+            m if crate::provision::PROVISION_METHODS.contains(&m) => {
+                self.provision_method(m, params).await
+            }
             m if UPDATE_METHODS.contains(&m) => self.update_method(m, params).await,
             // Needs a connection upgrade, which only the control server can do.
             "call.stream" => Err(ApiError::invalid_state(
