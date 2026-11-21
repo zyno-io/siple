@@ -650,6 +650,8 @@ mod tests {
         );
     }
 
+    // Unix paths: `/a/b` is not absolute on Windows, and AppImages are Linux-only.
+    #[cfg(unix)]
     #[test]
     fn runs_inside_is_strict() {
         assert!(runs_inside(
