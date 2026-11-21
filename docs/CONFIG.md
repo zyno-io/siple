@@ -218,7 +218,7 @@ each key as the matching feature arrives. A key you leave out keeps its default.
 | `notifications` | bool | `true` | Desktop notifications. |
 | `handle_links` | bool | `true` | Handle `sip:`, `sips:`, `tel:` and `callto:` links. |
 | `launch_at_login` | bool | `false` | Start Siple when you log in (macOS LaunchAgent, Windows `Run` key, Linux XDG autostart). Combine with `start_hidden = true` to start in the tray. |
-| `developer_tools` | bool | `false` | Show the Log pane and the Open logs / Open config buttons in the window footer. The control API and MCP stay on either way. |
+| `developer_tools` | bool | `false` | Show the Log pane and the Open logs / Open config buttons in the window footer, and the registration / subscription times (registered, last renewal, expires) in the account and BLF key tooltips. The control API and MCP stay on either way. |
 
 Desktop shell notes (tray, links, login item):
 

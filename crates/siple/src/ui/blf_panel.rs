@@ -1094,7 +1094,7 @@ fn finish(
     let mut tip = vec![format!("{} ({})", b.uri, b.account), state];
     tip.extend(blf_dialog_lines(b));
     tip.extend(blf_health_lines(b));
-    tip.extend(blf_time_lines(b));
+    tip.extend(blf_time_lines(b, snap.ui.developer_tools));
     tip.push(
         if b.pickup_offered()
             && snap.ui.blf_click_ringing == BlfClickRinging::Pickup

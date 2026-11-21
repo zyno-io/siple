@@ -531,7 +531,7 @@ fn account_chip(
     );
     resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, label.clone()));
     let mut tip = label;
-    for l in reg_time_lines(a) {
+    for l in reg_time_lines(a, cx.vm.snap.ui.developer_tools) {
         tip.push('\n');
         tip.push_str(&l);
     }

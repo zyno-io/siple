@@ -86,7 +86,7 @@ show_on_answer = false
 notifications = true
 handle_links = true                   # handler for sip:/sips:/tel:/callto: links
 launch_at_login = false              # start Siple when you log in (use with start_hidden)
-developer_tools = false               # show the Log pane and Open logs / Open config in the footer (API stays on)
+developer_tools = false               # Log pane, Open logs / Open config in the footer, registration times in tooltips (API stays on)
 
 [ui.shortcuts]
 # action = "Mod+Shift+A"              # key chords by action name; defaults apply to actions not listed
