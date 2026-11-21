@@ -1332,6 +1332,32 @@ fn disabled_account_and_config_error_still_show() {
     assert_eq!(take(&mut h)[0], UiAction::OpenConfig);
 }
 
+/// The footer Log / Open logs / Open config buttons and the log pane need `developer_tools`.
+#[test]
+fn footer_dev_controls_follow_developer_tools() {
+    let mut snap = base_snapshot();
+    snap.logs = vec!["INFO hello-log-line".into()];
+    let mut h = harness(snap.clone(), WIDE);
+    h.run();
+    assert!(h.query_by_label_contains("Open config").is_none());
+    assert!(h.query_by_label_contains("Log").is_none());
+
+    snap.ui.developer_tools = true;
+    let mut h = harness(snap.clone(), WIDE);
+    h.run();
+    click_first(&mut h, "Log");
+    assert_eq!(take(&mut h), [UiAction::LogsVisible(true)]);
+    assert!(h.query_by_label_contains("hello-log-line").is_some());
+    assert!(h.query_by_label_contains("Open config").is_some());
+
+    // Turning the setting off closes the open pane and stops log capture.
+    h.state_mut().snap.ui.developer_tools = false;
+    h.run_steps(4);
+    assert!(!h.state().ui.show_logs);
+    assert_eq!(take(&mut h), [UiAction::LogsVisible(false)]);
+    assert!(h.query_by_label_contains("hello-log-line").is_none());
+}
+
 /// A double click (two quick pointer clicks) places one call, not two.
 #[test]
 fn double_click_on_a_blf_key_dials_once() {

@@ -673,6 +673,69 @@ async fn refresh_481_resubscribes_and_489_fails() {
     r.stack.shutdown().await;
 }
 
+/// `subscribed_at` survives an in-dialog refresh, `last_refreshed_at` moves; a 481 to a refresh
+/// clears both, and the new dialog's 2xx starts a new subscription.
+#[tokio::test]
+async fn blf_subscription_times_follow_the_dialog() {
+    use siple_sip::BlfSubscription;
+    async fn wait_sub(
+        r: &Rig,
+        what: &str,
+        pred: impl Fn(&BlfSubscription) -> bool,
+    ) -> BlfSubscription {
+        let until = std::time::Instant::now() + Duration::from_secs(3);
+        loop {
+            let sub = r.stack.blf_status(None)[0].subscription.clone();
+            if pred(&sub) {
+                return sub;
+            }
+            assert!(
+                std::time::Instant::now() < until,
+                "timed out waiting for {what}: {sub:?}"
+            );
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    }
+    let mut f = Fake::start().await;
+    let r = rig();
+    let mut c = cfg("a", &f);
+    c.blf = vec![blf("1018", "")];
+    add(&r, c).await;
+    let s1 = f.subscribe().await;
+    assert_eq!(r.stack.blf_status(None)[0].subscription.subscribed_at, None);
+    f.respond(&s1, "202 Accepted", Some("t1"), &[("Expires", "3")])
+        .await;
+    let first = wait_sub(&r, "first 2xx", |s| s.subscribed_at.is_some()).await;
+    assert_eq!(first.last_refreshed_at, first.subscribed_at);
+    // In-dialog refresh: subscribed_at kept, last_refreshed_at moves.
+    let rf = f.subscribe().await;
+    assert_eq!(rf.call_id(), s1.call_id());
+    f.respond(&rf, "202 Accepted", Some("t1"), &[("Expires", "3")])
+        .await;
+    let refreshed = wait_sub(&r, "refresh 2xx", |s| {
+        s.last_refreshed_at > first.last_refreshed_at
+    })
+    .await;
+    assert_eq!(refreshed.subscribed_at, first.subscribed_at);
+    // 481 to the next refresh: a new dialog, the times reset until its 2xx.
+    let rf2 = f.subscribe().await;
+    assert_eq!(rf2.call_id(), s1.call_id());
+    f.respond(&rf2, "481 Call/Transaction Does Not Exist", None, &[])
+        .await;
+    let s2 = f.subscribe().await;
+    assert_ne!(s2.call_id(), s1.call_id());
+    let cleared = r.stack.blf_status(None)[0].subscription.clone();
+    assert_eq!(
+        (cleared.subscribed_at, cleared.last_refreshed_at),
+        (None, None)
+    );
+    f.respond(&s2, "202 Accepted", Some("t2"), &[("Expires", "60")])
+        .await;
+    let renewed = wait_sub(&r, "new dialog 2xx", |s| s.subscribed_at.is_some()).await;
+    assert!(renewed.subscribed_at > first.subscribed_at);
+    r.stack.shutdown().await;
+}
+
 /// 5xx is retried with back-off.
 #[tokio::test]
 async fn server_error_retries() {

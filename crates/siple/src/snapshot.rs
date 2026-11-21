@@ -594,6 +594,62 @@ pub fn blf_health_lines(b: &siple_sip::BlfStatus) -> Vec<String> {
     v
 }
 
+/// `14:02:11`, or `2026-11-19 14:02:11` when the local date is not `today`.
+fn local_time_text(at: DateTime<Utc>, today: chrono::NaiveDate) -> String {
+    let local = at.with_timezone(&chrono::Local);
+    if local.date_naive() == today {
+        local.format("%H:%M:%S").to_string()
+    } else {
+        local.format("%Y-%m-%d %H:%M:%S").to_string()
+    }
+}
+
+/// Tooltip lines with the registration times of a registered account. Absolute local times:
+/// the GUI only repaints on snapshot changes, so relative ones would go stale while hovering.
+pub fn reg_time_lines(a: &AccountStatus) -> Vec<String> {
+    reg_time_lines_on(a, chrono::Local::now().date_naive())
+}
+
+fn reg_time_lines_on(a: &AccountStatus, today: chrono::NaiveDate) -> Vec<String> {
+    // A disabled account can still report Registered until its unREGISTER completes.
+    if !a.enabled {
+        return Vec::new();
+    }
+    match &a.registration {
+        RegState::Registered {
+            registered_at,
+            last_renewed_at,
+            expires_at,
+            granted_secs,
+        } => vec![
+            format!("Registered {}", local_time_text(*registered_at, today)),
+            format!("Last renewal {}", local_time_text(*last_renewed_at, today)),
+            format!(
+                "Expires {} ({granted_secs} s granted)",
+                local_time_text(*expires_at, today)
+            ),
+        ],
+        _ => Vec::new(),
+    }
+}
+
+/// Tooltip lines with the subscription times of a BLF key; only the ones that are known.
+pub fn blf_time_lines(b: &siple_sip::BlfStatus) -> Vec<String> {
+    blf_time_lines_on(b, chrono::Local::now().date_naive())
+}
+
+fn blf_time_lines_on(b: &siple_sip::BlfStatus, today: chrono::NaiveDate) -> Vec<String> {
+    let sub = &b.subscription;
+    [
+        ("Subscribed", sub.subscribed_at),
+        ("Last refresh", sub.last_refreshed_at),
+        ("Expires", sub.expires_at),
+    ]
+    .into_iter()
+    .filter_map(|(label, at)| at.map(|at| format!("{label} {}", local_time_text(at, today))))
+    .collect()
+}
+
 /// Tooltip lines for the dialogs behind a BLF state (`ringing from 1019 (Dana)`).
 pub fn blf_dialog_lines(b: &siple_sip::BlfStatus) -> Vec<String> {
     use siple_sip::{DialogDirection, DialogPhase};
@@ -871,6 +927,8 @@ mod tests {
                 last_code: None,
                 last_reason: None,
                 expires_at: None,
+                subscribed_at: None,
+                last_refreshed_at: None,
                 retry_at: None,
             },
             stale: false,
@@ -912,5 +970,78 @@ mod tests {
     fn call_state_labels() {
         assert_eq!(call_state_label(CallState::Held), "On hold");
         assert_eq!(call_state_label(CallState::Ringing), "Ringing");
+    }
+
+    fn blf_fixture() -> siple_sip::BlfStatus {
+        siple_sip::BlfStatus {
+            account: "a".into(),
+            uri: "1018".into(),
+            label: String::new(),
+            state: siple_sip::BlfState::Idle,
+            dialogs: Vec::new(),
+            updated_at: Utc::now(),
+            group: String::new(),
+            pickup: siple_sip::PickupMode::Off,
+            subscription: siple_sip::BlfSubscription {
+                phase: siple_sip::SubscriptionPhase::Active,
+                last_code: None,
+                last_reason: None,
+                expires_at: None,
+                subscribed_at: None,
+                last_refreshed_at: None,
+                retry_at: None,
+            },
+            stale: false,
+        }
+    }
+
+    fn local_utc(y: i32, m: u32, d: u32, h: u32, mi: u32, sec: u32) -> DateTime<Utc> {
+        chrono::Local
+            .with_ymd_and_hms(y, m, d, h, mi, sec)
+            .unwrap()
+            .with_timezone(&Utc)
+    }
+
+    #[test]
+    fn reg_time_lines_format_and_date_prefix() {
+        let today = chrono::NaiveDate::from_ymd_opt(2026, 11, 19).unwrap();
+        let st = status(
+            true,
+            RegState::Registered {
+                registered_at: local_utc(2026, 11, 19, 14, 2, 11),
+                last_renewed_at: local_utc(2026, 11, 19, 14, 32, 5),
+                expires_at: local_utc(2026, 11, 20, 0, 2, 5),
+                granted_secs: 3600,
+            },
+        );
+        assert_eq!(
+            reg_time_lines_on(&st, today),
+            [
+                "Registered 14:02:11",
+                "Last renewal 14:32:05",
+                "Expires 2026-11-20 00:02:05 (3600 s granted)"
+            ]
+        );
+        assert!(reg_time_lines_on(&status(true, RegState::Registering), today).is_empty());
+        // Disabled while the unREGISTER is still in flight: no times.
+        assert!(reg_time_lines_on(&status(false, st.registration.clone()), today).is_empty());
+    }
+
+    #[test]
+    fn blf_time_lines_only_known() {
+        let today = chrono::NaiveDate::from_ymd_opt(2026, 11, 19).unwrap();
+        let mut b = blf_fixture();
+        assert!(blf_time_lines_on(&b, today).is_empty());
+        b.subscription.subscribed_at = Some(local_utc(2026, 11, 19, 14, 2, 11));
+        b.subscription.expires_at = Some(local_utc(2026, 11, 19, 15, 32, 5));
+        assert_eq!(
+            blf_time_lines_on(&b, today),
+            ["Subscribed 14:02:11", "Expires 15:32:05"]
+        );
+        b.subscription.last_refreshed_at = Some(local_utc(2026, 11, 18, 23, 0, 0));
+        assert_eq!(
+            blf_time_lines_on(&b, today)[1],
+            "Last refresh 2026-11-18 23:00:00"
+        );
     }
 }
