@@ -3,7 +3,7 @@
 Download Siple for your computer and get it running.
 
 **Download:** [siple.app](https://siple.app/#download) picks the right build for your computer. Every build is also on
-[GitHub Releases](https://github.com/zyno-io/siple/releases/latest). Mac App Store, Microsoft Store and Flathub editions are
+[GitHub Releases](https://github.com/zyno-io/siple/releases/latest). Mac App Store and Microsoft Store editions are
 coming soon.
 
 | Computer | Download | Needs |
@@ -67,13 +67,9 @@ The launcher entry runs `siple %u`, so `~/.local/bin` must be on your `PATH`. To
 - **Headless `siple-cli` only:** just ALSA (`libasound2`).
 :::
 
-::: details Flatpak (Flathub, coming soon)
-Siple will also be on Flathub as `io.zyno.siple`:
-
-```sh
-flatpak install flathub io.zyno.siple
-flatpak run io.zyno.siple
-```
+::: details Flatpak (not on Flathub yet)
+A Flatpak edition (`io.zyno.siple`) is built in CI, but it is not on Flathub yet and is not published as a download: on
+Linux, use the tarball above. When the Flatpak edition is installed:
 
 - **Updates** come from your software center or `flatpak update`. Siple makes no update check of its own.
 - **Settings folder:** `~/.var/app/io.zyno.siple/config/siple/`. To move over from the tarball, copy `config.toml` there; passwords

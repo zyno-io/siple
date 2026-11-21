@@ -135,7 +135,11 @@ Findings from the MSIX spike (Windows 11 x64, WACK from SDK 10.0.26100):
 
 ## Flathub
 
-The Flatpak build exists since 0.2.0; the Flathub submission is pending. How it is built and submitted:
+The Flatpak build exists since 0.2.0; the Flathub submission is **deferred**. Flathub's
+[Generative AI policy](https://docs.flathub.org/docs/for-app-authors/requirements#generative-ai-policy) forbids
+AI-generated or AI-assisted content in Flathub manifests and AI-opened or AI-written submission pull requests, and new
+projects are generally not accepted. A later submission needs a hand-written manifest and a hand-opened PR with the AI
+disclosure. The update automation is parked on the branch `ci/flathub` (closed PR #11). How it is built and submitted:
 [RELEASING.md](RELEASING.md#flatpak-flathub).
 
 Done:
