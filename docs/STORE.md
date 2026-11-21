@@ -135,7 +135,8 @@ Findings from the MSIX spike (Windows 11 x64, WACK from SDK 10.0.26100):
 
 ## Flathub
 
-The Flatpak build exists since 0.2.0; the Flathub submission is **deferred**. Flathub's
+The Flatpak build exists since 0.2.0; the Flathub submission is **deferred** until the Mac App Store and Microsoft
+Store listings are live. Flathub's
 [Generative AI policy](https://docs.flathub.org/docs/for-app-authors/requirements#generative-ai-policy) forbids
 AI-generated or AI-assisted content in Flathub manifests and AI-opened or AI-written submission pull requests, and new
 projects are generally not accepted. A later submission needs a hand-written manifest and a hand-opened PR with the AI
