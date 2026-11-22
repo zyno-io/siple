@@ -35,12 +35,12 @@ logs/
 ._*
 Thumbs.db
 
-# Documentation site (website/): dependencies, build output, generated screenshot copies.
-website/node_modules/
-website/.vitepress/dist/
-website/.vitepress/cache/
-website/public/screenshots/
-website/.vitepress/.temp/
+# Websites (sites/docs = VitePress docs, sites/www = siple.app; sites/www/.gitignore covers the rest).
+sites/docs/node_modules/
+sites/docs/.vitepress/dist/
+sites/docs/.vitepress/cache/
+sites/docs/public/screenshots/
+sites/docs/.vitepress/.temp/
 __pycache__/
 
 # Flatpak build products (scripts/flatpak-*.sh): generated from Cargo.lock, never committed.

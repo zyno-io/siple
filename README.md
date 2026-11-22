@@ -13,7 +13,7 @@ and is built to be driven by scripts and AI agents as well as by hand.
 
 Status: pre-1.0 (see [CHANGELOG.md](CHANGELOG.md)). Repository: `https://github.com/zyno-io/siple`. Licence: [FSL-1.1-ALv2](#license) (source-available, not OSI open source).
 
-**Documentation: https://zyno-io.github.io/siple/** (user guide, AI-agent quick start, full configuration and API reference; sources in [`website/`](website/) and [`docs/`](docs/)).
+**Documentation: https://zyno-io.github.io/siple/** (user guide, AI-agent quick start, full configuration and API reference; sources in [`sites/docs/`](sites/docs/) and [`docs/`](docs/)).
 
 ## Features
 

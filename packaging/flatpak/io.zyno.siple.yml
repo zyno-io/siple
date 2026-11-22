@@ -51,7 +51,7 @@ modules:
           - target
           - flatpak-work
           - dist
-          - website
+          - sites
           - .flatpak-builder
           - tests/interop/pbx.env
           - tests/interop/fs-conf.tar.gz

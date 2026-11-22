@@ -1,0 +1,163 @@
+---
+/**
+ * FileBar: the page's outline, set as Siple's config file. Siple keeps every
+ * setting in one config.toml that the GUI, the API and you all edit live; each
+ * section below the hero is one real table of that file. Sticky under the
+ * header while the reader is inside those sections; the current table is
+ * marked as they scroll.
+ */
+export interface Table {
+  id: string;
+  table: string;
+  label: string;
+}
+interface Props {
+  tables: Table[];
+}
+const { tables } = Astro.props;
+---
+
+<nav class="filebar" aria-label="Sections">
+  <div class="wrap filebar__in">
+    <span class="filebar__file"><i class="fa-solid fa-file-lines" aria-hidden="true"></i><span class="filebar__name">config.toml</span></span>
+    <ol class="filebar__list">
+      {
+        tables.map((t) => (
+          <li>
+            <a href={`#${t.id}`} class="filebar__link" data-spy={t.id}>
+              <code>{t.table}</code>
+              <span class="filebar__label">{t.label}</span>
+            </a>
+          </li>
+        ))
+      }
+    </ol>
+  </div>
+</nav>
+
+<style>
+  .filebar {
+    position: sticky;
+    top: var(--header-h);
+    z-index: 40;
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+    background: color-mix(in srgb, var(--surface) 88%, transparent);
+    -webkit-backdrop-filter: saturate(1.4) blur(12px);
+    backdrop-filter: saturate(1.4) blur(12px);
+  }
+  .filebar__in {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    height: var(--filebar-h);
+  }
+  .filebar__file {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding-right: 20px;
+    border-right: 1px solid var(--border);
+    font-family: var(--font-mono);
+    font-size: var(--t-xs);
+    font-weight: 600;
+    color: var(--text);
+    white-space: nowrap;
+  }
+  .filebar__file i {
+    color: var(--text-3);
+  }
+  .filebar__list {
+    position: relative;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    gap: 2px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .filebar__list::-webkit-scrollbar {
+    display: none;
+  }
+  .filebar__link {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 8px;
+    padding: 6px 10px;
+    border-radius: var(--radius-sm);
+    color: var(--text-3);
+    font-size: var(--t-xs);
+    text-decoration: none;
+    white-space: nowrap;
+    transition: background-color 120ms ease, color 120ms ease;
+  }
+  .filebar__link code {
+    padding: 0;
+    background: none;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-2);
+  }
+  .filebar__link:hover {
+    background: var(--surface-2);
+  }
+  .filebar__link[aria-current='true'] {
+    background: var(--accent-soft);
+    color: var(--text-2);
+  }
+  .filebar__link[aria-current='true'] code {
+    color: var(--link);
+  }
+  @media (max-width: 1100px) {
+    .filebar__label {
+      display: none;
+    }
+  }
+  @media (max-width: 640px) {
+    .filebar__in {
+      gap: 10px;
+    }
+    .filebar__file {
+      padding-right: 10px;
+    }
+    .filebar__name {
+      display: none;
+    }
+  }
+</style>
+
+<script>
+  /* Mark the table whose section is under the bar. */
+  const links = [...document.querySelectorAll<HTMLAnchorElement>('[data-spy]')];
+  const sections = links
+    .map((a) => document.getElementById(a.dataset.spy!))
+    .filter((s): s is HTMLElement => !!s);
+  if (sections.length && 'IntersectionObserver' in window) {
+    const visible = new Map<string, boolean>();
+    const mark = () => {
+      const current = sections.find((s) => visible.get(s.id));
+      if (!current) links[0]?.closest('ol')?.scrollTo({ left: 0 });
+      links.forEach((a) => {
+        const on = current?.id === a.dataset.spy;
+        if (on) a.setAttribute('aria-current', 'true');
+        else a.removeAttribute('aria-current');
+        if (on) {
+          // Keep the current table in view on narrow screens (horizontal only).
+          const list = a.closest('ol')!;
+          const l = a.offsetLeft, r = l + a.offsetWidth;
+          if (l < list.scrollLeft) list.scrollLeft = l - 8;
+          else if (r > list.scrollLeft + list.clientWidth) list.scrollLeft = r - list.clientWidth + 8;
+        }
+      });
+    };
+    const io = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((e) => visible.set(e.target.id, e.isIntersecting));
+        mark();
+      },
+      { rootMargin: '-120px 0px -55% 0px' },
+    );
+    sections.forEach((s) => io.observe(s));
+  }
+</script>

@@ -1,0 +1,129 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import SiteHeader from '../components/SiteHeader.astro';
+import SiteFooter from '../components/SiteFooter.astro';
+import { site, doc } from '../data/site';
+
+const updated = 'November 18, 2026';
+---
+
+<BaseLayout
+  title="Privacy · Siple"
+  description="Siple collects no personal data. It has no telemetry or analytics, and it connects only to the SIP servers you configure."
+>
+  <SiteHeader />
+  <main id="main" class="priv">
+    <article class="wrap priv__in">
+      <header class="priv__head">
+        <h1 class="display--md">Privacy</h1>
+        <p class="lede">Siple collects no personal data. Nothing you do in the app is sent to us.</p>
+        <p class="fine">Last updated {updated}. Applies to Siple on macOS, Windows and Linux, including the Mac App Store and Microsoft Store editions, and to this website.</p>
+      </header>
+
+      <section>
+        <h2>The short version</h2>
+        <ul>
+          <li>Siple has no account with us, no telemetry, no analytics, no advertising and no tracking.</li>
+          <li>Your settings, recordings and logs stay on your computer.</li>
+          <li>Siple talks only to the SIP servers you configure. The exceptions are an optional update check (about once a day) that you can turn off, and, in the direct downloads, the download of a new version when you choose to install it.</li>
+          <li>We, {site.maker}, never receive your calls, contacts, credentials or usage data.</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>What stays on your computer</h2>
+        <ul>
+          <li><strong>Settings</strong>: your accounts, server addresses and preferences, in Siple’s configuration file.</li>
+          <li><strong>Passwords</strong>: in your operating system’s credential store (macOS Keychain, Windows Credential Manager or the Linux Secret Service). They are never written to logs.</li>
+          <li><strong>Logs and SIP traces</strong>: files on your computer. Logs can contain phone numbers and SIP messages. They leave your computer only if you send them to someone yourself.</li>
+          <li><strong>Recordings</strong>: made only when you, or a script you run, start one. They are saved as local audio files. You are responsible for getting any consent the law where you are requires.</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>Microphone</h2>
+        <p>Siple asks for microphone access so you can talk on calls. Audio goes only to the other party of a call, through the provider you configured. It is not sent to us or analysed.</p>
+      </section>
+
+      <section>
+        <h2>Network connections</h2>
+        <ul>
+          <li><strong>Your SIP provider.</strong> To register and place calls, Siple connects to the SIP servers, proxies and call peers you configure. Those providers process your calls under their own privacy policies.</li>
+          <li><strong>Update check.</strong> About once a day, and only if the check is on, Siple looks for a newer version. Where it looks depends on the edition. The direct downloads (from this site or GitHub) make one request to the GitHub Releases API; GitHub sees your IP address and the app version. The Mac App Store edition makes one request to Apple’s public lookup service for Siple’s own listing; Apple sees your IP address and the app version. In the Microsoft Store edition, Siple asks Windows’ Store service whether an update is waiting; Windows contacts Microsoft as it does for any Store app, and Siple sends nothing itself. These requests carry no account, install identifier or usage data. You can turn the check off in Settings or with <code>[updates] check = false</code>; then none of this happens.</li>
+          <li><strong>Installing an update (direct downloads only).</strong> The check above only tells you that a new version exists. The direct downloads for macOS, Windows and Linux download the new version from GitHub, over HTTPS, when you, or a script or agent you run, choose to install it; GitHub sees your IP address and the app version, as for any download, and Siple sends nothing else. Before it replaces itself, Siple verifies the download with Siple’s release signature and your operating system’s publisher check. The Mac App Store and Microsoft Store editions never download or install anything themselves; their store does. You can turn in-app installing off in Settings or with <code>[updates] install = false</code>.</li>
+          <li>Siple sends no crash reports and no usage statistics.</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>Scripts and AI agents</h2>
+        <p>Siple has a local control interface so scripts and AI agents on your computer can drive it. Only your own user account can reach it. An optional TCP listener is off by default and always requires a token. Whatever a connected program does with call data is up to that program and you.</p>
+        <p>The direct downloads can also run speech programs you configure, for example to speak text into a call or transcribe it. They run on your computer with the data you give them. The Mac App Store edition does not include this feature.</p>
+      </section>
+
+      <section>
+        <h2>This website</h2>
+        <p>siple.app measures visits with analytics we run ourselves. That data stays with us: we don’t share it with or sell it to anyone, and the site has no advertising or third-party trackers. It serves its fonts and icons itself. To show the latest version, the download buttons ask the GitHub API about releases straight from your browser, so GitHub sees your IP address. Our host keeps standard web server logs for security and operations.</p>
+        <p>This section is about the website only. The Siple app itself collects nothing, as described above.</p>
+      </section>
+
+      <section>
+        <h2>Children</h2>
+        <p>Siple is a business communications tool. It is not directed at children and collects no data from anyone.</p>
+      </section>
+
+      <section>
+        <h2>Changes and contact</h2>
+        <p>If Siple ever adds a feature that sends data off your computer, for example opt-in crash reports, we will describe it here before it ships. It will be off unless you turn it on.</p>
+        <p>Questions: <a href={`mailto:${site.contact}`}>{site.contact}</a>. The source code is public, so you can check all of this yourself: <a href={site.repo}>github.com/zyno-io/siple</a>. Configuration details are in the <a href={doc.configRef}>configuration reference</a>.</p>
+      </section>
+    </article>
+  </main>
+  <SiteFooter />
+</BaseLayout>
+
+<style>
+  .priv__in {
+    max-width: 760px;
+    padding-top: 96px;
+    padding-bottom: 120px;
+    display: flex;
+    flex-direction: column;
+    gap: 40px;
+  }
+  .priv__head {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .priv h2 {
+    font-size: 1.25rem;
+    font-weight: 600;
+    margin: 0 0 12px;
+  }
+  .priv p,
+  .priv li {
+    line-height: 1.65;
+    max-width: 68ch;
+  }
+  .priv p + p {
+    margin-top: 12px;
+  }
+  .priv ul {
+    margin: 0;
+    padding-left: 1.2em;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .priv code {
+    font-size: 0.9em;
+  }
+  @media (max-width: 640px) {
+    .priv__in {
+      padding-top: 56px;
+      padding-bottom: 80px;
+      gap: 32px;
+    }
+  }
+</style>

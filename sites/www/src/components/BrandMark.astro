@@ -1,0 +1,41 @@
+---
+/**
+ * Siple's brand: the app icon (white handset on the teal-to-blue tile,
+ * packaging/icons/siple-mark-256.png at small sizes, rendered to public/icon-64.png by
+ * `npm run og`) beside the text wordmark, as in the app's own header.
+ */
+interface Props {
+  size?: 'md' | 'lg';
+}
+const { size = 'md' } = Astro.props;
+---
+
+<span class:list={['brand', `brand--${size}`]}>
+  <img class="brand__mark" src="/icon-64.png" width="28" height="28" alt="" />
+  <span class="brand__name">Siple</span>
+</span>
+
+<style>
+  .brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    color: var(--text);
+  }
+  .brand__mark {
+    width: 28px;
+    height: 28px;
+  }
+  .brand__name {
+    font-size: 18px;
+    font-weight: 650;
+    letter-spacing: -0.015em;
+  }
+  .brand--lg .brand__mark {
+    width: 32px;
+    height: 32px;
+  }
+  .brand--lg .brand__name {
+    font-size: 20px;
+  }
+</style>

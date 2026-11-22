@@ -1,0 +1,130 @@
+---
+/**
+ * Terminal: a code-rendered shell session with real `siple-cli` commands.
+ * Lines: `p` a prompt line (command), `o` output, `c` a comment.
+ * With JS and motion allowed, lines type in once when the terminal scrolls
+ * into view; otherwise every line is simply there.
+ */
+interface Line {
+  k: 'p' | 'o' | 'c';
+  t: string;
+}
+interface Props {
+  title: string;
+  lines: Line[];
+  label: string;
+  class?: string;
+}
+const { title, lines, label, class: cls } = Astro.props;
+---
+
+<figure class:list={['term', cls]} data-term>
+  <figcaption class="term__bar"><i class="fa-solid fa-terminal" aria-hidden="true"></i>{title}</figcaption>
+  <pre class="term__body" tabindex="0" aria-label={label}><code>{
+    lines.map((l, i) => (
+      <span class={`ln ln--${l.k}`} style={`--n:${i}`}>{l.k === 'p' && <span class="ps" aria-hidden="true">$ </span>}{l.t}</span>
+    ))
+  }</code></pre>
+</figure>
+
+<style>
+  .term {
+    margin: 0;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-lg);
+    background: var(--surface);
+    overflow: hidden;
+    box-shadow: var(--shadow-sm);
+  }
+  .term__bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: 34px;
+    padding: 0 14px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface-2);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--text-3);
+  }
+  .term__bar i {
+    font-size: 11px;
+  }
+  .term__body {
+    margin: 0;
+    padding: 14px 16px 16px;
+    overflow-x: auto;
+    font-size: 12.5px;
+    line-height: 1.7;
+    color: var(--text);
+    scrollbar-width: thin;
+  }
+  .term__body:focus-visible {
+    outline-offset: -2px;
+  }
+  .ln {
+    display: block;
+    white-space: pre;
+  }
+  .ln--p {
+    color: var(--text);
+  }
+  .ps {
+    color: var(--success);
+    user-select: none;
+  }
+  .ln--o {
+    color: var(--text-2);
+  }
+  .ln--c {
+    color: var(--text-3);
+  }
+  .ln--c + .ln--p,
+  .ln--o + .ln--c {
+    margin-top: 0;
+  }
+  .ln--o + .ln--c,
+  .ln--p + .ln--c {
+    padding-top: 8px;
+  }
+
+  /* Type-in, once. The first frame is already a terminal (bar and caret),
+     the lines draw left to right in order. */
+  @media (prefers-reduced-motion: no-preference) {
+    :global(.js) .term .ln {
+      clip-path: inset(0 100% 0 0);
+    }
+    :global(.js) .term.is-typing .ln {
+      animation: type 520ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+      animation-delay: calc(var(--n) * 260ms + 200ms);
+    }
+    :global(.js) .term.is-typing .ln--o,
+    :global(.js) .term.is-typing .ln--c {
+      animation-duration: 260ms;
+    }
+  }
+  @keyframes type {
+    to {
+      clip-path: inset(0 0 0 0);
+    }
+  }
+</style>
+
+<script>
+  const terms = document.querySelectorAll<HTMLElement>('[data-term]');
+  if (!('IntersectionObserver' in window)) {
+    terms.forEach((t) => t.classList.add('is-typing'));
+  } else {
+    const io = new IntersectionObserver(
+      (entries) =>
+        entries.forEach((e) => {
+          if (!e.isIntersecting) return;
+          e.target.classList.add('is-typing');
+          io.unobserve(e.target);
+        }),
+      { threshold: 0.35 },
+    );
+    terms.forEach((t) => io.observe(t));
+  }
+</script>

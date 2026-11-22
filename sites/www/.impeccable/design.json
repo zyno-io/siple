@@ -1,0 +1,1403 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-17T09:47:57+00:00",
+  "title": "Design System: Siple",
+  "extensions": {
+    "inheritsFrom": {
+      "system": "PixelCI \"The Review Desk\"",
+      "document": "pixelci/DESIGN.md",
+      "differences": [
+        "accent family (teal-blue, dark ink on dark accent)",
+        "--lamp-* status lamps",
+        "marketing type scale and layout tokens",
+        "config.toml file bar, config excerpt, terminal card, download card rows, release states, coming-soon store buttons",
+        "checked segmented option fills accent (theme line)",
+        "no eyebrow labels"
+      ]
+    },
+    "colorMeta": {
+      "bg": {
+        "role": "neutral",
+        "displayName": "Desk Grey",
+        "canonical": "#f6f7f9",
+        "oklch": "oklch(97.6% 0.003 264.5)",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#252526",
+          "#414243",
+          "#606162",
+          "#818284",
+          "#a4a5a6",
+          "#c8c9ca",
+          "#eeeeef"
+        ]
+      },
+      "surface": {
+        "role": "neutral",
+        "displayName": "Card White",
+        "canonical": "#ffffff",
+        "oklch": "oklch(100.0% 0.000 89.9)",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#252525",
+          "#424242",
+          "#616161",
+          "#828282",
+          "#a5a5a5",
+          "#c9c9c9",
+          "#eeeeee"
+        ]
+      },
+      "surface-2": {
+        "role": "neutral",
+        "displayName": "Inset Grey",
+        "canonical": "#f3f4f6",
+        "oklch": "oklch(96.7% 0.003 264.5)",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#252526",
+          "#414243",
+          "#606163",
+          "#818284",
+          "#a4a5a6",
+          "#c8c9ca",
+          "#eeeeef"
+        ]
+      },
+      "surface-3": {
+        "role": "neutral",
+        "displayName": "Screenshot Mat",
+        "canonical": "#eceef2",
+        "oklch": "oklch(94.9% 0.006 264.5)",
+        "tonalRamp": [
+          "#0b0b0c",
+          "#242526",
+          "#414244",
+          "#606164",
+          "#818286",
+          "#a3a5a8",
+          "#c8c9cb",
+          "#eeeef0"
+        ]
+      },
+      "surface-hover": {
+        "role": "neutral",
+        "displayName": "Row Hover",
+        "canonical": "#f7f8fa",
+        "oklch": "oklch(97.9% 0.003 264.5)",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#252526",
+          "#414243",
+          "#606162",
+          "#818284",
+          "#a4a5a6",
+          "#c8c9ca",
+          "#eeeeef"
+        ]
+      },
+      "border": {
+        "role": "neutral",
+        "displayName": "Hairline",
+        "canonical": "#e3e5ea",
+        "oklch": "oklch(92.2% 0.007 268.5)",
+        "tonalRamp": [
+          "#0b0b0c",
+          "#242527",
+          "#414244",
+          "#606165",
+          "#808287",
+          "#a3a5a9",
+          "#c8c9cc",
+          "#edeef0"
+        ]
+      },
+      "border-strong": {
+        "role": "neutral",
+        "displayName": "Control Outline",
+        "canonical": "#cfd3db",
+        "oklch": "oklch(86.6% 0.012 264.5)",
+        "tonalRamp": [
+          "#0a0b0c",
+          "#242528",
+          "#404246",
+          "#5e6167",
+          "#7f828a",
+          "#a2a5ab",
+          "#c7c9ce",
+          "#edeef2"
+        ]
+      },
+      "text": {
+        "role": "neutral",
+        "displayName": "Ink",
+        "canonical": "#15171c",
+        "oklch": "oklch(20.5% 0.010 268.2)",
+        "tonalRamp": [
+          "#0b0b0c",
+          "#242527",
+          "#404246",
+          "#5f6166",
+          "#808289",
+          "#a3a5aa",
+          "#c7c9cd",
+          "#edeef1"
+        ]
+      },
+      "text-2": {
+        "role": "neutral",
+        "displayName": "Secondary Ink",
+        "canonical": "#4f5562",
+        "oklch": "oklch(44.9% 0.023 265.8)",
+        "tonalRamp": [
+          "#0a0b0e",
+          "#23252a",
+          "#3e424a",
+          "#5c616c",
+          "#7c8290",
+          "#a0a5b1",
+          "#c5c9d2",
+          "#ebeef5"
+        ]
+      },
+      "text-3": {
+        "role": "neutral",
+        "displayName": "Meta Grey",
+        "canonical": "#646a78",
+        "oklch": "oklch(52.4% 0.023 267.1)",
+        "tonalRamp": [
+          "#0a0b0e",
+          "#23252a",
+          "#3e424a",
+          "#5c616c",
+          "#7c8291",
+          "#a0a5b1",
+          "#c5c9d3",
+          "#ebeef5"
+        ]
+      },
+      "placeholder": {
+        "role": "neutral",
+        "displayName": "Placeholder Grey",
+        "canonical": "#6f7583",
+        "oklch": "oklch(56.2% 0.023 267.1)",
+        "tonalRamp": [
+          "#0a0b0e",
+          "#23252a",
+          "#3e424a",
+          "#5c616c",
+          "#7c8290",
+          "#a0a5b1",
+          "#c5c9d2",
+          "#ebeef5"
+        ]
+      },
+      "accent": {
+        "role": "primary",
+        "displayName": "Handset Teal",
+        "canonical": "#17769a",
+        "oklch": "oklch(53.1% 0.099 229.8)",
+        "tonalRamp": [
+          "#020d14",
+          "#092936",
+          "#17485d",
+          "#256986",
+          "#388db1",
+          "#6fafcd",
+          "#a1d1e9",
+          "#d3f4ff"
+        ]
+      },
+      "accent-hover": {
+        "role": "primary",
+        "displayName": "Handset Teal Deep",
+        "canonical": "#136583",
+        "oklch": "oklch(47.5% 0.087 228.8)",
+        "tonalRamp": [
+          "#030d12",
+          "#0e2934",
+          "#1e4859",
+          "#2f6982",
+          "#448cab",
+          "#76aec8",
+          "#a6d1e5",
+          "#d7f4ff"
+        ]
+      },
+      "accent-text": {
+        "role": "primary",
+        "displayName": "On Teal",
+        "canonical": "#ffffff",
+        "oklch": "oklch(100.0% 0.000 89.9)",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#252525",
+          "#424242",
+          "#616161",
+          "#828282",
+          "#a5a5a5",
+          "#c9c9c9",
+          "#eeeeee"
+        ]
+      },
+      "accent-soft": {
+        "role": "primary",
+        "displayName": "Teal Halo",
+        "canonical": "rgba(23, 118, 154, 0.1)"
+      },
+      "focus": {
+        "role": "primary",
+        "displayName": "Focus Teal",
+        "canonical": "#1a8ab3",
+        "oklch": "oklch(59.4% 0.111 229.3)",
+        "tonalRamp": [
+          "#010d14",
+          "#042938",
+          "#0a4960",
+          "#146a8a",
+          "#248eb7",
+          "#66b0d2",
+          "#9cd2ed",
+          "#d0f5ff"
+        ]
+      },
+      "link": {
+        "role": "primary",
+        "displayName": "Link Teal",
+        "canonical": "#136583",
+        "oklch": "oklch(47.5% 0.087 228.8)",
+        "tonalRamp": [
+          "#030d12",
+          "#0e2934",
+          "#1e4859",
+          "#2f6982",
+          "#448cab",
+          "#76aec8",
+          "#a6d1e5",
+          "#d7f4ff"
+        ]
+      },
+      "danger": {
+        "role": "secondary",
+        "displayName": "Rejected Red",
+        "canonical": "#c4320a",
+        "oklch": "oklch(54.1% 0.188 34.2)",
+        "tonalRamp": [
+          "#1b0301",
+          "#451105",
+          "#74220f",
+          "#a7351a",
+          "#db4b2a",
+          "#f47e63",
+          "#ffae97",
+          "#ffdccc"
+        ]
+      },
+      "danger-strong": {
+        "role": "secondary",
+        "displayName": "Destructive Red",
+        "canonical": "#b42318",
+        "oklch": "oklch(50.0% 0.182 29.5)",
+        "tonalRamp": [
+          "#1a0302",
+          "#44110b",
+          "#73221a",
+          "#a53529",
+          "#d94b3c",
+          "#f27e6e",
+          "#ffae9f",
+          "#ffdcd1"
+        ]
+      },
+      "danger-soft": {
+        "role": "secondary",
+        "displayName": "Rejected Red Fill",
+        "canonical": "#fef1ee",
+        "oklch": "oklch(96.8% 0.015 33.1)",
+        "tonalRamp": [
+          "#0d0b0a",
+          "#282423",
+          "#47403f",
+          "#685f5d",
+          "#8b7f7d",
+          "#aca3a0",
+          "#cfc7c5",
+          "#f2edec"
+        ]
+      },
+      "danger-border": {
+        "role": "secondary",
+        "displayName": "Rejected Red Border",
+        "canonical": "#fbd0c5",
+        "oklch": "oklch(89.2% 0.051 34.7)",
+        "tonalRamp": [
+          "#100908",
+          "#2f211e",
+          "#523c37",
+          "#775951",
+          "#9e786e",
+          "#bd9d94",
+          "#dcc3bc",
+          "#fceae5"
+        ]
+      },
+      "warning": {
+        "role": "secondary",
+        "displayName": "Needs Review Amber",
+        "canonical": "#a15c07",
+        "oklch": "oklch(54.3% 0.123 61.8)",
+        "tonalRamp": [
+          "#140801",
+          "#371e05",
+          "#5f370e",
+          "#895219",
+          "#b56f29",
+          "#d19763",
+          "#edbf98",
+          "#ffe8cc"
+        ]
+      },
+      "warning-soft": {
+        "role": "secondary",
+        "displayName": "Amber Fill",
+        "canonical": "#fef6e7",
+        "oklch": "oklch(97.5% 0.022 83.3)",
+        "tonalRamp": [
+          "#0c0b09",
+          "#272520",
+          "#45413a",
+          "#666156",
+          "#898174",
+          "#aaa499",
+          "#cdc9c0",
+          "#f1eee8"
+        ]
+      },
+      "warning-border": {
+        "role": "secondary",
+        "displayName": "Amber Border",
+        "canonical": "#f8dfaa",
+        "oklch": "oklch(91.2% 0.074 85.6)",
+        "tonalRamp": [
+          "#0f0b04",
+          "#2c2412",
+          "#4d4024",
+          "#715f38",
+          "#967f4e",
+          "#b6a37b",
+          "#d6c8a9",
+          "#f8eed8"
+        ]
+      },
+      "success": {
+        "role": "secondary",
+        "displayName": "Approved Green",
+        "canonical": "#067647",
+        "oklch": "oklch(49.9% 0.117 157.1)",
+        "tonalRamp": [
+          "#020f06",
+          "#0b2c1b",
+          "#184d32",
+          "#28714b",
+          "#3a9766",
+          "#71b78e",
+          "#a3d8b7",
+          "#d5f9e2"
+        ]
+      },
+      "success-soft": {
+        "role": "secondary",
+        "displayName": "Green Fill",
+        "canonical": "#ecfaf3",
+        "oklch": "oklch(97.3% 0.017 164.7)",
+        "tonalRamp": [
+          "#0a0c0b",
+          "#222624",
+          "#3d4440",
+          "#5a645f",
+          "#798680",
+          "#9ea8a3",
+          "#c3cbc7",
+          "#eaf0ed"
+        ]
+      },
+      "success-border": {
+        "role": "secondary",
+        "displayName": "Green Border",
+        "canonical": "#b7e9d0",
+        "oklch": "oklch(89.2% 0.062 163.2)",
+        "tonalRamp": [
+          "#060d09",
+          "#182921",
+          "#2e493c",
+          "#466b59",
+          "#608e78",
+          "#89af9c",
+          "#b4d1c2",
+          "#e0f4ea"
+        ]
+      },
+      "info": {
+        "role": "secondary",
+        "displayName": "No Changes Blue",
+        "canonical": "#1e5bd6",
+        "oklch": "oklch(51.1% 0.199 262.2)",
+        "tonalRamp": [
+          "#020a20",
+          "#0b224f",
+          "#1a3d84",
+          "#295abc",
+          "#3c7af6",
+          "#6da2ff",
+          "#9ec9ff",
+          "#d1efff"
+        ]
+      },
+      "info-soft": {
+        "role": "secondary",
+        "displayName": "Blue Fill",
+        "canonical": "#eef4ff",
+        "oklch": "oklch(96.6% 0.016 262.8)",
+        "tonalRamp": [
+          "#0a0b0d",
+          "#232529",
+          "#3f4248",
+          "#5d6169",
+          "#7d838c",
+          "#a1a5ad",
+          "#c6c9d0",
+          "#eceef3"
+        ]
+      },
+      "info-border": {
+        "role": "secondary",
+        "displayName": "Blue Border",
+        "canonical": "#c7d7fe",
+        "oklch": "oklch(88.0% 0.057 267.6)",
+        "tonalRamp": [
+          "#090b11",
+          "#202531",
+          "#3a4255",
+          "#56617c",
+          "#7482a5",
+          "#99a5c2",
+          "#bfc9e0",
+          "#e7eeff"
+        ]
+      },
+      "neutral": {
+        "role": "secondary",
+        "displayName": "Draft Grey",
+        "canonical": "#545b69",
+        "oklch": "oklch(47.0% 0.024 264.3)",
+        "tonalRamp": [
+          "#0a0b0e",
+          "#22252a",
+          "#3e424a",
+          "#5b616d",
+          "#7b8291",
+          "#9fa5b2",
+          "#c4c9d3",
+          "#ebeff6"
+        ]
+      },
+      "neutral-soft": {
+        "role": "secondary",
+        "displayName": "Draft Grey Fill",
+        "canonical": "#f1f2f5",
+        "oklch": "oklch(96.1% 0.004 271.4)",
+        "tonalRamp": [
+          "#0b0b0c",
+          "#252526",
+          "#414243",
+          "#606163",
+          "#818285",
+          "#a4a5a7",
+          "#c8c9cb",
+          "#eeeef0"
+        ]
+      },
+      "neutral-border": {
+        "role": "secondary",
+        "displayName": "Draft Grey Border",
+        "canonical": "#dcdfe5",
+        "oklch": "oklch(90.3% 0.009 264.5)",
+        "tonalRamp": [
+          "#0b0b0c",
+          "#242527",
+          "#404245",
+          "#5f6165",
+          "#808288",
+          "#a3a5aa",
+          "#c7c9cd",
+          "#edeef1"
+        ]
+      },
+      "lamp-ok": {
+        "role": "tertiary",
+        "displayName": "Lamp Green",
+        "canonical": "#22a05a",
+        "oklch": "oklch(62.3% 0.149 153.1)",
+        "tonalRamp": [
+          "#000f04",
+          "#022e15",
+          "#065029",
+          "#0c743e",
+          "#1c9b56",
+          "#65bb81",
+          "#9bdbae",
+          "#d0fbdb"
+        ]
+      },
+      "lamp-warn": {
+        "role": "tertiary",
+        "displayName": "Lamp Amber",
+        "canonical": "#e0a100",
+        "oklch": "oklch(75.0% 0.155 80.4)",
+        "tonalRamp": [
+          "#130900",
+          "#362000",
+          "#5c3a00",
+          "#865600",
+          "#b17500",
+          "#cd9c3e",
+          "#e9c381",
+          "#ffebbe"
+        ]
+      },
+      "lamp-err": {
+        "role": "tertiary",
+        "displayName": "Lamp Red",
+        "canonical": "#dc3b30",
+        "oklch": "oklch(59.4% 0.199 28.6)",
+        "tonalRamp": [
+          "#1c0202",
+          "#470d09",
+          "#771c16",
+          "#ab2d24",
+          "#e04136",
+          "#f9796a",
+          "#ffaa9c",
+          "#ffdacf"
+        ]
+      },
+      "lamp-idle": {
+        "role": "tertiary",
+        "displayName": "Lamp Grey",
+        "canonical": "#a3adb9",
+        "oklch": "oklch(74.4% 0.021 252.9)",
+        "tonalRamp": [
+          "#0a0b0d",
+          "#222529",
+          "#3d4349",
+          "#5b626b",
+          "#7a838f",
+          "#9ea6af",
+          "#c4cad1",
+          "#eaeff4"
+        ]
+      },
+      "bg-dark": {
+        "role": "neutral",
+        "displayName": "Desk Grey (dark)",
+        "canonical": "#0c0d10",
+        "oklch": "oklch(15.9% 0.007 271.0)",
+        "tonalRamp": [
+          "#0b0b0c",
+          "#242526",
+          "#414244",
+          "#606164",
+          "#818286",
+          "#a4a5a8",
+          "#c8c9cc",
+          "#eeeef0"
+        ]
+      },
+      "surface-dark": {
+        "role": "neutral",
+        "displayName": "Card White (dark)",
+        "canonical": "#131418",
+        "oklch": "oklch(19.2% 0.008 274.5)",
+        "tonalRamp": [
+          "#0b0b0c",
+          "#242527",
+          "#414245",
+          "#606165",
+          "#818287",
+          "#a4a5a9",
+          "#c8c9cc",
+          "#eeeef1"
+        ]
+      },
+      "surface-2-dark": {
+        "role": "neutral",
+        "displayName": "Inset Grey (dark)",
+        "canonical": "#191b20",
+        "oklch": "oklch(22.2% 0.010 268.2)",
+        "tonalRamp": [
+          "#0b0b0c",
+          "#242527",
+          "#404246",
+          "#5f6166",
+          "#808289",
+          "#a3a5aa",
+          "#c7c9cd",
+          "#edeef1"
+        ]
+      },
+      "surface-3-dark": {
+        "role": "neutral",
+        "displayName": "Screenshot Mat (dark)",
+        "canonical": "#20232a",
+        "oklch": "oklch(25.6% 0.014 267.0)",
+        "tonalRamp": [
+          "#0a0b0d",
+          "#242528",
+          "#404247",
+          "#5e6168",
+          "#7f828b",
+          "#a2a5ac",
+          "#c7c9cf",
+          "#edeef2"
+        ]
+      },
+      "surface-hover-dark": {
+        "role": "neutral",
+        "displayName": "Row Hover (dark)",
+        "canonical": "#171920",
+        "oklch": "oklch(21.4% 0.014 272.6)",
+        "tonalRamp": [
+          "#0b0b0d",
+          "#242528",
+          "#404247",
+          "#5f6168",
+          "#7f828b",
+          "#a2a5ac",
+          "#c7c9cf",
+          "#edeef2"
+        ]
+      },
+      "border-dark": {
+        "role": "neutral",
+        "displayName": "Hairline (dark)",
+        "canonical": "#24272e",
+        "oklch": "oklch(27.3% 0.014 267.1)",
+        "tonalRamp": [
+          "#0a0b0d",
+          "#242528",
+          "#404247",
+          "#5e6168",
+          "#7f828b",
+          "#a2a5ac",
+          "#c7c9cf",
+          "#edeef2"
+        ]
+      },
+      "border-strong-dark": {
+        "role": "neutral",
+        "displayName": "Control Outline (dark)",
+        "canonical": "#333741",
+        "oklch": "oklch(33.7% 0.018 268.1)",
+        "tonalRamp": [
+          "#0a0b0d",
+          "#232529",
+          "#3f4248",
+          "#5d616a",
+          "#7e828e",
+          "#a1a5af",
+          "#c6c9d1",
+          "#eceef4"
+        ]
+      },
+      "text-dark": {
+        "role": "neutral",
+        "displayName": "Ink (dark)",
+        "canonical": "#ececf0",
+        "oklch": "oklch(94.4% 0.005 286.3)",
+        "tonalRamp": [
+          "#0b0b0c",
+          "#252526",
+          "#424244",
+          "#616164",
+          "#828285",
+          "#a5a5a8",
+          "#c9c9cb",
+          "#eeeef0"
+        ]
+      },
+      "text-2-dark": {
+        "role": "neutral",
+        "displayName": "Secondary Ink (dark)",
+        "canonical": "#aeb2bd",
+        "oklch": "oklch(76.4% 0.016 269.9)",
+        "tonalRamp": [
+          "#0a0b0d",
+          "#242529",
+          "#404248",
+          "#5e6169",
+          "#7e828c",
+          "#a2a5ad",
+          "#c6c9d0",
+          "#edeef3"
+        ]
+      },
+      "text-3-dark": {
+        "role": "neutral",
+        "displayName": "Meta Grey (dark)",
+        "canonical": "#8b909c",
+        "oklch": "oklch(65.3% 0.019 267.7)",
+        "tonalRamp": [
+          "#0a0b0d",
+          "#232529",
+          "#3f4248",
+          "#5d616a",
+          "#7d828e",
+          "#a1a5af",
+          "#c6c9d1",
+          "#eceef4"
+        ]
+      },
+      "placeholder-dark": {
+        "role": "neutral",
+        "displayName": "Placeholder Grey (dark)",
+        "canonical": "#7a7f8c",
+        "oklch": "oklch(59.7% 0.021 268.9)",
+        "tonalRamp": [
+          "#0a0b0d",
+          "#23252a",
+          "#3f4249",
+          "#5d616b",
+          "#7d828f",
+          "#a1a5b0",
+          "#c6c9d2",
+          "#eceef4"
+        ]
+      },
+      "accent-dark": {
+        "role": "primary",
+        "displayName": "Handset Teal (dark)",
+        "canonical": "#3fb2d4",
+        "oklch": "oklch(71.3% 0.112 221.5)",
+        "tonalRamp": [
+          "#000e13",
+          "#002a36",
+          "#004a5c",
+          "#006c86",
+          "#0890b1",
+          "#5fb2cd",
+          "#98d4e9",
+          "#cdf6ff"
+        ]
+      },
+      "accent-hover-dark": {
+        "role": "primary",
+        "displayName": "Handset Teal Deep (dark)",
+        "canonical": "#5cc0de",
+        "oklch": "oklch(75.9% 0.102 220.3)",
+        "tonalRamp": [
+          "#010e13",
+          "#042a34",
+          "#0b4a5a",
+          "#146c82",
+          "#2490ac",
+          "#67b1c9",
+          "#9cd3e5",
+          "#d0f6ff"
+        ]
+      },
+      "accent-text-dark": {
+        "role": "primary",
+        "displayName": "On Teal (dark)",
+        "canonical": "#062029",
+        "oklch": "oklch(22.8% 0.036 224.3)",
+        "tonalRamp": [
+          "#070c0e",
+          "#1d272b",
+          "#35454b",
+          "#4f656e",
+          "#6c8792",
+          "#93a9b3",
+          "#bbcdd4",
+          "#e4f1f6"
+        ]
+      },
+      "accent-soft-dark": {
+        "role": "primary",
+        "displayName": "Teal Halo (dark)",
+        "canonical": "rgba(63, 178, 212, 0.14)"
+      },
+      "focus-dark": {
+        "role": "primary",
+        "displayName": "Focus Teal (dark)",
+        "canonical": "#6cc8e3",
+        "oklch": "oklch(78.6% 0.096 219.2)",
+        "tonalRamp": [
+          "#010d12",
+          "#072a33",
+          "#124958",
+          "#1e6b80",
+          "#308fa9",
+          "#6bb1c6",
+          "#9fd3e3",
+          "#d2f6ff"
+        ]
+      },
+      "link-dark": {
+        "role": "primary",
+        "displayName": "Link Teal (dark)",
+        "canonical": "#6cc8e3",
+        "oklch": "oklch(78.6% 0.096 219.2)",
+        "tonalRamp": [
+          "#010d12",
+          "#072a33",
+          "#124958",
+          "#1e6b80",
+          "#308fa9",
+          "#6bb1c6",
+          "#9fd3e3",
+          "#d2f6ff"
+        ]
+      },
+      "danger-dark": {
+        "role": "secondary",
+        "displayName": "Rejected Red (dark)",
+        "canonical": "#ff8a73",
+        "oklch": "oklch(75.7% 0.147 32.3)",
+        "tonalRamp": [
+          "#180503",
+          "#3f1710",
+          "#6a2c20",
+          "#9a4332",
+          "#ca5c47",
+          "#e58876",
+          "#feb4a5",
+          "#ffe0d5"
+        ]
+      },
+      "danger-strong-dark": {
+        "role": "secondary",
+        "displayName": "Destructive Red (dark)",
+        "canonical": "#ff9c88",
+        "oklch": "oklch(79.0% 0.123 32.2)",
+        "tonalRamp": [
+          "#160604",
+          "#3b1a14",
+          "#653127",
+          "#92493b",
+          "#c06452",
+          "#db8e7e",
+          "#f6b8ab",
+          "#ffe3d9"
+        ]
+      },
+      "danger-soft-dark": {
+        "role": "secondary",
+        "displayName": "Rejected Red Fill (dark)",
+        "canonical": "rgba(240, 68, 56, 0.12)"
+      },
+      "danger-border-dark": {
+        "role": "secondary",
+        "displayName": "Rejected Red Border (dark)",
+        "canonical": "rgba(240, 68, 56, 0.32)"
+      },
+      "warning-dark": {
+        "role": "secondary",
+        "displayName": "Needs Review Amber (dark)",
+        "canonical": "#f8c55c",
+        "oklch": "oklch(84.9% 0.135 83.1)",
+        "tonalRamp": [
+          "#120900",
+          "#332200",
+          "#583d00",
+          "#7f5a00",
+          "#a87900",
+          "#c69f50",
+          "#e3c58b",
+          "#ffecc4"
+        ]
+      },
+      "warning-soft-dark": {
+        "role": "secondary",
+        "displayName": "Amber Fill (dark)",
+        "canonical": "rgba(247, 144, 9, 0.12)"
+      },
+      "warning-border-dark": {
+        "role": "secondary",
+        "displayName": "Amber Border (dark)",
+        "canonical": "rgba(247, 144, 9, 0.3)"
+      },
+      "success-dark": {
+        "role": "secondary",
+        "displayName": "Approved Green (dark)",
+        "canonical": "#5ad49a",
+        "oklch": "oklch(78.5% 0.139 159.9)",
+        "tonalRamp": [
+          "#000f06",
+          "#002e1a",
+          "#005031",
+          "#00744a",
+          "#039b65",
+          "#60ba8d",
+          "#98dbb6",
+          "#cefbe1"
+        ]
+      },
+      "success-soft-dark": {
+        "role": "secondary",
+        "displayName": "Green Fill (dark)",
+        "canonical": "rgba(23, 178, 106, 0.12)"
+      },
+      "success-border-dark": {
+        "role": "secondary",
+        "displayName": "Green Border (dark)",
+        "canonical": "rgba(23, 178, 106, 0.3)"
+      },
+      "info-dark": {
+        "role": "secondary",
+        "displayName": "No Changes Blue (dark)",
+        "canonical": "#8db4ff",
+        "oklch": "oklch(77.1% 0.116 262.9)",
+        "tonalRamp": [
+          "#050b17",
+          "#17243e",
+          "#2d4169",
+          "#446097",
+          "#5d81c7",
+          "#86a5e0",
+          "#b1caf8",
+          "#deefff"
+        ]
+      },
+      "info-soft-dark": {
+        "role": "secondary",
+        "displayName": "Blue Fill (dark)",
+        "canonical": "rgba(46, 144, 250, 0.12)"
+      },
+      "info-border-dark": {
+        "role": "secondary",
+        "displayName": "Blue Border (dark)",
+        "canonical": "rgba(46, 144, 250, 0.3)"
+      },
+      "neutral-dark": {
+        "role": "secondary",
+        "displayName": "Draft Grey (dark)",
+        "canonical": "#b3b8c3",
+        "oklch": "oklch(78.2% 0.017 266.3)",
+        "tonalRamp": [
+          "#0a0b0d",
+          "#232529",
+          "#3f4248",
+          "#5e6169",
+          "#7e828c",
+          "#a1a5ae",
+          "#c6c9d0",
+          "#eceef3"
+        ]
+      },
+      "neutral-soft-dark": {
+        "role": "secondary",
+        "displayName": "Draft Grey Fill (dark)",
+        "canonical": "rgba(148, 155, 170, 0.1)"
+      },
+      "neutral-border-dark": {
+        "role": "secondary",
+        "displayName": "Draft Grey Border (dark)",
+        "canonical": "rgba(148, 155, 170, 0.24)"
+      },
+      "lamp-ok-dark": {
+        "role": "tertiary",
+        "displayName": "Lamp Green (dark)",
+        "canonical": "#3dd68c",
+        "oklch": "oklch(77.9% 0.165 157.3)",
+        "tonalRamp": [
+          "#001005",
+          "#002f16",
+          "#00522a",
+          "#007740",
+          "#009e59",
+          "#51be84",
+          "#90ddaf",
+          "#c9fddc"
+        ]
+      },
+      "lamp-warn-dark": {
+        "role": "tertiary",
+        "displayName": "Lamp Amber (dark)",
+        "canonical": "#f2c14e",
+        "oklch": "oklch(83.4% 0.141 85.4)",
+        "tonalRamp": [
+          "#120a00",
+          "#332200",
+          "#573d00",
+          "#7f5a00",
+          "#a87a00",
+          "#c59f4a",
+          "#e2c688",
+          "#ffecc2"
+        ]
+      },
+      "lamp-err-dark": {
+        "role": "tertiary",
+        "displayName": "Lamp Red (dark)",
+        "canonical": "#ff6b5e",
+        "oklch": "oklch(70.9% 0.183 27.7)",
+        "tonalRamp": [
+          "#1b0302",
+          "#44100d",
+          "#73221c",
+          "#a6342d",
+          "#d94a40",
+          "#f37e71",
+          "#ffada1",
+          "#ffdcd3"
+        ]
+      },
+      "lamp-idle-dark": {
+        "role": "tertiary",
+        "displayName": "Lamp Grey (dark)",
+        "canonical": "#5e6a77",
+        "oklch": "oklch(51.9% 0.025 250.4)",
+        "tonalRamp": [
+          "#090b0e",
+          "#21262a",
+          "#3c434a",
+          "#59626d",
+          "#778491",
+          "#9ca6b2",
+          "#c2cad3",
+          "#e9eff5"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "The hero H1 only."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "One per section; a plain sentence ending in a full stop."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "The ZynoTalk promo heading."
+      },
+      "card-title": {
+        "displayName": "Card title",
+        "purpose": "Headings inside a section: agent layers, download sidebar blocks."
+      },
+      "lede": {
+        "displayName": "Lede",
+        "purpose": "The paragraph under a headline, Secondary Ink; 17px under 600px."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Default text."
+      },
+      "body-sm": {
+        "displayName": "Body small",
+        "purpose": "Row text, spec values, notices, footer links."
+      },
+      "caption": {
+        "displayName": "Caption",
+        "purpose": "Dates, file names, captions, file-bar labels; Meta Grey."
+      },
+      "control": {
+        "displayName": "Control",
+        "purpose": "Button labels and nav links."
+      },
+      "tag": {
+        "displayName": "Tag",
+        "purpose": "Tag text."
+      },
+      "mono": {
+        "displayName": "Mono",
+        "purpose": "Machine text: config tables and keys, commands, asset filenames."
+      }
+    },
+    "shadows": [
+      {
+        "name": "shadow-sm",
+        "value": "0 1px 2px rgba(16, 24, 40, 0.05)",
+        "dark": "0 1px 2px rgba(0, 0, 0, 0.4)",
+        "purpose": "Resting: cards, buttons, segmented box, tab strip."
+      },
+      {
+        "name": "shadow-md",
+        "value": "0 4px 12px -2px rgba(16, 24, 40, 0.08), 0 2px 4px -2px rgba(16, 24, 40, 0.04)",
+        "dark": "0 6px 16px -4px rgba(0, 0, 0, 0.5)",
+        "purpose": "Attached: mobile menu panel, agents terminal."
+      },
+      {
+        "name": "shadow-lg",
+        "value": "0 24px 48px -12px rgba(16, 24, 40, 0.18)",
+        "dark": "0 24px 56px -12px rgba(0, 0, 0, 0.7)",
+        "purpose": "Floating: app screenshot windows and the hero terminal."
+      },
+      {
+        "name": "lamp-halo",
+        "value": "0 0 0 3px color-mix(in srgb, var(--lamp-*) 22%, transparent)",
+        "purpose": "Halo around a status lamp only (24% for amber; Teal Halo for candidate)."
+      },
+      {
+        "name": "focus-halo",
+        "value": "0 0 0 3px var(--accent-soft)",
+        "purpose": "Focused field."
+      }
+    ],
+    "motion": [
+      {
+        "name": "control",
+        "value": "120ms ease",
+        "purpose": "Background, border and text colour on buttons, links, tabs."
+      },
+      {
+        "name": "hero-rise",
+        "value": "900ms cubic-bezier(0.16, 1, 0.3, 1)",
+        "purpose": "One hero settle: window and terminal rise 24px; terminal delayed 160ms."
+      },
+      {
+        "name": "type-in",
+        "value": "520ms cubic-bezier(0.16, 1, 0.3, 1), stagger 260ms",
+        "purpose": "Terminal lines reveal once (260ms for output and comments)."
+      },
+      {
+        "name": "cross-fade",
+        "value": "280ms cubic-bezier(0.16, 1, 0.3, 1)",
+        "purpose": "Call-state screenshot swaps."
+      },
+      {
+        "name": "lamp",
+        "value": "300ms ease",
+        "purpose": "Lamp colour change when the release state lands."
+      },
+      {
+        "name": "header-rule",
+        "value": "160ms ease",
+        "purpose": "Header hairline appearing once stuck."
+      },
+      {
+        "name": "reduced-motion",
+        "value": "none",
+        "purpose": "Everything static; smooth scroll off."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "hero-stack",
+        "value": "1100px"
+      },
+      {
+        "name": "two-col",
+        "value": "1000px"
+      },
+      {
+        "name": "header-burger",
+        "value": "900px"
+      },
+      {
+        "name": "section-pad",
+        "value": "820px"
+      },
+      {
+        "name": "rows-stack",
+        "value": "720px"
+      },
+      {
+        "name": "narrow-shots",
+        "value": "640px"
+      },
+      {
+        "name": "gutter",
+        "value": "600px"
+      },
+      {
+        "name": "phone",
+        "value": "560px"
+      },
+      {
+        "name": "tab-text",
+        "value": "520px"
+      },
+      {
+        "name": "tiny",
+        "value": "420px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The one teal action per section; header Download, hero download (xl).",
+      "html": "<a class=\"ds-btn ds-btn--primary\" href=\"#\"><svg width=\"14\" height=\"14\" viewBox=\"0 0 384 512\" aria-hidden=\"true\"><path fill=\"currentColor\" d=\"M169.4 470.6c12.5 12.5 32.8 12.5 45.3 0l160-160c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0L224 370.8V64c0-17.7-14.3-32-32-32s-32 14.3-32 32v306.7L54.6 265.4c-12.5-12.5-32.8-12.5-45.3 0s-12.5 32.8 0 45.3l160 160z\"/></svg>Download</a>",
+      "css": ".ds-btn{display:inline-flex;align-items:center;gap:8px;height:36px;padding:0 14px;border:1px solid var(--border-strong);border-radius:var(--radius);background:var(--surface);color:var(--text);box-shadow:var(--shadow-sm);font:500 14px/1 var(--font-sans);text-decoration:none;cursor:pointer;transition:background-color 120ms ease,border-color 120ms ease,color 120ms ease}.ds-btn--primary{background:var(--accent);border-color:var(--accent);color:var(--accent-text)}.ds-btn--primary:hover{background:var(--accent-hover);border-color:var(--accent-hover)}.ds-btn:focus-visible{outline:2px solid var(--focus);outline-offset:2px}"
+    },
+    {
+      "name": "Default Button",
+      "kind": "button",
+      "refersTo": "button",
+      "description": "Bordered Card White button for secondary actions (All platforms, On GitHub).",
+      "html": "<a class=\"ds-btn-d\" href=\"#\">All platforms</a>",
+      "css": ".ds-btn-d{display:inline-flex;align-items:center;gap:8px;height:46px;padding:0 20px;border:1px solid var(--border-strong);border-radius:var(--radius);background:var(--surface);color:var(--text);box-shadow:var(--shadow-sm);font:500 16px/1 var(--font-sans);text-decoration:none;transition:background-color 120ms ease}.ds-btn-d:hover{background:var(--surface-2)}.ds-btn-d:focus-visible{outline:2px solid var(--focus);outline-offset:2px}"
+    },
+    {
+      "name": "Ghost Button",
+      "kind": "button",
+      "refersTo": "button-ghost",
+      "description": "Transparent, shadowless; GitHub in header and console.",
+      "html": "<a class=\"ds-btn-g\" href=\"#\">GitHub</a>",
+      "css": ".ds-btn-g{display:inline-flex;align-items:center;height:36px;padding:0 14px;border:1px solid transparent;border-radius:var(--radius);background:transparent;color:var(--text-2);font:500 14px/1 var(--font-sans);text-decoration:none;transition:color 120ms ease}.ds-btn-g:hover{color:var(--text)}.ds-btn-g:focus-visible{outline:2px solid var(--focus);outline-offset:2px}"
+    },
+    {
+      "name": "Status Tags",
+      "kind": "chip",
+      "refersTo": "tag",
+      "description": "Triplet tags with a word; tag-accent is the one solid selection marker.",
+      "html": "<span class=\"ds-tag ds-tag--success\">Latest</span> <span class=\"ds-tag ds-tag--info\">Release candidate</span> <span class=\"ds-tag\">caller</span> <span class=\"ds-tag ds-tag--accent\">This computer</span>",
+      "css": ".ds-tag{display:inline-flex;align-items:center;gap:5px;height:22px;padding:0 8px;border:1px solid var(--neutral-border);border-radius:var(--radius-sm);background:var(--neutral-soft);color:var(--neutral);font:500 12px/1 var(--font-sans);white-space:nowrap}.ds-tag--success{border-color:var(--success-border);background:var(--success-soft);color:var(--success)}.ds-tag--info{border-color:var(--info-border);background:var(--info-soft);color:var(--info)}.ds-tag--accent{border-color:transparent;background:var(--accent);color:var(--accent-text)}"
+    },
+    {
+      "name": "Lamp Status Line",
+      "kind": "custom",
+      "refersTo": "lamp",
+      "description": "The app's round LED beside a sentence; colour set by its data-lamp value.",
+      "html": "<p class=\"ds-status\"><span class=\"ds-lamp ds-lamp--ok\"></span>Siple 0.9.0 &middot; Nov 17, 2026</p>",
+      "css": ".ds-status{display:flex;align-items:center;gap:10px;margin:0 0 8px;font:400 14px/1.55 var(--font-sans);color:var(--text-2);font-variant-numeric:tabular-nums}.ds-lamp{flex:0 0 auto;width:8px;height:8px;border-radius:50%;background:var(--lamp-idle);box-shadow:0 0 0 3px color-mix(in srgb,var(--lamp-idle) 22%,transparent);transition:background-color 300ms ease}.ds-lamp--warn{background:var(--lamp-warn);box-shadow:0 0 0 3px color-mix(in srgb,var(--lamp-warn) 24%,transparent)}.ds-lamp--ok{background:var(--lamp-ok);box-shadow:0 0 0 3px color-mix(in srgb,var(--lamp-ok) 22%,transparent)}"
+    },
+    {
+      "name": "File Bar",
+      "kind": "nav",
+      "refersTo": "filebar-link",
+      "description": "Sticky config.toml outline band; current table in Teal Halo.",
+      "html": "<nav class=\"ds-fb\"><span class=\"ds-fb__file\">config.toml</span><a class=\"ds-fb__l\" href=\"#\"><code>[calls]</code>Lines and transfers</a><a class=\"ds-fb__l ds-fb__l--on\" href=\"#\"><code>[control]</code>Agents</a><a class=\"ds-fb__l\" href=\"#\"><code>[ui]</code>Desktop</a></nav>",
+      "css": ".ds-fb{display:flex;align-items:center;gap:20px;height:44px;padding:0 16px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);background:color-mix(in srgb,var(--surface) 88%,transparent);font-family:var(--font-sans)}.ds-fb__file{padding-right:20px;border-right:1px solid var(--border);font:600 13px var(--font-mono);color:var(--text)}.ds-fb__l{display:inline-flex;align-items:baseline;gap:8px;padding:6px 10px;border-radius:var(--radius-sm);color:var(--text-3);font-size:13px;text-decoration:none;transition:background-color 120ms ease}.ds-fb__l code{font:500 12px var(--font-mono);color:var(--text-2)}.ds-fb__l:hover{background:var(--surface-2)}.ds-fb__l--on{background:var(--accent-soft);color:var(--text-2)}.ds-fb__l--on code{color:var(--link)}.ds-fb__l:focus-visible{outline:2px solid var(--focus);outline-offset:2px}"
+    },
+    {
+      "name": "Config Excerpt",
+      "kind": "card",
+      "refersTo": "config-excerpt",
+      "description": "Real lines of one config table beside a section heading.",
+      "html": "<figure class=\"ds-cfg\"><figcaption class=\"ds-cfg__cap\">config.toml<span>edit it while Siple runs; no restart</span></figcaption><pre class=\"ds-cfg__pre\"><span class=\"k\">[calls]</span>\n<span class=\"c\"># hold the other lines when you answer or dial</span>\nhold_scope = <span class=\"s\">\"all\"</span></pre></figure>",
+      "css": ".ds-cfg{margin:0;border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden;background:var(--surface-2)}.ds-cfg__cap{display:flex;align-items:center;gap:8px;min-height:36px;padding:0 16px;border-bottom:1px solid var(--border);background:var(--surface);font:600 12px var(--font-mono);color:var(--text)}.ds-cfg__cap span{margin-left:auto;font:400 12px var(--font-sans);color:var(--text-3)}.ds-cfg__pre{margin:0;padding:18px 20px;font:12.5px/1.65 var(--font-mono);color:var(--text);overflow-x:auto}.ds-cfg__pre .k{color:var(--link);font-weight:600}.ds-cfg__pre .c{color:var(--text-3)}.ds-cfg__pre .s{color:var(--success)}"
+    },
+    {
+      "name": "Terminal Card",
+      "kind": "card",
+      "refersTo": "terminal",
+      "description": "Code-rendered shell session with real siple-cli commands.",
+      "html": "<figure class=\"ds-term\"><figcaption class=\"ds-term__bar\">siple-cli</figcaption><pre class=\"ds-term__body\"><span class=\"c\"># the call below, from a shell</span>\n<span class=\"ps\">$ </span>siple-cli ctl call.mute '{\"call_id\":\"c1\"}'\n<span class=\"o\">{\"ok\":true}</span></pre></figure>",
+      "css": ".ds-term{margin:0;border:1px solid var(--border-strong);border-radius:var(--radius-lg);background:var(--surface);overflow:hidden;box-shadow:var(--shadow-lg)}.ds-term__bar{display:flex;align-items:center;height:34px;padding:0 14px;border-bottom:1px solid var(--border);background:var(--surface-2);font:12px var(--font-mono);color:var(--text-3)}.ds-term__body{margin:0;padding:14px 16px 16px;font:12.5px/1.7 var(--font-mono);color:var(--text);overflow-x:auto}.ds-term__body .ps{color:var(--success)}.ds-term__body .o{color:var(--text-2)}.ds-term__body .c{color:var(--text-3)}"
+    },
+    {
+      "name": "Download Row (this computer)",
+      "kind": "custom",
+      "refersTo": "download-row",
+      "description": "One platform row; the detected one gets teal tint, frame, marker tag and primary button.",
+      "html": "<div class=\"ds-dl\"><div class=\"ds-dl__row ds-dl__row--mine\"><div class=\"ds-dl__main\"><span class=\"ds-dl__name\">macOS <span class=\"ds-dl__mine\">This computer</span></span><span class=\"ds-dl__req\">macOS 12 or later</span><span class=\"ds-dl__file\">Siple-0.9.0-macos.dmg</span></div><span class=\"ds-dl__trust\">Notarized</span><a class=\"ds-dl__btn\" href=\"#\">Download</a></div><div class=\"ds-dl__row\"><div class=\"ds-dl__main\"><span class=\"ds-dl__name\">Linux x86_64</span><span class=\"ds-dl__req\">glibc 2.35 or later</span></div><span class=\"ds-dl__trust ds-dl__trust--n\">SHA-256 checksum</span><a class=\"ds-dl__btn ds-dl__btn--d\" href=\"#\">On GitHub</a></div></div>",
+      "css": ".ds-dl{border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--surface);box-shadow:var(--shadow-sm);overflow:hidden;font-family:var(--font-sans)}.ds-dl__row{position:relative;display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:center;gap:16px;padding:16px 20px}.ds-dl__row+.ds-dl__row{border-top:1px solid var(--border)}.ds-dl__row--mine{background:color-mix(in srgb,var(--accent) 6%,var(--surface));outline:1px solid var(--accent);outline-offset:-1px}.ds-dl__main{display:flex;flex-direction:column;gap:3px}.ds-dl__name{display:flex;align-items:center;gap:10px;font-weight:600;color:var(--text)}.ds-dl__mine{display:inline-flex;align-items:center;height:22px;padding:0 8px;border-radius:var(--radius-sm);background:var(--accent);color:var(--accent-text);font:500 12px/1 var(--font-sans)}.ds-dl__req{font-size:13px;color:var(--text-2)}.ds-dl__file{font:12px var(--font-mono);color:var(--text-3)}.ds-dl__trust{display:inline-flex;align-items:center;height:22px;padding:0 8px;border:1px solid var(--success-border);border-radius:var(--radius-sm);background:var(--success-soft);color:var(--success);font:500 12px/1 var(--font-sans)}.ds-dl__trust--n{border-color:var(--neutral-border);background:var(--neutral-soft);color:var(--neutral)}.ds-dl__btn{display:inline-flex;align-items:center;height:36px;padding:0 14px;border:1px solid var(--accent);border-radius:var(--radius);background:var(--accent);color:var(--accent-text);box-shadow:var(--shadow-sm);font:500 14px/1 var(--font-sans);text-decoration:none;transition:background-color 120ms ease}.ds-dl__btn:hover{background:var(--accent-hover);border-color:var(--accent-hover)}.ds-dl__btn--d{background:var(--surface);border-color:var(--border-strong);color:var(--text)}.ds-dl__btn--d:hover{background:var(--surface-2);border-color:var(--border-strong)}.ds-dl__btn:focus-visible{outline:2px solid var(--focus);outline-offset:2px}"
+    },
+    {
+      "name": "Store Button (coming soon)",
+      "kind": "button",
+      "refersTo": "store-button-soon",
+      "description": "Disabled but legible: dashed, transparent, no shadow; never a store badge before a listing exists.",
+      "html": "<button class=\"ds-store\" disabled><span class=\"ds-store__t\"><span class=\"ds-store__pre\">Coming soon</span>Mac App Store</span></button>",
+      "css": ".ds-store{display:inline-flex;align-items:center;gap:11px;height:52px;min-width:196px;padding:0 16px 0 14px;border:1px dashed var(--border-strong);border-radius:var(--radius);background:transparent;color:var(--text-2);font-family:var(--font-sans);cursor:not-allowed}.ds-store__t{display:flex;flex-direction:column;align-items:flex-start;gap:3px;font-size:14px;font-weight:600}.ds-store__pre{font-size:11px;font-weight:500;color:var(--text-3)}"
+    },
+    {
+      "name": "Theme Line",
+      "kind": "custom",
+      "refersTo": "theme-option-checked",
+      "description": "The live [ui] theme config line; checked value fills teal.",
+      "html": "<div class=\"ds-tl\"><code class=\"ds-tl__k\">theme =</code><div class=\"ds-seg\" role=\"radiogroup\" aria-label=\"Theme\"><label><input type=\"radio\" name=\"ds-t\" checked><span>\"system\"</span></label><label><input type=\"radio\" name=\"ds-t\"><span>\"light\"</span></label><label><input type=\"radio\" name=\"ds-t\"><span>\"dark\"</span></label></div></div>",
+      "css": ".ds-tl{display:flex;align-items:center;gap:12px;padding:22px 24px;background:color-mix(in srgb,var(--accent) 5%,var(--surface))}.ds-tl__k{font:14px var(--font-mono);color:var(--text-2)}.ds-seg{display:inline-flex;padding:3px;border:1px solid var(--border-strong);border-radius:var(--radius);background:var(--surface);box-shadow:var(--shadow-sm)}.ds-seg label{position:relative}.ds-seg input{position:absolute;inset:0;opacity:0;margin:0;cursor:pointer}.ds-seg span{display:grid;place-items:center;height:34px;padding:0 12px;border-radius:6px;font:13px var(--font-mono);color:var(--text-2);transition:background-color 120ms ease,color 120ms ease}.ds-seg label:hover span{background:var(--surface-2)}.ds-seg input:checked+span{background:var(--accent);color:var(--accent-text)}.ds-seg input:focus-visible+span{outline:2px solid var(--focus);outline-offset:2px}"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Review Desk, wired for a phone",
+    "overview": "Siple's site is the PixelCI design system (\"The Review Desk\", documented in `pixelci/DESIGN.md`) carried over value for value, with Siple's identity swapped in. Every neutral, status triplet, radius, and shadow is PixelCI's, under the same token names. The marketing layer (display scale, generous sections, the faint desk grid in the hero) comes from the PixelCI sales site. Siple changes three things. The accent family is the app's teal-blue instead of indigo. The app's round status lamps join as a second status device for live state. And the page reads as the app's `config.toml`: each body section is one real table of that file, outlined by a sticky file bar.\n\nThe desk is quiet and utilitarian. A cool grey page, white cards with 1px hairlines and barely visible resting shadows, one accent, status as small tags with a word in them. The only imagery is the app's own rendered screenshots, light and dark, which swap with the page theme. A code-rendered terminal and real config excerpts carry the \"agents drive the same calls\" story. Nothing is illustrated, and no number or listing is invented.\n\nLight and dark come from one set of token names, redeclared for dark. Theme follows the OS through `prefers-color-scheme`. `html[data-theme]` pins the reader's choice, set by the header toggle or the page's live `[ui] theme` line. A component never branches on theme. Only the screenshot pair does, and only by showing one of its two images.",
+    "keyCharacteristics": [
+      "PixelCI's Review Desk tokens unchanged, except the accent family (teal-blue) and the added `--lamp-*` tokens.",
+      "One teal accent for the primary action, the selected item, and focus. In dark it is a lighter teal with dark ink on it.",
+      "Status is a tag triplet with a word in it. Live state is a round lamp, always beside a word.",
+      "Inter for people's words; monospace for machine text: table names, keys, commands, filenames.",
+      "The page is a config file: a sticky `config.toml` band under the header, one table per section, a real excerpt beside each heading, a mono link to that table's reference at the section's foot.",
+      "Real screenshots in both themes; the app window runs off the bottom of the hero like an app left open.",
+      "Release content (version, date, every download link) is fixed at build time from the root CHANGELOG (`src/data/release.ts`); the browser only detects the visitor's OS.",
+      "No eyebrow labels. A heading stands alone."
+    ],
+    "rules": [
+      {
+        "name": "The One Teal Rule",
+        "body": "Teal means \"this is the action, this is chosen, or this has focus\". The header's Download is the persistent primary. Inside the page body, each section fills at most one control with teal: the hero's download button, the \"This computer\" row, the checked theme value. Teal never carries status. A release candidate's lamp is teal because the candidate is the build you would pick, not because it is good or bad.",
+        "section": "colors"
+      },
+      {
+        "name": "The Tag Triplet Rule",
+        "body": "A status tone is applied as soft fill, matching border, and tone text together, and every tag holds a word. `tag--accent` is the one solid tag. It is a selection marker (\"This computer\"), not a status.",
+        "section": "colors"
+      },
+      {
+        "name": "The Lamp Beside a Word Rule",
+        "body": "A lamp is an 8px round LED with a 3px halo of its own colour at 22% (24% for amber). It always sits next to text that says the same thing (the version and date). Its colour comes only from its `data-lamp` value, never from a per-element class. Opt in with `data-lamp`; without it a lamp stays idle grey.",
+        "section": "colors"
+      },
+      {
+        "name": "The Machine Text Rule",
+        "body": "Anything a machine reads or a person copies is monospace: config table names and keys, `siple-cli` commands, JSON-RPC calls, filenames once they resolve to real asset names, and `config.toml` itself. Everything a person wrote is Inter, including version numbers and dates, which use Inter's tabular numerals so they hold position as they resolve.",
+        "section": "typography"
+      },
+      {
+        "name": "The No Eyebrow Rule",
+        "body": "Headings carry no label above them: no small caps, no table name, no category kicker. A section's config table is named in three places that already exist: the file bar, the excerpt's `config.toml` caption, and the mono link at the section's foot.",
+        "section": "typography"
+      },
+      {
+        "name": "The Screenshot Gets the Width Rule",
+        "body": "Chrome never takes horizontal space from a screenshot. Navigation lives in horizontal bands, and screenshots span the full column.",
+        "section": "layout"
+      },
+      {
+        "name": "The File Is the Outline Rule",
+        "body": "Every section below the hero that describes a feature is one real table of Siple's config. It shows that table's real keys, and its order is the file bar's order. The licence, download, and promo sections sit outside the file and do not appear in the bar.",
+        "section": "layout"
+      },
+      {
+        "name": "The Window Floats Rule",
+        "body": "Only a picture of the app (a screenshot window or a terminal sitting on one) lifts above the desk. Site cards stay resting, and hover changes fill, never shadow.",
+        "section": "elevation"
+      },
+      {
+        "name": "The Dashed Means Not Live Rule",
+        "body": "A dashed 1px outline on a transparent fill with no shadow marks something that is not a live object. It is used for the \"Coming soon\" store buttons and the aside note under the speech turns. A real control or card is always solid.",
+        "section": "shapes"
+      }
+    ],
+    "dos": [
+      "**Do** take every colour from the custom properties in `tokens.css`. Keep PixelCI's names and values for everything except the accent family and the lamps, so the two sites read as one family.",
+      "**Do** fill at most one control per section with teal, and keep the rest default or ghost (The One Teal Rule).",
+      "**Do** show status as a tag triplet with a word in it, and live state as a lamp beside a sentence that says the same thing (The Lamp Beside a Word Rule).",
+      "**Do** bake release content in at build time, and make the no-JS page complete and honest.",
+      "**Do** give each feature section a real config table: an excerpt of its real keys, a place in the file bar, and a mono link to its reference (The File Is the Outline Rule).",
+      "**Do** set table names, keys, commands, and asset filenames in monospace, and everything else in Inter (The Machine Text Rule).",
+      "**Do** use the app's own light and dark renders as a pair, so a screenshot always matches the page theme.",
+      "**Do** nest radii 12px, 8px, 5px from container to control to inner piece.",
+      "**Do** keep motion to one hero settle (window and terminal rise 24px over 900ms on `cubic-bezier(0.16, 1, 0.3, 1)`, the terminal 160ms later), the one-time terminal type-in, 280ms cross-fades, and 120ms colour changes. Under reduced motion everything is static.",
+      "**Do** mark \"not yet available\" with a dashed, transparent, shadowless shape that still reads at full strength (The Dashed Means Not Live Rule)."
+    ],
+    "donts": [
+      "**Don't** use indigo anywhere; Siple's accent is teal-blue.",
+      "**Don't** use teal for status, or a status tone for a general-purpose button.",
+      "**Don't** put a lamp anywhere without a word beside it, or colour a lamp by anything other than its `data-lamp` value.",
+      "**Don't** put an eyebrow, kicker, or table-name label above a heading (The No Eyebrow Rule).",
+      "**Don't** show an Apple or Microsoft store badge for a listing that does not exist; use the dashed \"Coming soon\" button.",
+      "**Don't** add a side rail for navigation; the outline is the horizontal file bar (The Screenshot Gets the Width Rule).",
+      "**Don't** lift site cards with more than the resting shadow; floating shadows belong to pictures of the app (The Window Floats Rule).",
+      "**Don't** use the desk grid and glow anywhere but the hero.",
+      "**Don't** hard-code a colour, radius, or shadow where a token exists.",
+      "**Don't** copy the known gaps below into new work."
+    ]
+  }
+}

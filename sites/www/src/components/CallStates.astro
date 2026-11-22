@@ -1,0 +1,260 @@
+---
+/**
+ * CallStates: the [calls] section's viewer. Each tab is a real state of the
+ * app, and selecting one swaps in that state's real screenshot (light or dark,
+ * following the page). Without JS every panel is listed in order.
+ */
+import Shot from './Shot.astro';
+import { doc } from '../data/site';
+
+const states = [
+  {
+    id: 'transfer_consult',
+    icon: 'fa-people-arrows',
+    title: 'Attended transfer',
+    text: 'Talk to the next person first, swap between the two, then complete the transfer or go back.',
+    alt: 'Siple during an attended transfer: Bob Martin on hold on line 1, Carol Diaz talking on line 2, and a transfer panel offering Complete transfer, Swap and Cancel.',
+    more: { label: 'Transfers', href: doc.transfers },
+  },
+  {
+    id: 'transfer_composer',
+    icon: 'fa-share',
+    title: 'Pick a target',
+    text: 'Type a few digits and choose the extension by its lamp, or connect to a call already on the line.',
+    alt: 'Siple’s transfer composer for Bob Martin: the digits 10 typed, matching extensions listed with their idle, busy, ringing and held states, and Consult first or Transfer now buttons.',
+    more: { label: 'Transfers', href: doc.transfers },
+  },
+  {
+    id: 'blf_list',
+    icon: 'fa-table-list',
+    title: 'Busy lamps',
+    text: 'See every extension at a glance, filter to ringing or busy, and pick up a colleague’s ringing call.',
+    alt: 'Siple’s extensions panel as a list grouped into Sales, Support and Warehouse, with filters for ringing, busy and problems, and a Pick up button on a ringing extension.',
+    more: { label: 'Extensions and BLF', href: doc.extensions },
+  },
+  {
+    id: 'incoming',
+    icon: 'fa-phone-volume',
+    title: 'Incoming call',
+    text: 'Answer, reject or silence the ringer. Answering a second call puts the first one on hold.',
+    alt: 'Siple with an incoming call from Reception desk ringing on account desk-1001, with Answer, Reject and Silence buttons, and the extensions panel showing each extension’s state.',
+    more: { label: 'Calls', href: doc.calls },
+  },
+];
+---
+
+<div class="states" data-states>
+  <div class="states__tabs" role="tablist" aria-label="Siple call states">
+    {
+      states.map((s, i) => (
+        <button
+          type="button"
+          class="states__tab"
+          role="tab"
+          id={`tab-${s.id}`}
+          aria-controls={`panel-${s.id}`}
+          aria-selected={i === 0 ? 'true' : 'false'}
+          tabindex={i === 0 ? 0 : -1}
+        >
+          <span class="states__title">
+            <i class={`fa-solid ${s.icon}`} aria-hidden="true" />
+            {s.title}
+          </span>
+          <span class="states__text">{s.text}</span>
+        </button>
+      ))
+    }
+  </div>
+  <div class="states__stage">
+    {
+      states.map((s, i) => (
+        <figure class="states__panel" role="tabpanel" id={`panel-${s.id}`} aria-labelledby={`tab-${s.id}`} data-active={i === 0 ? '' : undefined}>
+          <div class="states__shot states__shot--wide"><Shot name={s.id} alt={s.alt} /></div>
+          <div class="states__shot states__shot--narrow"><Shot name={s.id} variant="narrow" width={840} height={1340} alt={s.alt} /></div>
+          <figcaption class="states__cap">
+            <span>{s.title}: the app’s own rendering, from its snapshot tests.</span>
+            <a href={s.more.href}>{s.more.label} guide</a>
+          </figcaption>
+        </figure>
+      ))
+    }
+  </div>
+</div>
+
+<style>
+  .states {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+  .states__tabs {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-lg);
+    background: var(--surface);
+    box-shadow: var(--shadow-sm);
+    overflow: hidden;
+  }
+  .states__tab {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 14px 16px 16px;
+    border: 0;
+    background: transparent;
+    color: var(--text-2);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+    transition: background-color 120ms ease;
+  }
+  .states__tab + .states__tab {
+    border-left: 1px solid var(--border);
+  }
+  .states__tab:hover {
+    background: var(--surface-hover);
+  }
+  .states__tab:focus-visible {
+    outline-offset: -3px;
+  }
+  .states__tab[aria-selected='true'] {
+    background: var(--surface-3);
+    color: var(--text);
+    box-shadow: inset 0 -2px 0 var(--accent);
+  }
+  .states__title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: var(--t-sm);
+    font-weight: 600;
+    color: var(--text);
+  }
+  .states__title i {
+    width: 16px;
+    color: var(--text-3);
+    font-size: 13px;
+  }
+  .states__tab[aria-selected='true'] .states__title i {
+    color: var(--link);
+  }
+  .states__text {
+    font-size: var(--t-xs);
+    line-height: 1.45;
+  }
+  .states__stage {
+    display: grid;
+  }
+  .states__panel {
+    grid-area: 1 / 1;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .states__shot {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    background: var(--surface-3);
+    box-shadow: var(--shadow-lg);
+  }
+  .states__shot--narrow {
+    display: none;
+  }
+  @media (max-width: 640px) {
+    .states__shot--wide {
+      display: none;
+    }
+    .states__shot--narrow {
+      display: block;
+      margin: 0 8px;
+      /* The phone layout continues below; fade rather than cut. */
+      -webkit-mask-image: linear-gradient(to bottom, #000 88%, transparent);
+      mask-image: linear-gradient(to bottom, #000 88%, transparent);
+    }
+  }
+  .states__cap {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 6px 20px;
+    font-size: var(--t-xs);
+    color: var(--text-3);
+  }
+  /* With JS: one panel at a time, cross-faded. */
+  :global(.js) .states__panel {
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 280ms cubic-bezier(0.16, 1, 0.3, 1), visibility 0s linear 280ms;
+  }
+  :global(.js) .states__panel[data-active] {
+    opacity: 1;
+    visibility: visible;
+    transition: opacity 280ms cubic-bezier(0.16, 1, 0.3, 1), visibility 0s;
+  }
+  /* Without JS: every state, stacked. */
+  :global(html:not(.js)) .states__panel + .states__panel {
+    grid-area: auto;
+    margin-top: 32px;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    :global(.js) .states__panel,
+    :global(.js) .states__panel[data-active] {
+      transition: none;
+    }
+  }
+  @media (max-width: 900px) {
+    .states__tabs {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .states__tab:nth-child(3) {
+      border-left: 0;
+    }
+    .states__tab:nth-child(n + 3) {
+      border-top: 1px solid var(--border);
+    }
+  }
+  @media (max-width: 520px) {
+    .states__text {
+      display: none;
+    }
+    .states__tab {
+      padding: 12px 14px;
+      min-height: 48px;
+      justify-content: center;
+    }
+  }
+</style>
+
+<script>
+  /* WAI-ARIA tabs: click or arrow keys select; Home/End jump. */
+  document.querySelectorAll<HTMLElement>('[data-states]').forEach((root) => {
+    const tabs = [...root.querySelectorAll<HTMLButtonElement>('[role="tab"]')];
+    const select = (i: number, focus = false) => {
+      tabs.forEach((t, j) => {
+        const on = i === j;
+        t.setAttribute('aria-selected', String(on));
+        t.tabIndex = on ? 0 : -1;
+        const panel = document.getElementById(t.getAttribute('aria-controls')!);
+        if (panel) panel.toggleAttribute('data-active', on);
+      });
+      if (focus) tabs[i].focus();
+    };
+    tabs.forEach((t, i) => {
+      t.addEventListener('click', () => select(i));
+      t.addEventListener('keydown', (e) => {
+        const k = e.key;
+        let n = -1;
+        if (k === 'ArrowRight' || k === 'ArrowDown') n = (i + 1) % tabs.length;
+        else if (k === 'ArrowLeft' || k === 'ArrowUp') n = (i - 1 + tabs.length) % tabs.length;
+        else if (k === 'Home') n = 0;
+        else if (k === 'End') n = tabs.length - 1;
+        if (n < 0) return;
+        e.preventDefault();
+        select(n, true);
+      });
+    });
+  });
+</script>

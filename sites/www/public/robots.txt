@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://siple.app/sitemap.xml
