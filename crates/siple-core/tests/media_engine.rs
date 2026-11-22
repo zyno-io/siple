@@ -87,6 +87,36 @@ async fn detect_for(h: &CallMediaHandle, hz: f32, secs: f32) -> ToneDetectResult
         .unwrap()
 }
 
+/// Polls `cond` every 10 ms until it holds; panics after `secs` seconds. Waiting for the
+/// condition (instead of sleeping a fixed time and then checking) keeps a stalled machine from
+/// failing a test that only measures progress.
+async fn until(what: &str, secs: u64, mut cond: impl FnMut() -> bool) {
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(secs);
+    while !cond() {
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "timed out after {secs} s waiting for {what}"
+        );
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+}
+
+/// Waits for `RecordFinished` of `path` on call `call`: the WAV file is then finalized.
+async fn record_finished(events: &mut UnboundedReceiver<MediaEvent>, call: &str, path: &Path) {
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+    loop {
+        let ev = tokio::time::timeout_at(deadline, events.recv())
+            .await
+            .expect("no RecordFinished")
+            .unwrap();
+        if ev.call_id == call
+            && matches!(&ev.kind, MediaEventKind::RecordFinished { path: p } if p == path)
+        {
+            return;
+        }
+    }
+}
+
 async fn tone_roundtrip(codec: AudioCodec, srtp: SrtpPolicy) {
     let r = rig(
         codec,
@@ -199,12 +229,13 @@ async fn reinvite_unchanged_keys_keeps_srtp() {
         r.b.apply(neg_b.clone());
         tokio::time::sleep(Duration::from_millis(300)).await;
     }
+    // Media must keep flowing: more packets arrive (and pass SRTP). Waited for rather than
+    // counted over a fixed 500 ms, which a stalled machine can spend without sending a packet.
     let before = r.b.stats().rx_packets;
-    tokio::time::sleep(Duration::from_millis(500)).await;
-    assert!(
-        r.b.stats().rx_packets > before + 10,
-        "media must keep flowing"
-    );
+    until("media to keep flowing", 10, || {
+        r.b.stats().rx_packets > before + 10
+    })
+    .await;
     assert!(detect_for(&r.b, 1000.0, 3.0).await.detected);
     assert!(detect_for(&r.a, 1500.0, 3.0).await.detected);
     assert_eq!(r.a.stats().srtp_auth_failures, 0);
@@ -331,28 +362,39 @@ async fn record_stereo_one_second() {
     assert!(detect_for(&r.b, 1000.0, 4.0).await.detected);
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("rx.wav");
+    // One second by the engine's RX timeline (`rx_ms`: 20 ms per RX frame the media thread
+    // pulls), not by the wall clock: a loaded machine stretches a fixed sleep, and the media
+    // thread then drops the frames it is too far behind on.
+    let t0 = r.b.rx_ms();
     r.b.record_start(&path, true);
-    tokio::time::sleep(Duration::from_secs(1)).await;
+    // The media thread creates the file when it handles the command; every later RX frame is
+    // recorded.
+    until("the recording to start", 10, || path.exists()).await;
+    let started = r.b.rx_ms();
+    until("one second of RX audio", 30, || {
+        r.b.rx_ms() >= started + 1000
+    })
+    .await;
+    let stopping = r.b.rx_ms();
     r.b.record_stop();
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(3);
-    loop {
-        let ev = tokio::time::timeout_at(deadline, r.events.recv())
-            .await
-            .expect("no RecordFinished")
-            .unwrap();
-        if ev.call_id == "B"
-            && matches!(&ev.kind, MediaEventKind::RecordFinished { path: p } if *p == path)
-        {
-            break;
-        }
-    }
+    record_finished(&mut r.events, "B", &path).await;
+    let t1 = r.b.rx_ms();
     let (spec, samples) = read_wav(&path);
     assert_eq!(
         (spec.channels, spec.sample_rate, spec.bits_per_sample),
         (2, 48000, 16)
     );
+    // Exactly the RX frames pulled while recording: at least the second waited for, at most
+    // what the timeline moved from before the start to after the stop (one frame of slack each
+    // way for the relaxed `rx_ms` counter).
     let frames = samples.len() / 2;
-    assert!((45_000..=51_000).contains(&frames), "frames = {frames}");
+    assert_eq!(frames % 960, 0, "whole 20 ms frames: {frames}");
+    let ms = frames as u64 / 48;
+    assert!(
+        (stopping - started).saturating_sub(20) <= ms && ms <= t1 - t0 + 20,
+        "recorded {ms} ms; RX timeline: {t0} before the start, {started} started, \
+         {stopping} at the stop, {t1} finished"
+    );
     let left: Vec<i16> = samples.iter().step_by(2).copied().collect();
     let right: Vec<i16> = samples.iter().skip(1).step_by(2).copied().collect();
     let (ratio, level) = detect(&left[left.len() / 4..], 48000, 1000.0);
@@ -365,22 +407,33 @@ async fn record_stereo_one_second() {
 async fn record_sink_mono() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("sink.wav");
-    let r = rig(
+    let mut r = rig(
         AudioCodec::G722,
         SrtpPolicy::Off,
         AudioSource::Tone(1000.0),
         AudioSource::Silence,
         AudioSink::Record(path.clone()),
     );
-    tokio::time::sleep(Duration::from_millis(1500)).await;
+    // The sink records from the call's creation (RX timeline 0). Judge the audio from where B
+    // first hears the tone, for one second of the engine's RX timeline (not wall-clock sleeps,
+    // which a loaded machine stretches past a late stream start).
+    assert!(detect_for(&r.b, 1000.0, 4.0).await.detected);
+    let heard = r.b.rx_ms();
+    until("one second of RX audio", 30, || r.b.rx_ms() >= heard + 1000).await;
     r.b.close();
-    tokio::time::sleep(Duration::from_millis(300)).await;
+    // The file is finalized when the media thread tears the call down.
+    record_finished(&mut r.events, "B", &path).await;
     let (spec, samples) = read_wav(&path);
     assert_eq!((spec.channels, spec.sample_rate), (1, 48000));
-    assert!(samples.len() > 40_000, "{}", samples.len());
-    // Judge 100 ms blocks of the second half: the tone must dominate most of them
+    let from = heard as usize * 48;
+    assert!(
+        samples.len() >= from + 48_000,
+        "{} samples, tone heard at {heard} ms",
+        samples.len()
+    );
+    // Judge 100 ms blocks after the detection: the tone must dominate most of them
     // (a loaded CI machine may glitch a block or two).
-    let tail = &samples[samples.len() / 2..];
+    let tail = &samples[from..];
     let ratios: Vec<f32> = tail
         .as_chunks::<4800>()
         .0
