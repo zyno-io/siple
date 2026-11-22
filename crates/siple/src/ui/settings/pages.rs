@@ -752,9 +752,12 @@ pub(in crate::ui) fn sec_toggle_pub(
 fn mcp_snippet(channel: &siple_core::config::channel::Channel) -> String {
     use siple_core::config::channel::ChannelKind;
     if let Some(file) = channel.appimage {
+        // The runtime option must come first; `--cli mcp` selects the CLI whatever argv[0] is.
+        let mut args: Vec<&str> = channel.launch_args_prefix().to_vec();
+        args.extend(["--cli", "mcp"]);
         // serde_json escapes the path.
         serde_json::to_string_pretty(&serde_json::json!({
-            "mcpServers": {"siple": {"command": file.to_string_lossy(), "args": ["--cli", "mcp"]}}
+            "mcpServers": {"siple": {"command": file.to_string_lossy(), "args": args}}
         }))
         .unwrap_or_default()
     } else if channel.kind == ChannelKind::Flatpak {
@@ -842,5 +845,16 @@ mod mcp_snippet_tests {
                 serde_json::json!(["--cli", "mcp"])
             );
         }
+    }
+
+    #[test]
+    fn an_extracted_appimage_snippet_starts_with_the_runtime_option() {
+        let ch =
+            Channel::appimage(std::path::Path::new("/home/u/Siple.AppImage")).with_extracted(true);
+        let v: serde_json::Value = serde_json::from_str(&mcp_snippet(&ch)).unwrap();
+        assert_eq!(
+            v["mcpServers"]["siple"]["args"],
+            serde_json::json!(["--appimage-extract-and-run", "--cli", "mcp"])
+        );
     }
 }

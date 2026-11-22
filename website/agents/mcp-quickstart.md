@@ -44,12 +44,14 @@ as its arguments:
 claude mcp add siple -- flatpak run --command=siple-cli io.zyno.siple mcp
 ```
 
-The AppImage edition: link the file as `siple-cli` (see [Install](/guide/install)), or run the file itself with `--cli`:
+The AppImage edition: run the file itself with `--cli`, or use the `siple-cli` wrapper script from [Install](/guide/install):
 
 ```sh
-claude mcp add siple -- ~/.local/bin/siple-cli mcp
 claude mcp add siple -- /path/to/Siple.AppImage --cli mcp
+claude mcp add siple -- ~/.local/bin/siple-cli mcp
 ```
+
+Without FUSE, put `--appimage-extract-and-run` first: `/path/to/Siple.AppImage --appimage-extract-and-run --cli mcp`.
 
 ## A non-default instance
 

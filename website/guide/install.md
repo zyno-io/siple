@@ -11,7 +11,7 @@ coming soon.
 | Mac (Apple silicon and Intel) | macOS (`.dmg`) | macOS 12 or later |
 | Windows PC (Intel, AMD) | Windows x64 (`.zip`) | Windows 10 or later |
 | Windows on ARM (Surface Pro X / 11, Snapdragon) | Windows ARM64 (`.zip`) | Windows 11 |
-| Linux PC (Intel, AMD) | Linux x86_64 AppImage (`.AppImage`), or the tarball (`.tar.gz`) |
+| Linux PC (Intel, AMD) | Linux x86_64 AppImage (`.AppImage`), or the tarball (`.tar.gz`) | Debian 12+, Ubuntu 23.04+ (glibc 2.36 or later) |
 | Linux on ARM (Raspberry Pi 4/5 with a 64-bit OS, ARM servers and laptops) | Linux aarch64 AppImage (`-linux-aarch64.AppImage`), or the tarball (`-linux-aarch64.tar.gz`) | Debian 12+, Ubuntu 23.04+ (glibc 2.36 or later) |
 
 <OsTabs>
@@ -53,12 +53,15 @@ Keep it in a folder you own, so it can update itself, and under a fixed name (th
 mkdir -p ~/Applications && mv ~/Downloads/Siple-*-linux-x86_64.AppImage ~/Applications/Siple.AppImage
 ```
 
-For the command-line client, link the file as `siple-cli`, or run it with `--cli`:
+For the command-line client, run the file with `--cli`, or put a small wrapper script named `siple-cli` on your `PATH`:
 
 ```sh
-ln -s ~/Applications/Siple.AppImage ~/.local/bin/siple-cli
-~/Applications/Siple.AppImage --cli ctl status
+printf '#!/bin/sh\nexec "$HOME/Applications/Siple.AppImage" --cli "$@"\n' > ~/.local/bin/siple-cli && chmod +x ~/.local/bin/siple-cli
+siple-cli ctl status
 ```
+
+A symlink named `siple-cli` to the file also works, but not under AppImageLauncher, which hides the name it was started
+as; the wrapper works everywhere.
 
 An AppImage mounts itself with FUSE 3: if you see "Cannot mount AppImage", install `fuse3` (libfuse2 is not needed). Where
 there is no FUSE (containers), start it as `Siple.AppImage --appimage-extract-and-run`; that option must come first, and it

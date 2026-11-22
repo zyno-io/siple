@@ -7,7 +7,6 @@
 //! point is recovered at the next start and the running copy keeps its inode.
 
 use std::os::unix::fs::MetadataExt;
-use std::os::unix::process::CommandExt;
 use std::path::{Component, Path, PathBuf};
 use std::process::Command;
 use std::sync::Arc;
@@ -21,44 +20,62 @@ use crate::ui_host::RelaunchSpec;
 
 /// The staging area inside the AppImage's directory.
 const STAGING: &str = ".siple-update";
-/// The first run extracts about 79 MB.
-const RUN_TIMEOUT: Duration = Duration::from_secs(30);
+/// The first run extracts about 79 MB (slow disks and USB sticks take a while); the run stays
+/// bounded so a hung payload still fails the update as untrusted.
+const RUN_TIMEOUT: Duration = Duration::from_secs(120);
 /// Leftover backups younger than this are never swept at start (the directory is a user folder).
 const OLD_BACKUP: Duration = Duration::from_secs(24 * 60 * 60);
 /// The name of the staged download.
 const PAYLOAD: &str = "payload.AppImage";
-/// What the runtime names the extraction directory of an `--appimage-extract-and-run` start.
-const EXTRACTED_PREFIX: &str = "appimage_extracted_";
 
 /// Runs the staged AppImage with `--version`.
 pub trait AppImageExec: Send + Sync {
-    /// stdout of `<file> --version` started with argv[0] = `argv0` (`siple` or `siple-cli`), env
-    /// `APPIMAGE_EXTRACT_AND_RUN=1`, `TMPDIR=<tmp>` and `APPIMAGELAUNCHER_DISABLE=1`.
-    fn version_output(&self, file: &Path, argv0: &str, tmp: &Path) -> Result<String, String>;
+    /// stdout of the `--version` of `program` (`siple` or `siple-cli`) of `<file>`, env
+    /// `APPIMAGE_EXTRACT_AND_RUN=1`, `TMPDIR=<tmp>` and `APPIMAGELAUNCHER_DISABLE=1`. The CLI is
+    /// selected with the explicit argument `--cli`, never by argv[0] (AppImageLauncher and the
+    /// runtime can replace it).
+    fn version_output(&self, file: &Path, program: &str, tmp: &Path) -> Result<String, String>;
 }
 
 impl<F> AppImageExec for F
 where
     F: Fn(&Path, &str, &Path) -> Result<String, String> + Send + Sync,
 {
-    fn version_output(&self, file: &Path, argv0: &str, tmp: &Path) -> Result<String, String> {
-        self(file, argv0, tmp)
+    fn version_output(&self, file: &Path, program: &str, tmp: &Path) -> Result<String, String> {
+        self(file, program, tmp)
     }
 }
 
 /// Runs the real process.
 pub struct RealAppImageExec;
 
-impl AppImageExec for RealAppImageExec {
-    fn version_output(&self, file: &Path, argv0: &str, tmp: &Path) -> Result<String, String> {
+/// Variables of an AppImage run that this process may have inherited from its own runtime; the
+/// staged file must set its own, so the payload is tested and not the installed copy.
+const INHERITED_RUNTIME_VARS: [&str; 5] = ["TARGET_APPIMAGE", "APPIMAGE", "APPDIR", "ARGV0", "OWD"];
+
+impl RealAppImageExec {
+    /// The command that runs `program` of `file`: `<file> [--cli] --version`.
+    fn command(file: &Path, program: &str, tmp: &Path) -> Command {
         let mut cmd = Command::new(file);
-        cmd.arg0(argv0)
-            .arg("--version")
+        // AppRun dispatches on this argument whatever argv[0] the runtime hands it.
+        if program == "siple-cli" {
+            cmd.arg("--cli");
+        }
+        cmd.arg("--version")
             .env("APPIMAGE_EXTRACT_AND_RUN", "1")
             .env("TMPDIR", tmp)
             // AppImageLauncher's binfmt handler would ask to integrate the hidden staged file.
             .env("APPIMAGELAUNCHER_DISABLE", "1");
-        linux::run_capped(cmd, RUN_TIMEOUT)
+        for k in INHERITED_RUNTIME_VARS {
+            cmd.env_remove(k);
+        }
+        cmd
+    }
+}
+
+impl AppImageExec for RealAppImageExec {
+    fn version_output(&self, file: &Path, program: &str, tmp: &Path) -> Result<String, String> {
+        linux::run_capped(Self::command(file, program, tmp), RUN_TIMEOUT)
     }
 }
 
@@ -88,9 +105,7 @@ impl AppImagePlatform {
     pub fn with_exec(env: Env, exec: Arc<dyn AppImageExec>) -> Self {
         let extracted = env
             .var("APPDIR")
-            .and_then(|d| Path::new(d).file_name())
-            .and_then(|n| n.to_str())
-            .is_some_and(|n| n.starts_with(EXTRACTED_PREFIX));
+            .is_some_and(|d| siple_config::channel::appdir_is_extracted(Path::new(d)));
         Self {
             env,
             exec,
@@ -201,18 +216,18 @@ impl Platform for AppImagePlatform {
                 .map_err(|e| InstallError::io("cannot create staging", &e))?;
             let version = expect.version.to_string();
             let checked = (|| {
-                for argv0 in ["siple-cli", "siple"] {
+                for program in ["siple-cli", "siple"] {
                     let out = self
                         .exec
-                        .version_output(&payload, argv0, &run)
+                        .version_output(&payload, program, &run)
                         .map_err(|e| {
                             InstallError::untrusted(format!(
-                                "the new {argv0} does not run here: {e}"
+                                "the new {program} does not run here: {e}"
                             ))
                         })?;
-                    if !linux::reports_version(&out, &version) {
+                    if !linux::reports_program_version(&out, program, &version) {
                         return Err(InstallError::untrusted(format!(
-                            "the new {argv0} does not report version {version}"
+                            "the new {program} does not report version {version}"
                         )));
                     }
                 }
@@ -728,8 +743,8 @@ mod tests {
 
     fn says(v: &'static str) -> Arc<dyn AppImageExec> {
         Arc::new(
-            move |_: &Path, argv0: &str, _: &Path| -> Result<String, String> {
-                Ok(format!("{argv0} {v}\n"))
+            move |_: &Path, program: &str, _: &Path| -> Result<String, String> {
+                Ok(format!("{program} {v}\n"))
             },
         )
     }
@@ -752,12 +767,12 @@ mod tests {
         let calls: Arc<Mutex<Vec<Call>>> = Arc::default();
         let c2 = calls.clone();
         let exec: Arc<dyn AppImageExec> = Arc::new(
-            move |f: &Path, argv0: &str, tmp: &Path| -> Result<String, String> {
+            move |f: &Path, program: &str, tmp: &Path| -> Result<String, String> {
                 assert!(tmp.is_dir());
                 c2.lock()
                     .unwrap()
-                    .push((argv0.to_string(), tmp.to_path_buf(), f.to_path_buf()));
-                Ok(format!("{argv0} 0.2.0\n"))
+                    .push((program.to_string(), tmp.to_path_buf(), f.to_path_buf()));
+                Ok(format!("{program} 0.2.0\n"))
             },
         );
         let (_tmp, root, p, t) = setup(exec);
@@ -813,8 +828,8 @@ mod tests {
     #[test]
     fn stage_refuses_a_wrong_version_or_a_failed_run() {
         let wrong = Arc::new(
-            |_: &Path, argv0: &str, _: &Path| -> Result<String, String> {
-                Ok(if argv0 == "siple" {
+            |_: &Path, program: &str, _: &Path| -> Result<String, String> {
+                Ok(if program == "siple" {
                     "siple 0.9.9".into()
                 } else {
                     "siple-cli 0.2.0".into()
@@ -822,7 +837,7 @@ mod tests {
             },
         ) as Arc<dyn AppImageExec>;
         let fails = Arc::new(|_: &Path, _: &str, _: &Path| -> Result<String, String> {
-            Err("no answer within 30 s".into())
+            Err("no answer within 120 s".into())
         }) as Arc<dyn AppImageExec>;
         for exec in [says("0.1.9"), wrong, fails] {
             let (_tmp, root, p, t) = setup(exec);
@@ -842,14 +857,40 @@ mod tests {
         let script = tmp.path().join("fake.AppImage");
         std::fs::write(
             &script,
-            "#!/bin/sh\necho \"$APPIMAGE_EXTRACT_AND_RUN $TMPDIR $APPIMAGELAUNCHER_DISABLE $1\"\n",
+            "#!/bin/sh\necho \"$APPIMAGE_EXTRACT_AND_RUN $TMPDIR $APPIMAGELAUNCHER_DISABLE $*\"\n",
         )
         .unwrap();
         std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
         let out = RealAppImageExec
             .version_output(&script, "siple-cli", Path::new("/x/run"))
             .unwrap();
+        assert_eq!(out.trim(), "1 /x/run 1 --cli --version");
+        let out = RealAppImageExec
+            .version_output(&script, "siple", Path::new("/x/run"))
+            .unwrap();
         assert_eq!(out.trim(), "1 /x/run 1 --version");
+    }
+
+    #[test]
+    fn probe_command_selects_the_cli_by_argument_and_drops_inherited_runtime_vars() {
+        let args = |program: &str| -> Vec<String> {
+            RealAppImageExec::command(Path::new("/x/p.AppImage"), program, Path::new("/x/run"))
+                .get_args()
+                .map(|a| a.to_string_lossy().into_owned())
+                .collect()
+        };
+        assert_eq!(args("siple-cli"), ["--cli", "--version"]);
+        assert_eq!(args("siple"), ["--version"]);
+        let cmd =
+            RealAppImageExec::command(Path::new("/x/p.AppImage"), "siple-cli", Path::new("/x/run"));
+        let envs: Vec<_> = cmd.get_envs().collect();
+        for k in INHERITED_RUNTIME_VARS {
+            assert!(
+                envs.iter()
+                    .any(|(name, val)| *name == std::ffi::OsStr::new(k) && val.is_none()),
+                "{k} is removed"
+            );
+        }
     }
 
     /// An update to `new` staged in a fresh setup.

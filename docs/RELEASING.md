@@ -97,7 +97,7 @@ library. Two builds of the same tarball give the same bytes (`SOURCE_DATE_EPOCH`
   information in the file would let AppImageLauncher, Gear Lever or AppImageUpdate replace it behind Siple's back, without the
   signature check and possibly during a call, and `.zsync` files would join the asset contract.
 - **`scripts/appimage-smoke.sh`** (release job; the container has no FUSE, so everything runs with extract-and-run): the runtime
-  commit, `--version` of `siple` and `siple-cli` (through `--cli` and through a `siple-cli` symlink), and a headless engine whose
+  commit, `--version` of `siple` and `siple-cli` (through `--cli`, and through a `siple-cli` symlink for the argv0 dispatch), and a headless engine whose
   `status.build.channel` must be `appimage`.
 - **`scripts/package-appimage.sh --self-test`** (job `appimage` of `ci.yml`): stub binaries instead of cargo, the pinned runtime,
   the golden file list, the `AppRun` dispatch and reproducibility.
@@ -186,7 +186,7 @@ signature is a change of the updater's interface: old versions in the field stop
 | `Siple-<version>-macos.zip` | `<version>` is the full version (`0.2.0`, `0.2.0-rc.1`). Exactly one top-level entry, `Siple.app`, made by `ditto -c -k --keepParent`; app identifier `io.zyno.siple`, `Contents/MacOS/siple-cli` identifier `io.zyno.siple-cli`, Developer ID team `VUDU4KEQ99`, notarized; `CFBundleShortVersionString` is the numeric core (`0.2.0` for `0.2.0-rc.1`). |
 | `Siple-<core>-windows-x64.zip`, `Siple-<core>-windows-arm64.zip` | `<core>` is the numeric core (a release candidate keeps `0.2.0`). Flat zip: `siple.exe`, `siple-cli.exe`, `config.example.toml`, `LICENSE`, `README.md`, `THIRD-PARTY-NOTICES.html`, `docs/API.md`, `docs/CONFIG.md`. Both exes Authenticode-signed by Signal24 LLC (Artifact Signing, RFC 3161 timestamp), PE machine of the architecture, `FileVersion` the numeric core. |
 | `Siple-<core>-linux-x86_64.tar.gz`, `Siple-<core>-linux-aarch64.tar.gz` | One top directory `siple-<core>/` with `bin/siple`, `bin/siple-cli`, `share/...`, `LICENSE`, `THIRD-PARTY-NOTICES.html`; regular files and directories only. `bin/siple --version` and `bin/siple-cli --version` print the full version. |
-| `Siple-<core>-linux-x86_64.AppImage`, `Siple-<core>-linux-aarch64.AppImage` | AppImage type 2: the pinned type2-runtime of that architecture followed by a zstd squashfs of the AppDir (`AppRun`, the root `io.zyno.siple.desktop` and icon, `usr/bin/{siple,siple-cli}`, `usr/share/...`; `AppRun` dispatches `siple-cli` by argv0 or a first `--cli`). No bundled libraries, no embedded update information. With `APPIMAGE_EXTRACT_AND_RUN=1`, `<file> --version` and `<file> --cli --version` print the full version. |
+| `Siple-<core>-linux-x86_64.AppImage`, `Siple-<core>-linux-aarch64.AppImage` | AppImage type 2: the pinned type2-runtime of that architecture followed by a zstd squashfs of the AppDir (`AppRun`, the root `io.zyno.siple.desktop` and icon, `usr/bin/{siple,siple-cli}`, `usr/share/...`; `AppRun` dispatches `siple-cli` by a first `--cli` (the contract: AppImageLauncher replaces argv0 with the file name) or by argv0; the updater probes the CLI with `--cli`). No bundled libraries, no embedded update information. With `APPIMAGE_EXTRACT_AND_RUN=1`, `<file> --version` and `<file> --cli --version` print the full version. |
 
 The updater accepts the full-version or the numeric-core spelling of a file name (the release candidates mix them) and requires
 exactly one match per platform (the `release` job checks it: "Exactly one file per asset").

@@ -59,6 +59,9 @@ pub struct Channel {
     pub aumid: Option<&'static str>,
     /// AppImage: the `.AppImage` file this process runs from (`$APPIMAGE`, canonical).
     pub appimage: Option<&'static Path>,
+    /// AppImage: this copy runs from an extraction directory (no FUSE), so every later start of the
+    /// file needs `--appimage-extract-and-run` too.
+    pub appimage_extracted: bool,
 }
 
 impl Channel {
@@ -70,6 +73,7 @@ impl Channel {
         package_family: None,
         aumid: None,
         appimage: None,
+        appimage_extracted: false,
     };
     /// A Mac App Store sandboxed process.
     pub const MAC_APP_STORE: Channel = Channel {
@@ -79,6 +83,7 @@ impl Channel {
         package_family: None,
         aumid: None,
         appimage: None,
+        appimage_extracted: false,
     };
 
     /// A Flatpak (Flathub) process.
@@ -89,6 +94,7 @@ impl Channel {
         package_family: None,
         aumid: None,
         appimage: None,
+        appimage_extracted: false,
     };
 
     /// An MSIX-packaged process.
@@ -100,6 +106,7 @@ impl Channel {
             package_family: Some(package_family),
             aumid,
             appimage: None,
+            appimage_extracted: false,
         }
     }
 
@@ -112,7 +119,15 @@ impl Channel {
             package_family: None,
             aumid: None,
             appimage: Some(file),
+            appimage_extracted: false,
         }
+    }
+
+    /// The same AppImage channel, running from an extraction directory (`--appimage-extract-and-run`,
+    /// no FUSE).
+    pub fn with_extracted(mut self, extracted: bool) -> Channel {
+        self.appimage_extracted = extracted;
+        self
     }
 
     /// Store or sandbox managed (OS-managed install and updates, no self-update, no OS
@@ -124,6 +139,17 @@ impl Channel {
         )
     }
 
+    /// Arguments that must come first when the file is started again: `--appimage-extract-and-run`
+    /// for an AppImage that runs from an extraction directory (the runtime honours it only as the
+    /// first argument), nothing otherwise.
+    pub fn launch_args_prefix(&self) -> &'static [&'static str] {
+        if self.appimage.is_some() && self.appimage_extracted {
+            &["--appimage-extract-and-run"]
+        } else {
+            &[]
+        }
+    }
+
     /// What a login item or a relaunch must start: the AppImage file, never its temporary mount;
     /// otherwise the running executable.
     pub fn launch_target(&self) -> std::io::Result<PathBuf> {
@@ -132,6 +158,19 @@ impl Channel {
             None => std::env::current_exe(),
         }
     }
+}
+
+/// What the AppImage runtime names the extraction directory of an `--appimage-extract-and-run` start
+/// (`appimage_extracted_XXXXXX`, unlike the `.mount_XXXXXX` of a FUSE mount).
+const EXTRACTED_PREFIX: &str = "appimage_extracted_";
+
+/// Whether `appdir` (`$APPDIR`) is an extraction directory, not a FUSE mount. The one source of
+/// truth for the login item, the MCP snippet and the relaunch.
+pub fn appdir_is_extracted(appdir: &Path) -> bool {
+    appdir
+        .file_name()
+        .and_then(|n| n.to_str())
+        .is_some_and(|n| n.starts_with(EXTRACTED_PREFIX))
 }
 
 /// Whether `exe` lies inside `appdir` (both absolute; `exe` is not `appdir` itself).
@@ -214,7 +253,10 @@ fn detect_in(
         Ok(text) if flatpak_info_app(&text).as_deref() == Some(FLATPAK_APP_ID) => Channel::FLATPAK,
         _ => match appimage_file(var, exe) {
             // Leaked once: the channel lives for the whole process.
-            Some(f) => Channel::appimage(Box::leak(f.into_boxed_path())),
+            Some(f) => {
+                let extracted = var("APPDIR").is_some_and(|d| appdir_is_extracted(Path::new(&d)));
+                Channel::appimage(Box::leak(f.into_boxed_path())).with_extracted(extracted)
+            }
             None => Channel::DIRECT,
         },
     }
@@ -638,6 +680,52 @@ mod tests {
             config_dir_for_channel(&c),
             crate::paths::direct_config_dir()
         );
+    }
+
+    #[test]
+    fn extraction_directories_are_told_from_mounts() {
+        assert!(appdir_is_extracted(Path::new(
+            "/tmp/appimage_extracted_ab12cd"
+        )));
+        assert!(!appdir_is_extracted(Path::new("/tmp/.mount_SipleAB")));
+        assert!(!appdir_is_extracted(Path::new("/")));
+    }
+
+    #[test]
+    fn launch_args_prefix_is_set_only_for_an_extracted_appimage() {
+        let mounted = Channel::appimage(Path::new("/x/Siple.AppImage"));
+        assert!(mounted.launch_args_prefix().is_empty());
+        let extracted = mounted.with_extracted(true);
+        assert_eq!(
+            extracted.launch_args_prefix(),
+            ["--appimage-extract-and-run"]
+        );
+        assert!(
+            Channel::DIRECT
+                .with_extracted(true)
+                .launch_args_prefix()
+                .is_empty(),
+            "only the AppImage channel has a prefix"
+        );
+    }
+
+    #[test]
+    fn extraction_is_detected_from_the_appdir_name() {
+        let (_d, appdir, exe, file) = appimage_fixture();
+        let none = tempfile::tempdir().unwrap();
+        let c = detect_in(none.path(), &vars(Some(&file), Some(&appdir)), Some(&exe));
+        assert!(!c.appimage_extracted, "appdir is not appimage_extracted_*");
+        let extracted = appdir.parent().unwrap().join("appimage_extracted_AbC123");
+        std::fs::rename(&appdir, &extracted).unwrap();
+        let exe = extracted.join("usr/bin/siple");
+        let c = detect_in(
+            none.path(),
+            &vars(Some(&file), Some(&extracted)),
+            Some(&exe),
+        );
+        assert_eq!(c.kind, ChannelKind::AppImage);
+        assert!(c.appimage_extracted);
+        assert_eq!(c.launch_args_prefix(), ["--appimage-extract-and-run"]);
     }
 
     #[test]

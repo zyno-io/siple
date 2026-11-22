@@ -222,6 +222,12 @@ pub(super) fn reports_version(out: &str, version: &str) -> bool {
     })
 }
 
+/// Whether `out` is the `--version` output of `program` (clap prints `<name> <version>`, so the
+/// first word is the program name) and names `version`.
+pub(super) fn reports_program_version(out: &str, program: &str, version: &str) -> bool {
+    out.split_whitespace().next() == Some(program) && reports_version(out, version)
+}
+
 /// A Flatpak or Snap sandbox: nothing is replaced from inside.
 pub(super) fn sandbox_refusal(env: &Env) -> Option<NotPossible> {
     let no = NotPossible::new;
@@ -715,6 +721,32 @@ mod tests {
     use super::*;
     use crate::update::install::env::fake::FakeFs;
     use crate::update::version::Version;
+
+    #[test]
+    fn program_version_distinguishes_the_cli_from_the_gui() {
+        assert!(reports_program_version(
+            "siple-cli 0.2.1\n",
+            "siple-cli",
+            "0.2.1"
+        ));
+        assert!(reports_program_version("siple 0.2.1\n", "siple", "0.2.1"));
+        assert!(!reports_program_version(
+            "siple 0.2.1\n",
+            "siple-cli",
+            "0.2.1"
+        ));
+        assert!(!reports_program_version(
+            "siple-cli 0.2.1\n",
+            "siple",
+            "0.2.1"
+        ));
+        assert!(!reports_program_version(
+            "siple-cli 0.2.0\n",
+            "siple-cli",
+            "0.2.1"
+        ));
+        assert!(!reports_program_version("", "siple", "0.2.1"));
+    }
 
     // ---- probe ----
 

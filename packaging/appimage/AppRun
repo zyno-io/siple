@@ -3,7 +3,9 @@
 # APPIMAGE (the .AppImage file) and ARGV0 (the name it was started as).
 #   Siple.AppImage [args]          the app (usr/bin/siple)
 #   Siple.AppImage --cli <args>    the command-line client (usr/bin/siple-cli)
-#   siple-cli <args>               the same, through a symlink named siple-cli to the AppImage
+#   siple-cli <args>               the same, through a symlink named siple-cli to the AppImage; the
+#                                  name is lost under AppImageLauncher (the runtime takes ARGV0 from
+#                                  the realpath), so scripts and the updater use `--cli`
 # Nothing is added to the environment: Siple bundles no libraries.
 here="${APPDIR:-$(dirname "$(readlink -f "$0")")}"
 case "${ARGV0##*/}" in
