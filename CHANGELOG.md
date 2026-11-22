@@ -1,7 +1,9 @@
 <!-- siple-rename: keep (this file documents the legacy ZynoPhone names on purpose) -->
 # Changelog
 
-## Unreleased
+## 0.2.2 (2026-11-22)
+
+AppImage for Linux, and Linux on ARM.
 
 ### New
 
