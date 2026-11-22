@@ -132,17 +132,23 @@ pub(crate) fn toggle_row(
     err: Option<&str>,
 ) -> Option<bool> {
     let mut toggled = None;
+    let mut indent = 0.0;
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 8.0;
         let r = account_switch(ui, p, on, label);
         if r.clicked() {
             toggled = Some(!on);
         }
+        indent = r.rect.width() + 8.0;
         ui.label(RichText::new(label).size(FS_BODY).color(p.text));
-        if !help.is_empty() {
-            ui.label(RichText::new(help).size(FS_SMALL).color(p.faint));
-        }
     });
+    // The explanation goes under the label and wraps: on the same row it ran off the window.
+    if !help.is_empty() {
+        ui.horizontal(|ui| {
+            ui.add_space(indent);
+            ui.add(egui::Label::new(RichText::new(help).size(FS_SMALL).color(p.faint)).wrap());
+        });
+    }
     if let Some(e) = err {
         error_line(ui, p, e);
     }
