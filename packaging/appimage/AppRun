@@ -6,8 +6,21 @@
 #   siple-cli <args>               the same, through a symlink named siple-cli to the AppImage; the
 #                                  name is lost under AppImageLauncher (the runtime takes ARGV0 from
 #                                  the realpath), so scripts and the updater use `--cli`
-# Nothing is added to the environment: Siple bundles no libraries.
+# The only environment change is LD_LIBRARY_PATH: usr/lib holds the GUI libraries Siple loads at run
+# time (X11, Wayland, xkb; see BUNDLED-LIBRARIES.txt). The host value is saved so every program Siple
+# starts (xdg-open, a browser, [speech] commands, the next AppImage) gets it back, and never sees the
+# bundled libraries: siple_config::channel::apply_host_env reads these two variables. Keep the names.
 here="${APPDIR:-$(dirname "$(readlink -f "$0")")}"
+if [ "${LD_LIBRARY_PATH+set}" = set ]; then
+  SIPLE_HOST_LD_LIBRARY_PATH="$LD_LIBRARY_PATH"
+  SIPLE_HOST_LD_LIBRARY_PATH_SET=1
+else
+  SIPLE_HOST_LD_LIBRARY_PATH=""
+  SIPLE_HOST_LD_LIBRARY_PATH_SET=0
+fi
+export SIPLE_HOST_LD_LIBRARY_PATH SIPLE_HOST_LD_LIBRARY_PATH_SET
+LD_LIBRARY_PATH="$here/usr/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+export LD_LIBRARY_PATH
 case "${ARGV0##*/}" in
   siple-cli) exec "$here/usr/bin/siple-cli" "$@" ;;
 esac

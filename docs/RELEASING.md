@@ -89,16 +89,27 @@ The AppImage is built in the `linux` job right after the tarball, from the same 
 unpacks `dist/Siple-<version>-linux-<arch>.tar.gz` (`<arch>` is `x86_64` or `aarch64`, from `uname -m` through `scripts/linux-arch.sh`; builds are native, never cross-compiled), assembles the AppDir (layout in the contract table below), packs it with
 `mksquashfs` (Debian bookworm `squashfs-tools`, zstd) and concatenates the image onto the pinned
 [type2-runtime](https://github.com/AppImage/type2-runtime) (`scripts/appimage-pins.sh`: release, commit, sha256, size, upstream
-signature key). There is no appimagetool and no linuxdeploy: nothing is bundled, and `AppRun` sets no environment.
-`scripts/linux-needed-check.sh` (the NEEDED allowlist) runs on both artifacts, and the script refuses an AppDir that holds a
-library. Two builds of the same tarball give the same bytes (`SOURCE_DATE_EPOCH`, default the commit time).
+signature key). There is no appimagetool and no linuxdeploy. The tarball is unchanged; the AppImage additionally bundles the
+GUI libraries winit, wgpu and egui `dlopen` (so they are not NEEDED, and minimal desktops lack them), in `usr/lib`:
+`scripts/appimage-libs.sh` lists the roots (`libxkbcommon.so.0 libxkbcommon-x11.so.0 libXcursor.so.1 libXi.so.6
+libwayland-egl.so.1`), `package-appimage.sh` copies them from the build container's multiarch directory with
+their transitive NEEDED libraries (`libxcb-xkb`, `libXrender`, `libXfixes`, `libXext`), minus the
+[AppImageCommunity excludelist](https://github.com/AppImageCommunity/pkg2appimage/blob/master/excludelist) (libX11, libxcb, libGL/EGL, libwayland-client, ALSA,
+glibc ...; `packaging/appimage/excludelist`, a verbatim copy pinned to a commit in its header), fails if a bundled library needs
+something neither bundled nor excluded, and writes `usr/share/doc/siple/BUNDLED-LIBRARIES.txt` (library, Debian package, version
+from `dpkg-query`) plus `usr/share/doc/siple/bundled-licenses/<package>/copyright`. `AppRun` prepends `$APPDIR/usr/lib` to
+`LD_LIBRARY_PATH` and saves the host value in `SIPLE_HOST_LD_LIBRARY_PATH` (+ `SIPLE_HOST_LD_LIBRARY_PATH_SET`, 1 or 0 for
+set or unset); `siple_config::channel::apply_host_env` restores it on every child process Siple starts (xdg-open, `[speech]`
+commands, the relaunch, the updater's test run, notification dialogs), so the bundled libraries never reach other programs.
+Any new `Command::new` must call it. `scripts/linux-needed-check.sh` (the NEEDED allowlist of the Siple binaries) runs on both artifacts. Two builds of the same tarball in the same container state give the same bytes (`SOURCE_DATE_EPOCH`, default the commit time); the bundled libraries come from an `apt-get install` of unpinned Debian packages, so a different package state (a newer point release) changes the bytes.
 
 - **No zsync, no embedded update information.** Siple's updater is minisign-verified, call-aware and restarts safely. Update
   information in the file would let AppImageLauncher, Gear Lever or AppImageUpdate replace it behind Siple's back, without the
   signature check and possibly during a call, and `.zsync` files would join the asset contract.
 - **`scripts/appimage-smoke.sh`** (release job; the container has no FUSE, so everything runs with extract-and-run): the runtime
   commit, `--version` of `siple` and `siple-cli` (through `--cli`, and through a `siple-cli` symlink for the argv0 dispatch), and a headless engine whose
-  `status.build.channel` must be `appimage`.
+  `status.build.channel` must be `appimage`. It also checks the bundled libraries (all roots in `usr/lib`, none on the excludelist,
+  every NEEDED bundled or excluded, licences present), and that every soname string in `usr/bin/siple` is bundled, excluded or listed in `GUI_STRINGS_ALLOWED` (`scripts/appimage-libs.sh`).
 - **`scripts/package-appimage.sh --self-test`** (job `appimage` of `ci.yml`): stub binaries instead of cargo, the pinned runtime,
   the golden file list, the `AppRun` dispatch and reproducibility.
 - **The runtime's notice** is `packaging/appimage/APPIMAGE-RUNTIME.txt`, shipped as `usr/share/doc/siple/APPIMAGE-RUNTIME.txt`:
@@ -108,12 +119,30 @@ library. Two builds of the same tarball give the same bytes (`SOURCE_DATE_EPOCH`
 
   ```sh
   docker run --rm -v "$PWD":/src -w /src rust:1.100-bookworm bash -c '
-    apt-get update -qq && apt-get install -y -qq cmake pkg-config libasound2-dev squashfs-tools &&
+    apt-get update -qq && apt-get install -y -qq cmake pkg-config libasound2-dev squashfs-tools \
+      libxkbcommon0 libxkbcommon-x11-0 libxcb-xkb1 libxcursor1 libxi6 libwayland-egl1 &&
     scripts/package-linux.sh && scripts/package-appimage.sh && scripts/appimage-smoke.sh dist/Siple-*-linux-$(uname -m).AppImage'
   ```
 
   Without FUSE on the host, run the result with `--appimage-extract-and-run` first or `APPIMAGE_EXTRACT_AND_RUN=1`.
   `scripts/package-appimage.sh --self-test` needs a Linux machine of the architecture it builds for (x86_64 or aarch64), too. The aarch64 files are built only by the `linux` matrix job of the release workflow on the arm runner (dispatch it for an unsigned dev build).
+
+### Bumping the bundled GUI libraries
+
+1. After a winit, wgpu, egui or xkbcommon-dl update, re-read the sonames the crates actually open, in `~/.cargo/registry/src/*/`:
+   winit `xdisplay.rs` (x11-dl: libX11, libXcursor, libX11-xcb, libXi); x11rb `dl-libxcb` (libxcb); xkbcommon-dl
+   (libxkbcommon, libxkbcommon-x11); wayland-backend `dlopen` (libwayland-client); wgpu-hal egl (libEGL, libwayland-egl).
+   (winit's Wayland cursors are the pure-Rust `wayland-cursor` crate; nothing enables `wayland-sys`'s `cursor` feature, so
+   libwayland-cursor is not loaded.) Roots are the ones that are not on the excludelist; a soname the smoke test's string scan
+   reports goes in the roots, or in `GUI_STRINGS_ALLOWED` with a reason. Edit `GUI_DLOPEN_SONAMES` and `GUI_DEB_PACKAGES` in
+   `scripts/appimage-libs.sh`, the `apt-get install` of the `linux` job in `release.yml` and the local-build command here, and
+   the table in `crates/siple/src/gui_libs.rs` (the startup check and its package names).
+2. Excludelist: take the commit from
+   `gh api 'repos/AppImageCommunity/pkg2appimage/commits?path=excludelist&per_page=1' --jq '.[0].sha'`, fetch
+   `https://raw.githubusercontent.com/AppImageCommunity/pkg2appimage/<commit>/excludelist`, and replace the body of
+   `packaging/appimage/excludelist` (keep its header, update the commit in it). Current pin: `15a64c20dc23a0154622ba25829364323903b6b5`.
+3. Dispatch a release build: the package step lists what was bundled, and a failure names the library that is missing or
+   needs an unbundled one.
 
 ### Bumping the pins
 
@@ -186,7 +215,7 @@ signature is a change of the updater's interface: old versions in the field stop
 | `Siple-<version>-macos.zip` | `<version>` is the full version (`0.2.0`, `0.2.0-rc.1`). Exactly one top-level entry, `Siple.app`, made by `ditto -c -k --keepParent`; app identifier `io.zyno.siple`, `Contents/MacOS/siple-cli` identifier `io.zyno.siple-cli`, Developer ID team `VUDU4KEQ99`, notarized; `CFBundleShortVersionString` is the numeric core (`0.2.0` for `0.2.0-rc.1`). |
 | `Siple-<core>-windows-x64.zip`, `Siple-<core>-windows-arm64.zip` | `<core>` is the numeric core (a release candidate keeps `0.2.0`). Flat zip: `siple.exe`, `siple-cli.exe`, `config.example.toml`, `LICENSE`, `README.md`, `THIRD-PARTY-NOTICES.html`, `docs/API.md`, `docs/CONFIG.md`. Both exes Authenticode-signed by Signal24 LLC (Artifact Signing, RFC 3161 timestamp), PE machine of the architecture, `FileVersion` the numeric core. |
 | `Siple-<core>-linux-x86_64.tar.gz`, `Siple-<core>-linux-aarch64.tar.gz` | One top directory `siple-<core>/` with `bin/siple`, `bin/siple-cli`, `share/...`, `LICENSE`, `THIRD-PARTY-NOTICES.html`; regular files and directories only. `bin/siple --version` and `bin/siple-cli --version` print the full version. |
-| `Siple-<core>-linux-x86_64.AppImage`, `Siple-<core>-linux-aarch64.AppImage` | AppImage type 2: the pinned type2-runtime of that architecture followed by a zstd squashfs of the AppDir (`AppRun`, the root `io.zyno.siple.desktop` and icon, `usr/bin/{siple,siple-cli}`, `usr/share/...`; `AppRun` dispatches `siple-cli` by a first `--cli` (the contract: AppImageLauncher replaces argv0 with the file name) or by argv0; the updater probes the CLI with `--cli`). No bundled libraries, no embedded update information. With `APPIMAGE_EXTRACT_AND_RUN=1`, `<file> --version` and `<file> --cli --version` print the full version. |
+| `Siple-<core>-linux-x86_64.AppImage`, `Siple-<core>-linux-aarch64.AppImage` | AppImage type 2: the pinned type2-runtime of that architecture followed by a zstd squashfs of the AppDir (`AppRun`, the root `io.zyno.siple.desktop` and icon, `usr/bin/{siple,siple-cli}`, `usr/share/...`; `AppRun` dispatches `siple-cli` by a first `--cli` (the contract: AppImageLauncher replaces argv0 with the file name) or by argv0; the updater probes the CLI with `--cli`). The GUI libraries are in `usr/lib` (see "Linux AppImage"), `AppRun` sets `LD_LIBRARY_PATH` for Siple only, no embedded update information. With `APPIMAGE_EXTRACT_AND_RUN=1`, `<file> --version` and `<file> --cli --version` print the full version. |
 
 The updater accepts the full-version or the numeric-core spelling of a file name (the release candidates mix them) and requires
 exactly one match per platform (the `release` job checks it: "Exactly one file per asset").

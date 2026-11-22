@@ -5,6 +5,7 @@
 //! engine ([`siple_core::App`]), a snapshot poller and an event-log watcher.
 
 mod actions;
+mod gui_libs;
 #[cfg(not(feature = "store"))]
 mod relaunch;
 mod shell;
@@ -136,6 +137,13 @@ fn main() -> ExitCode {
              --headless, or use `siple-cli run --headless`, to run without a window"
         );
         return ExitCode::from(2);
+    }
+    // winit loads X11 / Wayland / xkbcommon with dlopen and panics when one is missing: check first.
+    #[cfg(target_os = "linux")]
+    if !cli.headless
+        && let Some(msg) = gui_libs::preflight()
+    {
+        return gui_libs::fatal(&msg);
     }
     let rt = match tokio::runtime::Builder::new_multi_thread()
         .worker_threads(4)
@@ -441,12 +449,14 @@ fn run_gui(
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             eprintln!("GUI error: {e}");
+            // Before the first frame a library-load panic (or startup error) gets the clear
+            // message; after it the failure is reported as it is.
             #[cfg(target_os = "linux")]
-            eprintln!(
-                "hint: the GUI needs its runtime libraries (X11 / Wayland, xkbcommon, a Vulkan or \
-                 GL driver); see the GUI runtime package list in the README (\"Linux\" packaging \
-                 section), or run headless with `siple-cli run --headless`"
-            );
+            return gui_libs::fatal(&gui_libs::failure_message(
+                gui_libs::WINDOW_STARTED.load(std::sync::atomic::Ordering::Relaxed),
+                &e.to_string(),
+            ));
+            #[cfg(not(target_os = "linux"))]
             ExitCode::from(1)
         }
     }

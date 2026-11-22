@@ -57,6 +57,9 @@ impl RealAppImageExec {
     /// The command that runs `program` of `file`: `<file> [--cli] --version`.
     fn command(file: &Path, program: &str, tmp: &Path) -> Command {
         let mut cmd = Command::new(file);
+        // The staged file's own AppRun saves the library path it inherits as the host's: hand it
+        // the real host path, not our bundled one.
+        siple_config::channel::apply_host_env(&mut cmd);
         // AppRun dispatches on this argument whatever argv[0] the runtime hands it.
         if program == "siple-cli" {
             cmd.arg("--cli");
