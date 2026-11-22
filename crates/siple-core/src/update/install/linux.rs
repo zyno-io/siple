@@ -838,17 +838,6 @@ mod tests {
                 "sandboxed",
             ),
             (
-                "appimage",
-                good_fs(),
-                EXE,
-                Some(1000),
-                vec![
-                    ("APPIMAGE", "/a.AppImage"),
-                    ("APPDIR", "/home/u/siple-0.1.0"),
-                ],
-                "sandboxed",
-            ),
-            (
                 "dockerenv",
                 good_fs().file("/.dockerenv", ""),
                 EXE,
@@ -1004,6 +993,18 @@ mod tests {
             let got = probe(fs, exe, uid, &vars).expect_err(name);
             assert_eq!(got.reason, reason, "{name}");
         }
+    }
+
+    // Unix paths: `runs_inside` needs absolute paths, and `/home/...` is not absolute on Windows.
+    #[cfg(unix)]
+    #[test]
+    fn probe_refuses_a_tarball_exe_inside_an_appimage() {
+        let vars = vec![
+            ("APPIMAGE", "/a.AppImage"),
+            ("APPDIR", "/home/u/siple-0.1.0"),
+        ];
+        let got = probe(good_fs(), EXE, Some(1000), &vars).expect_err("inside APPDIR");
+        assert_eq!(got.reason, "sandboxed");
     }
 
     #[test]
