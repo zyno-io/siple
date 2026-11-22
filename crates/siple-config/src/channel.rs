@@ -415,7 +415,7 @@ pub const HOST_LD_LIBRARY_PATH_SET_VAR: &str = "SIPLE_HOST_LD_LIBRARY_PATH_SET";
 /// What a child process's `LD_LIBRARY_PATH` must be, relative to what this process has.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum HostLibraryPath {
-    /// Not an AppImage run through our `AppRun`: inherit as is.
+    /// Not started through our `AppRun` (no marker): inherit as is.
     Inherit,
     /// `LD_LIBRARY_PATH` was unset before the AppImage started: remove it.
     Unset,
@@ -423,14 +423,10 @@ pub enum HostLibraryPath {
     Set(std::ffi::OsString),
 }
 
-/// The pure decision of [`apply_host_env`]: `kind` is the channel, `var` reads the environment.
-pub fn host_library_path(
-    kind: ChannelKind,
-    var: &dyn Fn(&str) -> Option<std::ffi::OsString>,
-) -> HostLibraryPath {
-    if kind != ChannelKind::AppImage {
-        return HostLibraryPath::Inherit;
-    }
+/// The pure decision of [`apply_host_env`]; `var` reads the environment. It goes by the marker
+/// alone, not the channel: an AppImage unpacked with `--appimage-extract` and started through
+/// `squashfs-root/AppRun` has the Direct channel but still carries the bundled library path.
+pub fn host_library_path(var: &dyn Fn(&str) -> Option<std::ffi::OsString>) -> HostLibraryPath {
     match var(HOST_LD_LIBRARY_PATH_SET_VAR)
         .as_deref()
         .and_then(|v| v.to_str())
@@ -441,13 +437,12 @@ pub fn host_library_path(
     }
 }
 
-/// [`apply_host_env`] with an injected channel and environment (tests).
+/// [`apply_host_env`] with an injected environment (tests).
 pub fn apply_host_env_with(
     cmd: &mut std::process::Command,
-    kind: ChannelKind,
     var: &dyn Fn(&str) -> Option<std::ffi::OsString>,
 ) {
-    match host_library_path(kind, var) {
+    match host_library_path(var) {
         HostLibraryPath::Inherit => return,
         HostLibraryPath::Unset => {
             cmd.env_remove("LD_LIBRARY_PATH");
@@ -461,13 +456,13 @@ pub fn apply_host_env_with(
         .env_remove(HOST_LD_LIBRARY_PATH_SET_VAR);
 }
 
-/// Gives a child process the environment of the host: in the AppImage channel, the
+/// Gives a child process the environment of the host: whenever our `AppRun` marker is present, the
 /// `LD_LIBRARY_PATH` from before `AppRun` prepended the bundled libraries (removed when it was
 /// unset). The bundled libraries are for Siple only and must never reach xdg-open, a browser, a
 /// `[speech]` command, a notification helper or the next AppImage (whose own `AppRun` sets its own
-/// path). Call it on **every** `Command` Siple starts; it does nothing outside the AppImage.
+/// path). Call it on **every** `Command` Siple starts; it does nothing without the marker.
 pub fn apply_host_env(cmd: &mut std::process::Command) {
-    apply_host_env_with(cmd, current().kind, &|k| std::env::var_os(k));
+    apply_host_env_with(cmd, &|k| std::env::var_os(k));
 }
 
 /// Config directory for `channel`, or `None` when it cannot be determined.
@@ -523,13 +518,12 @@ mod tests {
 
     #[test]
     fn host_library_path_decisions() {
-        let app = ChannelKind::AppImage;
         let set = env_of(&[
             (HOST_LD_LIBRARY_PATH_SET_VAR, "1"),
             (HOST_LD_LIBRARY_PATH_VAR, "/opt/x"),
         ]);
         assert_eq!(
-            host_library_path(app, &set),
+            host_library_path(&set),
             HostLibraryPath::Set("/opt/x".into())
         );
         // Set but empty stays set (empty), distinct from unset.
@@ -537,25 +531,11 @@ mod tests {
             (HOST_LD_LIBRARY_PATH_SET_VAR, "1"),
             (HOST_LD_LIBRARY_PATH_VAR, ""),
         ]);
-        assert_eq!(
-            host_library_path(app, &empty),
-            HostLibraryPath::Set("".into())
-        );
+        assert_eq!(host_library_path(&empty), HostLibraryPath::Set("".into()));
         let unset = env_of(&[(HOST_LD_LIBRARY_PATH_SET_VAR, "0")]);
-        assert_eq!(host_library_path(app, &unset), HostLibraryPath::Unset);
-        // No marker (not started through our AppRun), or another channel: untouched.
-        assert_eq!(
-            host_library_path(app, &env_of(&[])),
-            HostLibraryPath::Inherit
-        );
-        assert_eq!(
-            host_library_path(ChannelKind::Direct, &set),
-            HostLibraryPath::Inherit
-        );
-        assert_eq!(
-            host_library_path(ChannelKind::Flatpak, &unset),
-            HostLibraryPath::Inherit
-        );
+        assert_eq!(host_library_path(&unset), HostLibraryPath::Unset);
+        // No marker (not started through our AppRun): untouched.
+        assert_eq!(host_library_path(&env_of(&[])), HostLibraryPath::Inherit);
     }
 
     #[test]
@@ -565,7 +545,7 @@ mod tests {
             (HOST_LD_LIBRARY_PATH_SET_VAR, "1"),
             (HOST_LD_LIBRARY_PATH_VAR, "/opt/x"),
         ]);
-        apply_host_env_with(&mut c, ChannelKind::AppImage, &set);
+        apply_host_env_with(&mut c, &set);
         assert_eq!(
             envs(&c),
             vec![
@@ -576,7 +556,7 @@ mod tests {
         );
         let mut c = std::process::Command::new("x");
         let unset = env_of(&[(HOST_LD_LIBRARY_PATH_SET_VAR, "0")]);
-        apply_host_env_with(&mut c, ChannelKind::AppImage, &unset);
+        apply_host_env_with(&mut c, &unset);
         assert_eq!(
             envs(&c),
             vec![
@@ -586,7 +566,11 @@ mod tests {
             ]
         );
         let mut c = std::process::Command::new("x");
-        apply_host_env_with(&mut c, ChannelKind::Direct, &set);
+        // The marker decides, whatever the channel (an extracted AppImage reports Direct).
+        apply_host_env_with(&mut c, &set);
+        assert_eq!(envs(&c).len(), 3);
+        let mut c = std::process::Command::new("x");
+        apply_host_env_with(&mut c, &env_of(&[]));
         assert!(envs(&c).is_empty());
     }
 

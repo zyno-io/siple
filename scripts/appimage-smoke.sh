@@ -67,6 +67,13 @@ for pkg in $(awk '/^lib[^ ]*\.so/ {print $2}' "$doc/BUNDLED-LIBRARIES.txt" | sor
   [ -s "$doc/bundled-licenses/$pkg/copyright" ] || fail "no licence file for the bundled package $pkg"
 done
 echo "   bundled: $(find "$lib" -type f | sed 's|.*/||' | sort | tr '\n' ' ')"
+# Every soname that appears as a string in the binary (what dlopen is given) is bundled, excluded
+# or explicitly allowed (GUI_STRINGS_ALLOWED): a new dlopen after a dependency bump fails here.
+for so in $(strings -a "$root/usr/bin/siple" | grep -E '^lib[[:alnum:]_+.-]+\.so\.[0-9]+$' | sort -u); do
+  [ -f "$lib/$so" ] || printf '%s\n' "$excl" | grep -qxF "$so" ||
+    printf '%s\n' "${GUI_STRINGS_ALLOWED[@]}" | grep -qxF "$so" ||
+    fail "usr/bin/siple mentions $so, which is not bundled, not on the excludelist and not in GUI_STRINGS_ALLOWED (scripts/appimage-libs.sh)"
+done
 # AppRun hands Siple the bundled path and keeps the host's for its children.
 grep -q 'SIPLE_HOST_LD_LIBRARY_PATH' "$root/AppRun" || fail "AppRun does not save the host LD_LIBRARY_PATH"
 

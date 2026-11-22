@@ -168,8 +168,9 @@ bundle_gui_libs() {
   # shellcheck disable=SC2086  # a word list
   for s in $(printf '%s\n' $bundled | LC_ALL=C sort); do
     real="$(readlink -f "$(find_lib "$s")")"
-    pkg="$(dpkg -S "$real" 2>/dev/null | head -1 | cut -d: -f1)"
-    [ -n "$pkg" ] || die "no Debian package owns $real"
+    pkg_out="$(dpkg -S "$real" 2>&1)" || pkg_out="no output: $pkg_out"
+    pkg="$(printf '%s\n' "$pkg_out" | grep -m1 ': /' | cut -d: -f1 || true)"
+    [ -n "$pkg" ] || die "no Debian package owns $real (dpkg -S: $pkg_out)"
     ver="$(dpkg-query -W -f='${Version}' "$pkg")"
     printf '%-28s %-24s %s\n' "$s" "$pkg" "$ver" >>"$out"
     case " $pkgs " in *" $pkg "*) ;; *) pkgs="$pkgs $pkg" ;; esac

@@ -949,6 +949,8 @@ impl eframe::App for ShellApp {
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
+        // The window exists and draws: later failures are not a missing GUI library.
+        crate::gui_libs::WINDOW_STARTED.store(true, std::sync::atomic::Ordering::Relaxed);
         self.inner.ui(ui, frame);
     }
 }

@@ -62,18 +62,12 @@ static XI: GuiLib = GuiLib {
     debian: "libxi6",
     fedora: "libXi",
 };
-static WAYLAND: [GuiLib; 2] = [
-    GuiLib {
-        soname: "libwayland-client.so.0",
-        debian: "libwayland-client0",
-        fedora: "libwayland-client",
-    },
-    GuiLib {
-        soname: "libwayland-cursor.so.0",
-        debian: "libwayland-cursor0",
-        fedora: "libwayland-cursor",
-    },
-];
+/// winit's Wayland cursors use the pure-Rust `wayland-cursor` crate, so libwayland-cursor is not loaded.
+static WAYLAND: [GuiLib; 1] = [GuiLib {
+    soname: "libwayland-client.so.0",
+    debian: "libwayland-client0",
+    fedora: "libwayland-client",
+}];
 /// Loaded only by the GL path of wgpu, so it is not part of the preflight, but a panic naming it
 /// gets the same message.
 static WAYLAND_EGL: GuiLib = GuiLib {
@@ -187,24 +181,69 @@ pub fn dialog_commands(msg: &str) -> Vec<DialogCmd> {
     v
 }
 
+/// Set by the first frame of the app (`ShellApp::ui`): from then on a panic or error is not a
+/// startup problem and must not be blamed on a missing GUI library.
+pub static WINDOW_STARTED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+/// The text to report for a GUI failure `raw`: before the window's first frame
+/// ([`WINDOW_STARTED`] false) the library-aware startup message, after it a plain one.
+pub fn failure_message(window_started: bool, raw: &str) -> String {
+    if window_started {
+        format!("Siple's window stopped with an error: {raw}")
+    } else {
+        message_for_error(raw)
+    }
+}
+
+/// How long `fatal` waits for notify-send (it needs a notification daemon to answer).
+#[cfg(target_os = "linux")]
+const NOTIFY_DEADLINE: std::time::Duration = std::time::Duration::from_secs(5);
+
 /// Prints `msg`, logs it and, when stderr is not a terminal (a launch from a file manager),
-/// tries to show it in a dialog; best effort. Returns the exit code to use.
+/// tries to show it in a dialog; best effort and never blocks the exit for long: notify-send is
+/// waited for at most [`NOTIFY_DEADLINE`] (then killed); a dialog is started and left running, so
+/// it outlives Siple. Returns the exit code to use.
 #[cfg(target_os = "linux")]
 pub fn fatal(msg: &str) -> ExitCode {
     use std::io::IsTerminal;
+    use std::process::{Command, Stdio};
     eprintln!("{msg}");
     tracing::error!("{msg}");
     if !std::io::stderr().is_terminal() {
         for d in dialog_commands(msg) {
-            let mut cmd = std::process::Command::new(d.program);
+            let mut cmd = Command::new(d.program);
             siple_core::config::channel::apply_host_env(&mut cmd);
+            // std opens and passes on only the three null stdio descriptors; it marks its own
+            // descriptors close-on-exec, so the dialog holds nothing else of ours.
             cmd.args(&d.args)
-                .stdin(std::process::Stdio::null())
-                .stdout(std::process::Stdio::null())
-                .stderr(std::process::Stdio::null());
-            match cmd.status() {
-                Ok(st) if st.success() || !d.must_succeed => break,
-                _ => {}
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null());
+            let Ok(mut child) = cmd.spawn() else {
+                continue;
+            };
+            if !d.must_succeed {
+                // A dialog stays open until dismissed: do not wait for it.
+                break;
+            }
+            let start = std::time::Instant::now();
+            let shown = loop {
+                match child.try_wait() {
+                    Ok(Some(st)) => break st.success(),
+                    Ok(None) if start.elapsed() < NOTIFY_DEADLINE => {
+                        std::thread::sleep(std::time::Duration::from_millis(50));
+                    }
+                    Ok(None) => {
+                        let _ = child.kill();
+                        let _ = child.wait();
+                        break false;
+                    }
+                    Err(_) => break false,
+                }
+            };
+            if shown {
+                break;
             }
         }
     }
@@ -271,7 +310,19 @@ mod tests {
         assert!(w.contains(&"libwayland-client.so.0") && w.contains(&"libxkbcommon.so.0"));
         assert!(!w.contains(&"libX11.so.6"));
         let s = sonames(&needed_libs(None, None, Some("3")));
-        assert!(s.contains(&"libwayland-cursor.so.0"));
+        assert!(s.contains(&"libwayland-client.so.0") && !s.contains(&"libX11.so.6"));
+    }
+
+    #[test]
+    fn failure_message_blames_a_library_only_before_the_first_frame() {
+        let raw = "Library libxkbcommon-x11.so could not be loaded.";
+        assert_eq!(failure_message(false, raw), missing_message(&XKBCOMMON_X11));
+        assert_eq!(
+            failure_message(true, "index out of bounds"),
+            "Siple's window stopped with an error: index out of bounds"
+        );
+        assert!(!failure_message(true, raw).contains("is missing"));
+        assert!(failure_message(false, "boom").contains("A GUI library may be missing"));
     }
 
     #[test]

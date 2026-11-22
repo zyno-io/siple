@@ -449,9 +449,13 @@ fn run_gui(
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             eprintln!("GUI error: {e}");
-            // Any other library-load panic (or startup error) gets the same clear message.
+            // Before the first frame a library-load panic (or startup error) gets the clear
+            // message; after it the failure is reported as it is.
             #[cfg(target_os = "linux")]
-            return gui_libs::fatal(&gui_libs::message_for_error(&e.to_string()));
+            return gui_libs::fatal(&gui_libs::failure_message(
+                gui_libs::WINDOW_STARTED.load(std::sync::atomic::Ordering::Relaxed),
+                &e.to_string(),
+            ));
             #[cfg(not(target_os = "linux"))]
             ExitCode::from(1)
         }

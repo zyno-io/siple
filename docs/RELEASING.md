@@ -92,7 +92,7 @@ unpacks `dist/Siple-<version>-linux-<arch>.tar.gz` (`<arch>` is `x86_64` or `aar
 signature key). There is no appimagetool and no linuxdeploy. The tarball is unchanged; the AppImage additionally bundles the
 GUI libraries winit, wgpu and egui `dlopen` (so they are not NEEDED, and minimal desktops lack them), in `usr/lib`:
 `scripts/appimage-libs.sh` lists the roots (`libxkbcommon.so.0 libxkbcommon-x11.so.0 libXcursor.so.1 libXi.so.6
-libwayland-cursor.so.0 libwayland-egl.so.1`), `package-appimage.sh` copies them from the build container's multiarch directory with
+libwayland-egl.so.1`), `package-appimage.sh` copies them from the build container's multiarch directory with
 their transitive NEEDED libraries (`libxcb-xkb`, `libXrender`, `libXfixes`, `libXext`), minus the
 [AppImageCommunity excludelist](https://github.com/AppImageCommunity/pkg2appimage/blob/master/excludelist) (libX11, libxcb, libGL/EGL, libwayland-client, ALSA,
 glibc ...; `packaging/appimage/excludelist`, a verbatim copy pinned to a commit in its header), fails if a bundled library needs
@@ -101,7 +101,7 @@ from `dpkg-query`) plus `usr/share/doc/siple/bundled-licenses/<package>/copyrigh
 `LD_LIBRARY_PATH` and saves the host value in `SIPLE_HOST_LD_LIBRARY_PATH` (+ `SIPLE_HOST_LD_LIBRARY_PATH_SET`, 1 or 0 for
 set or unset); `siple_config::channel::apply_host_env` restores it on every child process Siple starts (xdg-open, `[speech]`
 commands, the relaunch, the updater's test run, notification dialogs), so the bundled libraries never reach other programs.
-Any new `Command::new` must call it. `scripts/linux-needed-check.sh` (the NEEDED allowlist of the Siple binaries) runs on both artifacts. Two builds of the same tarball give the same bytes (`SOURCE_DATE_EPOCH`, default the commit time).
+Any new `Command::new` must call it. `scripts/linux-needed-check.sh` (the NEEDED allowlist of the Siple binaries) runs on both artifacts. Two builds of the same tarball in the same container state give the same bytes (`SOURCE_DATE_EPOCH`, default the commit time); the bundled libraries come from an `apt-get install` of unpinned Debian packages, so a different package state (a newer point release) changes the bytes.
 
 - **No zsync, no embedded update information.** Siple's updater is minisign-verified, call-aware and restarts safely. Update
   information in the file would let AppImageLauncher, Gear Lever or AppImageUpdate replace it behind Siple's back, without the
@@ -109,7 +109,7 @@ Any new `Command::new` must call it. `scripts/linux-needed-check.sh` (the NEEDED
 - **`scripts/appimage-smoke.sh`** (release job; the container has no FUSE, so everything runs with extract-and-run): the runtime
   commit, `--version` of `siple` and `siple-cli` (through `--cli`, and through a `siple-cli` symlink for the argv0 dispatch), and a headless engine whose
   `status.build.channel` must be `appimage`. It also checks the bundled libraries (all roots in `usr/lib`, none on the excludelist,
-  every NEEDED bundled or excluded, licences present).
+  every NEEDED bundled or excluded, licences present), and that every soname string in `usr/bin/siple` is bundled, excluded or listed in `GUI_STRINGS_ALLOWED` (`scripts/appimage-libs.sh`).
 - **`scripts/package-appimage.sh --self-test`** (job `appimage` of `ci.yml`): stub binaries instead of cargo, the pinned runtime,
   the golden file list, the `AppRun` dispatch and reproducibility.
 - **The runtime's notice** is `packaging/appimage/APPIMAGE-RUNTIME.txt`, shipped as `usr/share/doc/siple/APPIMAGE-RUNTIME.txt`:
@@ -119,8 +119,8 @@ Any new `Command::new` must call it. `scripts/linux-needed-check.sh` (the NEEDED
 
   ```sh
   docker run --rm -v "$PWD":/src -w /src rust:1.100-bookworm bash -c '
-    apt-get update -qq && apt-get install -y -qq cmake pkg-config libasound2-dev squashfs-tools
-      libxkbcommon0 libxkbcommon-x11-0 libxcb-xkb1 libxcursor1 libxi6 libwayland-egl1 libwayland-cursor0 &&
+    apt-get update -qq && apt-get install -y -qq cmake pkg-config libasound2-dev squashfs-tools \
+      libxkbcommon0 libxkbcommon-x11-0 libxcb-xkb1 libxcursor1 libxi6 libwayland-egl1 &&
     scripts/package-linux.sh && scripts/package-appimage.sh && scripts/appimage-smoke.sh dist/Siple-*-linux-$(uname -m).AppImage'
   ```
 
@@ -129,9 +129,12 @@ Any new `Command::new` must call it. `scripts/linux-needed-check.sh` (the NEEDED
 
 ### Bumping the bundled GUI libraries
 
-1. After a winit, wgpu, egui or xkbcommon-dl update, re-read the sonames the crates try in `~/.cargo/registry/src/*/`
-   (`grep -rhoE '"lib[A-Za-z0-9_.+-]*\.so[.0-9]*"' x11-dl-*/src wayland-sys-*/src winit-*/src wgpu-hal-*/src xkbcommon-dl-*/src`).
-   Roots are the ones that are not on the excludelist. Edit `GUI_DLOPEN_SONAMES` and `GUI_DEB_PACKAGES` in
+1. After a winit, wgpu, egui or xkbcommon-dl update, re-read the sonames the crates actually open, in `~/.cargo/registry/src/*/`:
+   winit `xdisplay.rs` (x11-dl: libX11, libXcursor, libX11-xcb, libXi); x11rb `dl-libxcb` (libxcb); xkbcommon-dl
+   (libxkbcommon, libxkbcommon-x11); wayland-backend `dlopen` (libwayland-client); wgpu-hal egl (libEGL, libwayland-egl).
+   (winit's Wayland cursors are the pure-Rust `wayland-cursor` crate; nothing enables `wayland-sys`'s `cursor` feature, so
+   libwayland-cursor is not loaded.) Roots are the ones that are not on the excludelist; a soname the smoke test's string scan
+   reports goes in the roots, or in `GUI_STRINGS_ALLOWED` with a reason. Edit `GUI_DLOPEN_SONAMES` and `GUI_DEB_PACKAGES` in
    `scripts/appimage-libs.sh`, the `apt-get install` of the `linux` job in `release.yml` and the local-build command here, and
    the table in `crates/siple/src/gui_libs.rs` (the startup check and its package names).
 2. Excludelist: take the commit from
