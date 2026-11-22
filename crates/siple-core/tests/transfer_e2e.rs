@@ -229,7 +229,9 @@ impl Rig {
             }
             tokio::time::sleep(std::time::Duration::from_millis(50)).await;
         }
-        panic!("call {id} never reached {state}");
+        let info = self.call("call.get", json!({"call_id": id})).await;
+        let transfers = self.call("transfer.list", json!({})).await;
+        panic!("call {id} never reached {state}: {info}; transfers: {transfers}");
     }
 
     /// The first (only) call of `account` (the far end of a consult).
