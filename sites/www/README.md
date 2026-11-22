@@ -37,29 +37,27 @@ npm run shots    # re-import app screenshots from crates/siple/tests/snapshots
 
 ## Downloads and release state
 
-`src/scripts/release.ts` reads `https://api.github.com/repos/zyno-io/siple/releases?per_page=10` in the browser
-(cached 10 minutes per tab), ignores drafts, prefers the newest published non-prerelease and otherwise the newest
-prerelease (shown as "Release candidate"). Assets are matched by suffix (`-macos.dmg`, `-windows-x64.zip`,
-`-windows-arm64.zip`, `-linux-x86_64.AppImage`, `-linux-x86_64.tar.gz`, `-linux-aarch64.AppImage`,
-`-linux-aarch64.tar.gz`, plus `SHA256SUMS`). The visitor's OS is detected from the user agent, and the CPU
-(Windows and Linux on ARM) from `navigator.userAgentData.getHighEntropyValues(['architecture'])` first, then the UA
-string; phones and tablets get the full list instead of a featured build.
+The page makes no request to GitHub's API. The version and date are read at build time from the newest released
+section of the root `CHANGELOG.md` (`src/data/release.ts`; headings look like `## 0.2.2 (2026-11-22)`, and
+`## Unreleased` is skipped). A malformed newest heading fails the build rather than falling back to an older
+version. Set `SIPLE_CHANGELOG` to read a different file (resolved from the working directory).
 
-Linux has two rows, "Linux x86_64" and "Linux on ARM". Each features the AppImage of its architecture with the
-tarball as the alternative link. A release without the AppImage (up to v0.2.1) falls back to the tarball as the
-primary download, with a note saying so; a release without any aarch64 asset hides the ARM row and an ARM Linux
-visitor gets no featured build (the GitHub link), as before. When the CPU can't be told, x86_64 is featured and the
-hero note points at the aarch64 builds in the list. The AppImage, tarball and requirement copy comes from Siple's
+Every asset URL is baked into the HTML from that version: `Siple-<version>-<suffix>` for each entry in `platforms`
+(`src/data/site.ts`: `-macos.dmg`, `-windows-x64.zip`, `-windows-arm64.zip`, `-linux-x86_64.AppImage`,
+`-linux-aarch64.AppImage`, plus the Linux `.tar.gz` as each row's "Tarball" link) under
+`https://github.com/zyno-io/siple/releases/download/v<version>/`, with the release notes at `.../releases/tag/v<version>`
+and `SHA256SUMS` beside the assets. Production is built from a published release's tag and deployed only after
+every download link checks live; staging builds from `main` and may name a version that isn't released yet.
+
+`src/scripts/download.ts` only detects the visitor's OS (and the CPU for Windows and Linux on ARM, from
+`navigator.userAgentData.getHighEntropyValues(['architecture'])` first, then the UA string), marks that row, points
+the hero button at the row's baked link and fills the note under it. Without JS, on a phone or tablet, or on an
+unknown OS, the button goes to `#download`. When the Linux CPU can't be told, x86_64 is featured and the hero note
+points at the aarch64 builds in the list. The AppImage, tarball and requirement copy comes from Siple's
 `sites/docs/guide/install.md`.
 
-Review captures: `npm run preview`, then `node scripts/review-capture.mjs <state> <platform>` (see the header of the
-script; `linux-new` and `linux-old` are release fixtures with and without AppImages, platforms `linux`, `linux-arm`,
-`linux-unknown`).
-
-The HTML ships pointing every button at `https://github.com/zyno-io/siple/releases`, so it works without JS.
-The script sets `<html data-release="release|candidate|none|error">`; elements with `data-when="…"` show only
-in the listed states (`pending` = before the script answers). Today every release is a draft, so the page shows
-"First release coming soon".
+Review captures: `npm run preview`, then `node scripts/review-capture.mjs <platform>` (see the header of the
+script; platforms `mac`, `linux`, `linux-arm`, `linux-unknown`).
 
 Platform names, requirements and signing notes live in `platforms` in `src/data/site.ts`.
 
@@ -97,8 +95,10 @@ The `Website` GitHub Actions workflow (`.github/workflows/www.yml`) builds `dist
 ZynoHosting CLI:
 
 - `www-staging.siple.app` (alpha cluster, `--environment alpha`) deploys automatically on every push to `main`.
-- `siple.app` (production) deploys on every release tag (`v*`, built from the tagged commit), or manually:
-  Actions > Website > Run workflow on `main`, target `production`.
+- `siple.app` (production) deploys when a stable GitHub release is **published** (`release.yml` uploads a draft;
+  publishing it fires the run), built from the release's tag. Release candidates (`v0.3.0-rc.1`) never deploy it.
+  Manually: Actions > Website > Run workflow from a stable tag (`v1.2.3`), target `production`. The build fails if
+  the newest CHANGELOG version isn't the tag, and the deploy stops if any download link isn't live yet.
 - Pull requests only build.
 
 Each deploy job reads a per-site **deploy token** (`ZYNOHOSTING_DEPLOY_TOKEN`) from its GitHub environment

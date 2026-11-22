@@ -1223,18 +1223,7 @@
         "name": "tiny",
         "value": "420px"
       }
-    ],
-    "states": {
-      "attribute": "html[data-release]",
-      "values": {
-        "(absent)": "pending: before the GitHub check or without JS; lamp idle",
-        "none": "no published release; lamp amber; warning notice",
-        "candidate": "release candidate; lamp teal",
-        "release": "published release; lamp green; Latest tag",
-        "error": "GitHub did not answer; lamp idle; info notice"
-      },
-      "gate": "data-when=\"<space-separated states>\" hides an element unless the current state is listed"
-    }
+    ]
   },
   "components": [
     {
@@ -1273,8 +1262,8 @@
       "name": "Lamp Status Line",
       "kind": "custom",
       "refersTo": "lamp",
-      "description": "The app's round LED beside a sentence; colour follows html[data-release].",
-      "html": "<p class=\"ds-status\"><span class=\"ds-lamp ds-lamp--warn\"></span>First release coming soon.</p><p class=\"ds-status\"><span class=\"ds-lamp ds-lamp--ok\"></span>Siple 0.9.0 &middot; Nov 17, 2026</p>",
+      "description": "The app's round LED beside a sentence; colour set by its data-lamp value.",
+      "html": "<p class=\"ds-status\"><span class=\"ds-lamp ds-lamp--ok\"></span>Siple 0.9.0 &middot; Nov 17, 2026</p>",
       "css": ".ds-status{display:flex;align-items:center;gap:10px;margin:0 0 8px;font:400 14px/1.55 var(--font-sans);color:var(--text-2);font-variant-numeric:tabular-nums}.ds-lamp{flex:0 0 auto;width:8px;height:8px;border-radius:50%;background:var(--lamp-idle);box-shadow:0 0 0 3px color-mix(in srgb,var(--lamp-idle) 22%,transparent);transition:background-color 300ms ease}.ds-lamp--warn{background:var(--lamp-warn);box-shadow:0 0 0 3px color-mix(in srgb,var(--lamp-warn) 24%,transparent)}.ds-lamp--ok{background:var(--lamp-ok);box-shadow:0 0 0 3px color-mix(in srgb,var(--lamp-ok) 22%,transparent)}"
     },
     {
@@ -1336,7 +1325,7 @@
       "Inter for people's words; monospace for machine text: table names, keys, commands, filenames.",
       "The page is a config file: a sticky `config.toml` band under the header, one table per section, a real excerpt beside each heading, a mono link to that table's reference at the section's foot.",
       "Real screenshots in both themes; the app window runs off the bottom of the hero like an app left open.",
-      "Release-aware content: `html[data-release]` (`none`, `candidate`, `release`, `error`; absent means pending) drives lamps and `data-when` blocks.",
+      "Release content (version, date, every download link) is fixed at build time from the root CHANGELOG (`src/data/release.ts`); the browser only detects the visitor's OS.",
       "No eyebrow labels. A heading stands alone."
     ],
     "rules": [
@@ -1352,7 +1341,7 @@
       },
       {
         "name": "The Lamp Beside a Word Rule",
-        "body": "A lamp is an 8px round LED with a 3px halo of its own colour at 22% (24% for amber). It always sits next to text that says the same thing (\"First release coming soon\", the version and date). Its colour comes only from `html[data-release]`, never from a per-element class. Opt in with `data-lamp`; without it a lamp stays idle grey.",
+        "body": "A lamp is an 8px round LED with a 3px halo of its own colour at 22% (24% for amber). It always sits next to text that says the same thing (the version and date). Its colour comes only from its `data-lamp` value, never from a per-element class. Opt in with `data-lamp`; without it a lamp stays idle grey.",
         "section": "colors"
       },
       {
@@ -1390,7 +1379,7 @@
       "**Do** take every colour from the custom properties in `tokens.css`. Keep PixelCI's names and values for everything except the accent family and the lamps, so the two sites read as one family.",
       "**Do** fill at most one control per section with teal, and keep the rest default or ghost (The One Teal Rule).",
       "**Do** show status as a tag triplet with a word in it, and live state as a lamp beside a sentence that says the same thing (The Lamp Beside a Word Rule).",
-      "**Do** drive release-dependent content with `data-when` and `html[data-release]`, and make the pending/no-JS state complete and honest.",
+      "**Do** bake release content in at build time, and make the no-JS page complete and honest.",
       "**Do** give each feature section a real config table: an excerpt of its real keys, a place in the file bar, and a mono link to its reference (The File Is the Outline Rule).",
       "**Do** set table names, keys, commands, and asset filenames in monospace, and everything else in Inter (The Machine Text Rule).",
       "**Do** use the app's own light and dark renders as a pair, so a screenshot always matches the page theme.",
@@ -1401,7 +1390,7 @@
     "donts": [
       "**Don't** use indigo anywhere; Siple's accent is teal-blue.",
       "**Don't** use teal for status, or a status tone for a general-purpose button.",
-      "**Don't** put a lamp anywhere without a word beside it, or colour a lamp by anything other than `html[data-release]`.",
+      "**Don't** put a lamp anywhere without a word beside it, or colour a lamp by anything other than its `data-lamp` value.",
       "**Don't** put an eyebrow, kicker, or table-name label above a heading (The No Eyebrow Rule).",
       "**Don't** show an Apple or Microsoft store badge for a listing that does not exist; use the dashed \"Coming soon\" button.",
       "**Don't** add a side rail for navigation; the outline is the horizontal file bar (The Screenshot Gets the Width Rule).",

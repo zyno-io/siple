@@ -722,7 +722,7 @@ select.input {
 /* ── Siple additions ─────────────────────────────────────────────────────── */
 
 /* The app's status lamp: a round LED with a soft halo, always beside a word.
-   Tone follows the live release state on <html data-release>. */
+   A lamp that opts in with data-lamp is green: the version beside it is released. */
 .lamp {
   flex: 0 0 auto;
   display: inline-block;
@@ -733,28 +733,9 @@ select.input {
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--lamp-idle) 22%, transparent);
   transition: background-color 300ms ease, box-shadow 300ms ease;
 }
-:root[data-release='release'] .lamp[data-lamp] {
+.lamp[data-lamp] {
   background: var(--lamp-ok);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--lamp-ok) 22%, transparent);
-}
-:root[data-release='candidate'] .lamp[data-lamp] {
-  background: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-soft);
-}
-:root[data-release='none'] .lamp[data-lamp] {
-  background: var(--lamp-warn);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--lamp-warn) 24%, transparent);
-}
-
-/* Shown only in the listed release states (data-when="none error"); the state
-   is set on <html data-release> by src/scripts/release.ts. Before it lands
-   (or without JS) only "pending" content shows. */
-:root:not([data-release]) [data-when]:not([data-when~='pending']),
-:root[data-release='none'] [data-when]:not([data-when~='none']),
-:root[data-release='release'] [data-when]:not([data-when~='release']),
-:root[data-release='candidate'] [data-when]:not([data-when~='candidate']),
-:root[data-release='error'] [data-when]:not([data-when~='error']) {
-  display: none !important;
 }
 
 .btn--xl {

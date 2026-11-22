@@ -34,8 +34,7 @@ Playwright VRT, `scripts/og.mjs`, GitHub Actions deploying `dist/` to ZynoHostin
 Siple is a desktop SIP softphone for macOS 12+, Windows 10+ (x64 and ARM64) and Linux (x86_64 and aarch64),
 built so that people and AI agents can drive the same calls. The marketing site's job: explain
 what Siple is in seconds, let a visitor download the right build for their computer, and send
-builders to the AI-agent docs. Success = a visitor downloads (or, before the first release,
-understands the release state and goes to GitHub) and knows that agents can drive it.
+builders to the AI-agent docs. Success = a visitor downloads and knows that agents can drive it.
 
 ## Positioning
 
@@ -54,7 +53,6 @@ telemetry, works with any standards-based PBX or SIP provider.
   place; the tarball is for servers and agents; glibc 2.36+), with `SHA256SUMS` and build-provenance attestations. macOS
   builds are Developer ID signed, notarized and stapled; Windows executables are
   Authenticode-signed (Azure Artifact Signing); Linux ships checksums.
-- As of 2026-11-17 every GitHub release is still a draft: there is no published release yet.
 - Mac App Store and Microsoft Store listings are planned but not available ("coming soon").
 - Docs: https://zyno-io.github.io/siple/ (Guide, AI agents, API reference, Licence).
 - Repo: https://github.com/zyno-io/siple. Contact: oss@zyno.io.

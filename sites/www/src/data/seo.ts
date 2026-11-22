@@ -3,6 +3,8 @@
  * Organization on every page. Only facts the page states: no ratings, reviews,
  * prices or usage numbers.
  */
+import { release } from './release';
+
 const origin = 'https://siple.app';
 
 export const softwareApplication = {
@@ -10,6 +12,7 @@ export const softwareApplication = {
   '@id': `${origin}/#software`,
   name: 'Siple',
   url: `${origin}/`,
+  softwareVersion: release.version,
   applicationCategory: 'CommunicationApplication',
   applicationSubCategory: 'SIP softphone',
   operatingSystem: 'macOS 12+, Windows 10+ (x64), Windows 11 on ARM, Linux x86_64 and aarch64',

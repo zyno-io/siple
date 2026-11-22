@@ -55,8 +55,8 @@ plain licence) → sibling (ZynoTalk if you need a line).
 FIRST VIEWPORT (1440x900): sticky 60px header (icon + Siple wordmark, Features, AI agents,
 Licence, Docs, GitHub, theme, Download). Left-aligned H1 across ~8 of 12 columns, lede beneath,
 then the download console in one row: primary button for the detected platform (label names the
-OS), "All platforms" and GitHub secondary, and a lamp line with release state (version + date,
-or "First release coming soon"). Beside the copy (right ~540px) a code-rendered terminal card
+OS), "All platforms" and GitHub secondary, and a lamp line with the released version and date
+(baked in at build time). Beside the copy (right ~540px) a code-rendered terminal card
 showing the same call driven by `siple-cli ctl`, sitting on the top edge of the real two-lines
 screenshot (~1116px on the faint desk grid, lower part cut by the fold), overlapping it by
 ~12px so the app's own header stays readable. Revised during build: docking it at the window's

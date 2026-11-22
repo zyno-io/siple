@@ -11,10 +11,10 @@ import path from 'node:path';
  * same folder to PixelCI; this site can do the same later by adding its
  * `visual` job to .github/workflows/www.yml.)
  *
- * The GitHub releases request is answered with an empty list, so captures are
- * deterministic and show the "first release coming soon" state whatever
- * GitHub says today, and the visitor's OS is whatever headless Chromium on
- * the runner reports (normally Linux, so the Linux row is featured).
+ * The page makes no network requests for release data (the version and links
+ * are baked in at build time), so captures are deterministic; the visitor's OS
+ * is whatever headless Chromium on the runner reports (normally Linux, so the
+ * Linux row is featured).
  */
 
 const distDir = fileURLToPath(new URL('../dist', import.meta.url));
@@ -67,9 +67,6 @@ for (const { url, slug } of routes) {
       // scheme in one call, since emulateMedia resets omitted options.
       await page.emulateMedia({ reducedMotion: 'reduce', colorScheme: theme });
 
-      await page.route('https://api.github.com/**', (route) =>
-        route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }),
-      );
       await page.goto(url, { waitUntil: 'networkidle' });
       await page.evaluate(() => (document as any).fonts?.ready);
       // Walk the page once so lazy screenshots load before the full-page capture.
@@ -80,7 +77,7 @@ for (const { url, slug } of routes) {
         }
         window.scrollTo(0, 0);
       });
-      await page.waitForTimeout(400); // let the release script settle the download state
+      await page.waitForTimeout(400); // let the download script mark this computer's row
 
       const suffix = theme === 'light' ? '' : `-${theme}`;
       await page.screenshot({

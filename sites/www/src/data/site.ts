@@ -1,5 +1,5 @@
 /**
- * Site-wide links, release plumbing and launch flags. One place to edit when
+ * Site-wide links, release URLs and launch flags. One place to edit when
  * a store listing goes live or the domain is chosen.
  */
 const repo = 'https://github.com/zyno-io/siple';
@@ -47,14 +47,15 @@ export const doc = {
 } as const;
 
 /**
- * GitHub Releases, read in the browser by src/scripts/release.ts.
- *
- * Drafts are ignored; the newest published non-prerelease wins, else the
- * newest prerelease (shown as "Release candidate"). With no JS, an API failure,
- * a rate limit or no published release, every button keeps its fallback href
- * (the releases page) and the page says the first release is coming.
+ * Release links, fixed at build time for the version in src/data/release.ts (the newest CHANGELOG section). Production
+ * is built from a published release's tag and deployed only after every link checks live (.github/workflows/www.yml);
+ * nothing is looked up in the browser.
  */
-export const releaseApi = 'https://api.github.com/repos/zyno-io/siple/releases?per_page=10';
+export const releasePage = (version: string) => `${repo}/releases/tag/v${version}`;
+export const assetUrl = (version: string, name: string) => `${repo}/releases/download/v${version}/${name}`;
+/** Release assets are named `Siple-<version>-<suffix>` (release.yml). */
+export const assetName = (version: string, suffix: string) => `Siple-${version}-${suffix}`;
+export const checksumsUrl = (version: string) => assetUrl(version, 'SHA256SUMS');
 
 export type PlatformId = 'mac' | 'win-x64' | 'win-arm64' | 'linux' | 'linux-arm64';
 
@@ -68,20 +69,12 @@ export interface Platform {
   requires: string;
   /** Release asset name suffix (`Siple-<version>-<suffix>`). */
   suffix: string;
-  /**
-   * An alternative build for the same platform (Linux: the tarball). When
-   * `suffix` is missing from a release (older releases have no AppImage) the
-   * alternative becomes the primary download.
-   */
+  /** An alternative build for the same platform (Linux: the tarball), linked beside the primary one. */
   alt?: { suffix: string; label: string; file: string };
   /** One line of honest how-to shown under the row (from the install guide). */
   note?: string;
-  /** Hide the row when the release has none of its assets (older releases have no aarch64 files). */
-  hideIfAbsent?: boolean;
-  /** File type shown on the button before a version is known. */
+  /** File type of the primary build. */
   kind: string;
-  /** Shown in place of the file name until a release resolves. */
-  file: string;
   /** How this build is signed, as release.yml / docs/RELEASING.md describe it. */
   trust: string;
 }
@@ -99,7 +92,6 @@ export const platforms: Platform[] = [
     requires: 'macOS 12 or later · Universal (Apple silicon and Intel)',
     suffix: 'macos.dmg',
     kind: '.dmg',
-    file: 'Universal disk image (.dmg)',
     trust: 'Notarized',
   },
   {
@@ -110,7 +102,6 @@ export const platforms: Platform[] = [
     requires: 'Windows 10 or later · Intel and AMD PCs',
     suffix: 'windows-x64.zip',
     kind: '.zip',
-    file: 'x64 zip archive (.zip)',
     trust: 'Authenticode-signed',
   },
   {
@@ -121,7 +112,6 @@ export const platforms: Platform[] = [
     requires: 'Windows 11 on ARM · Snapdragon and Surface Pro X / 11',
     suffix: 'windows-arm64.zip',
     kind: '.zip',
-    file: 'ARM64 zip archive (.zip)',
     trust: 'Authenticode-signed',
   },
   {
@@ -133,7 +123,6 @@ export const platforms: Platform[] = [
     suffix: 'linux-x86_64.AppImage',
     alt: { suffix: 'linux-x86_64.tar.gz', label: 'Tarball', file: 'x86_64 tarball (.tar.gz)' },
     kind: '.AppImage',
-    file: 'x86_64 AppImage (.AppImage)',
     note: linuxNote,
     trust: 'SHA-256 checksum',
   },
@@ -146,10 +135,8 @@ export const platforms: Platform[] = [
     suffix: 'linux-aarch64.AppImage',
     alt: { suffix: 'linux-aarch64.tar.gz', label: 'Tarball', file: 'aarch64 tarball (.tar.gz)' },
     kind: '.AppImage',
-    file: 'ARM64 AppImage (.AppImage)',
     note: linuxNote,
     trust: 'SHA-256 checksum',
-    hideIfAbsent: true,
   },
 ];
 

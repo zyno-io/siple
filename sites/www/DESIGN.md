@@ -325,7 +325,7 @@ Light and dark come from one set of token names, redeclared for dark. Theme foll
 - Inter for people's words; monospace for machine text: table names, keys, commands, filenames.
 - The page is a config file: a sticky `config.toml` band under the header, one table per section, a real excerpt beside each heading, a mono link to that table's reference at the section's foot.
 - Real screenshots in both themes; the app window runs off the bottom of the hero like an app left open.
-- Release-aware content: `html[data-release]` (`none`, `candidate`, `release`, `error`; absent means pending) drives lamps and `data-when` blocks.
+- Release content (version, date, asset links) is fixed at build time from the CHANGELOG; the lamp beside the version is always green.
 - No eyebrow labels. A heading stands alone.
 
 ## Colors
@@ -334,26 +334,25 @@ PixelCI's cool near-neutral greys carry everything. One teal-blue family marks a
 
 ### Primary
 
-- **Handset Teal** (`accent`): the app icon's teal-blue, from `crates/siple/src/theme.rs`. Fills the primary button (the header Download, the hero's download button, the "This computer" row's button), the checked option of the theme line, `tag--accent`, and the skip link. It also draws the 2px underline of the selected call-state tab and the lamp in the `candidate` state. In dark it brightens to a sky teal.
+- **Handset Teal** (`accent`): the app icon's teal-blue, from `crates/siple/src/theme.rs`. Fills the primary button (the header Download, the hero's download button, the "This computer" row's button), the checked option of the theme line, `tag--accent`, and the skip link. It also draws the 2px underline of the selected call-state tab. In dark it brightens to a sky teal.
 - **Handset Teal Deep** (`accent-hover`): primary hover. Darker in light, lighter in dark, as in PixelCI.
 - **On Teal** (`accent-text`): white in light. In dark it is a deep teal-black ink, not white, because the bright dark accent cannot carry white text at 4.5:1. This differs from PixelCI, whose dark accent keeps white.
-- **Teal Halo** (`accent-soft`): the 3px lamp halo in the candidate state, the current table in the file bar, the hero's top glow, and the focus halo on fields.
+- **Teal Halo** (`accent-soft`): the current table in the file bar, the hero's top glow, and the focus halo on fields.
 - **Focus Teal** (`focus`): the 2px keyboard outline on every focusable element.
 - **Link Teal** (`link`): text links, table headers in config excerpts, the current table's name in the file bar, icons in the agent layer list, and the selected call-state tab's icon. In dark it is the same value as `focus`.
 
 ### Secondary (status triplets, inherited)
 
-Each tone ships as a text colour, soft fill, and border, used together. On this site: **Approved Green** (`success`) for "Latest", the Notarized and Authenticode-signed trust tags, "Allowed" in the licence, check marks in check lists, and the `$` prompt in the terminal. **No Changes Blue** (`info`) for "Release candidate", "After two years", the default notice and its info icon. **Rejected Red** (`danger`) for "Not allowed". **Needs Review Amber** (`warning`) for the "First release coming soon" notice. **Draft Grey** (`neutral`) is the default tag ("caller", the SHA-256 checksum trust tag). The `release` violet triplet is carried in the tokens but not used.
+Each tone ships as a text colour, soft fill, and border, used together. On this site: **Approved Green** (`success`) for "Latest", the Notarized and Authenticode-signed trust tags, "Allowed" in the licence, check marks in check lists, and the `$` prompt in the terminal. **No Changes Blue** (`info`) for "After two years", the default notice and its info icon. **Rejected Red** (`danger`) for "Not allowed". **Needs Review Amber** (`warning`) is carried in the tokens but not used on the home page. **Draft Grey** (`neutral`) is the default tag ("caller", the SHA-256 checksum trust tag). The `release` violet triplet is carried in the tokens but not used.
 
 ### Tertiary (status lamps, Siple-only)
 
 The app's LED dots (`theme.rs` `Tone.led`). They mark live state and never stand alone.
 
-- **Lamp Green** (`lamp-ok`): a published release.
-- **Lamp Amber** (`lamp-warn`): no published release yet (`none`).
+- **Lamp Green** (`lamp-ok`): the released version in the download card.
+- **Lamp Amber** (`lamp-warn`): defined to match the app. No state on the page uses it today.
 - **Lamp Red** (`lamp-err`): defined to match the app. No state on the page uses it today.
-- **Lamp Grey** (`lamp-idle`): the resting lamp: pending (before the GitHub check lands, or without JS) and `error`.
-- The `candidate` state borrows Handset Teal with Teal Halo rather than a lamp token.
+- **Lamp Grey** (`lamp-idle`): the resting lamp, for a lamp that has not opted in with `data-lamp`.
 
 ### Neutral (inherited from PixelCI)
 
@@ -366,11 +365,11 @@ The app's LED dots (`theme.rs` `Tone.led`). They mark live state and never stand
 
 ### Named Rules
 
-**The One Teal Rule.** Teal means "this is the action, this is chosen, or this has focus". The header's Download is the persistent primary. Inside the page body, each section fills at most one control with teal: the hero's download button, the "This computer" row, the checked theme value. Teal never carries status. A release candidate's lamp is teal because the candidate is the build you would pick, not because it is good or bad.
+**The One Teal Rule.** Teal means "this is the action, this is chosen, or this has focus". The header's Download is the persistent primary. Inside the page body, each section fills at most one control with teal: the hero's download button, the "This computer" row, the checked theme value. Teal never carries status.
 
 **The Tag Triplet Rule** (inherited). A status tone is applied as soft fill, matching border, and tone text together, and every tag holds a word. `tag--accent` is the one solid tag. It is a selection marker ("This computer"), not a status.
 
-**The Lamp Beside a Word Rule.** A lamp is an 8px round LED with a 3px halo of its own colour at 22% (24% for amber). It always sits next to text that says the same thing ("First release coming soon", the version and date). Its colour comes only from `html[data-release]`, never from a per-element class. Opt in with `data-lamp`; without it a lamp stays idle grey.
+**The Lamp Beside a Word Rule.** A lamp is an 8px round LED with a 3px halo of its own colour at 22% (24% for amber). It always sits next to text that says the same thing (the version and date). Opt in with `data-lamp` for the green released lamp; without it a lamp stays idle grey.
 
 ## Typography
 
@@ -461,15 +460,14 @@ One button row and one status line. The row holds the xl primary (its label name
 
 One card listing every platform, inside the Inset Grey download band, with a 300px sidebar at 48px.
 
-- **Head:** a lamp, the version (semibold, tabular), the state tag (`Release candidate` info, `Latest` success with a check), the date in Meta Grey, and "Release notes" on the right. 16px 20px padding, hairline below.
-- **State notices:** a warning notice (hourglass, "First release coming soon.") for `none`, and the info notice for `error`, inset 16px 20px 4px.
-- **Rows:** a grid of 28px brand icon, name block (semibold name, 13px requirements, 12px file name in Meta Grey, mono once it is a real asset name), trust tag (shield or hash icon), and a default "On GitHub" button. Rows are 16px 20px and divided by hairlines. Below 720px the tag and button drop under the name, and the button goes full width.
+- **Head:** a lamp, the version (semibold, tabular), the `Latest` success tag with a check, the date in Meta Grey, and "Release notes" on the right. 16px 20px padding, hairline below.
+- **Rows:** a grid of 28px brand icon, name block (semibold name, 13px requirements, 12px file name in Meta Grey, mono, the real asset name), trust tag (shield or hash icon), and a "Download" button. Rows are 16px 20px and divided by hairlines. Below 720px the tag and button drop under the name, and the button goes full width.
 - **This computer:** the detected row gets a 6% teal tint, a 1px teal frame, a `tag--accent` "This computer" beside the name, an Ink icon, and a primary button. It is exactly one row: the one marker of where to go next.
 - **Foot:** an Inset Grey strip with the `SHA256SUMS` mono link and plain links, 14px 20px.
 
-### Release states
+### Release content
 
-The release script sets `html[data-release]` to `none`, `candidate`, `release`, or `error`. Until it lands, or without JS, the attribute is absent and only `pending` content shows. Any element can carry `data-when="..."` with a space-separated list of states. It is hidden unless the current state is in the list. Lamps change colour over 300ms. Content that is true in every state has no `data-when`. The no-JS page is complete and points every link at GitHub Releases.
+The version, date and every asset link are in the HTML at build time (`src/data/release.ts` reads the CHANGELOG); there are no runtime release states. `src/scripts/download.ts` only marks the visitor's row and points the hero button at it. The no-JS page is complete: the hero button leads to the download list.
 
 ### Store buttons (coming soon)
 
@@ -541,7 +539,7 @@ The section-foot link and footer-style anchor: the table name in 13px mono Meta 
 - **Do** take every colour from the custom properties in `tokens.css`. Keep PixelCI's names and values for everything except the accent family and the lamps, so the two sites read as one family.
 - **Do** fill at most one control per section with teal, and keep the rest default or ghost (The One Teal Rule).
 - **Do** show status as a tag triplet with a word in it, and live state as a lamp beside a sentence that says the same thing (The Lamp Beside a Word Rule).
-- **Do** drive release-dependent content with `data-when` and `html[data-release]`, and make the pending/no-JS state complete and honest.
+- **Do** bake release-dependent content in at build time from the CHANGELOG, so the no-JS page is complete and honest.
 - **Do** give each feature section a real config table: an excerpt of its real keys, a place in the file bar, and a mono link to its reference (The File Is the Outline Rule).
 - **Do** set table names, keys, commands, and asset filenames in monospace, and everything else in Inter (The Machine Text Rule).
 - **Do** use the app's own light and dark renders as a pair, so a screenshot always matches the page theme.
@@ -553,7 +551,7 @@ The section-foot link and footer-style anchor: the table name in 13px mono Meta 
 
 - **Don't** use indigo anywhere; Siple's accent is teal-blue.
 - **Don't** use teal for status, or a status tone for a general-purpose button.
-- **Don't** put a lamp anywhere without a word beside it, or colour a lamp by anything other than `html[data-release]`.
+- **Don't** put a lamp anywhere without a word beside it, or use a green lamp for anything not released.
 - **Don't** put an eyebrow, kicker, or table-name label above a heading (The No Eyebrow Rule).
 - **Don't** show an Apple or Microsoft store badge for a listing that does not exist; use the dashed "Coming soon" button.
 - **Don't** add a side rail for navigation; the outline is the horizontal file bar (The Screenshot Gets the Width Rule).

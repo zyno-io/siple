@@ -1,23 +1,23 @@
 ---
 /**
  * The hero's download console: one primary button for this computer, the
- * other platforms, GitHub, and the live release state. Works without JS (all
- * links go to GitHub Releases); src/scripts/release.ts upgrades it.
+ * other platforms, and the release. Works without JS (the primary button leads
+ * to the download list); src/scripts/download.ts points it at this computer's
+ * build. Version and date are fixed at build time (src/data/release.ts).
  */
-import { site } from '../data/site';
+import { release } from '../data/release';
 ---
 
 <div class="console">
   <div class="btn-row">
-    <a href={site.releases} class="btn btn--primary btn--xl" data-dl-primary>
+    <a href="#download" class="btn btn--primary btn--xl" data-dl-primary>
       <i class="fa-solid fa-arrow-down" data-dl-icon aria-hidden="true"></i><span data-dl-label>Download Siple</span>
     </a>
     <a href="#download" class="btn btn--lg console__all">All platforms</a>
-    <a href={site.repo} class="btn btn--lg btn--ghost" data-when="pending release candidate error"><i class="fa-brands fa-github" aria-hidden="true"></i>GitHub</a>
   </div>
   <p class="console__status" aria-live="polite">
     <span class="lamp" data-lamp aria-hidden="true"></span>
-    <span data-dl-status-text>Builds for macOS, Windows and Linux are published on GitHub Releases.</span>
+    <span>Siple {release.version} · {release.label}</span>
   </p>
   <p class="console__note" data-dl-primary-note hidden></p>
 </div>
