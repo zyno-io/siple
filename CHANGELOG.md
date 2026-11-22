@@ -1,6 +1,13 @@
 <!-- siple-rename: keep (this file documents the legacy ZynoPhone names on purpose) -->
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- Settings: the explanation next to a switch (for example under **Updates**) wraps under its label instead of running off
+  the right edge of the window.
+
 ## 0.2.2 (2026-11-22)
 
 AppImage for Linux, and Linux on ARM.

@@ -649,6 +649,30 @@ fn settings_have_the_install_switch_and_start_the_install() {
     assert_eq!(install_calls(&mut h).len(), 1);
 }
 
+/// Toggle hints wrap under their label instead of running off the right edge of the window.
+#[test]
+fn settings_toggle_hints_stay_inside_the_window() {
+    use siple_core::update::InstallPhase as P;
+    for size in [WIDE, MEDIUM, NARROW] {
+        let mut snap = base_snapshot();
+        snap.update = install_status(P::Idle);
+        let mut h = harness(snap, size);
+        h.state_mut().ui.settings.open = true;
+        h.state_mut().ui.settings.section = crate::ui::settings::Section::Advanced;
+        h.run();
+        let hint = h
+            .query_all_by_label_contains("checks its signature")
+            .next()
+            .expect("the install hint");
+        let r = hint.rect();
+        assert!(
+            r.max.x <= size.x + 0.5,
+            "{size:?}: hint ends at {} past the window ({r:?})",
+            r.max.x
+        );
+    }
+}
+
 #[test]
 fn header_badge_counts_ringing_extensions() {
     let mut h = harness(base_snapshot(), MEDIUM);
