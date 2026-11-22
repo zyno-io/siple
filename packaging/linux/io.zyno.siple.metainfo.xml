@@ -58,6 +58,12 @@
     <screenshot><caption>Dark appearance</caption><image>https://raw.githubusercontent.com/zyno-io/siple/v0.1.2/crates/siple/tests/snapshots/idle_dark_wide.png</image></screenshot>
   </screenshots>
   <releases>
+    <release version="0.2.3" date="2026-11-22">
+      <url type="details">https://github.com/zyno-io/siple/releases/tag/v0.2.3</url>
+      <description><ul>
+        <li>Settings: explanations next to switches wrap instead of running off the window</li>
+      </ul></description>
+    </release>
     <release version="0.2.2" date="2026-11-22">
       <url type="details">https://github.com/zyno-io/siple/releases/tag/v0.2.2</url>
       <description><ul>

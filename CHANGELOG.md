@@ -1,7 +1,7 @@
 <!-- siple-rename: keep (this file documents the legacy ZynoPhone names on purpose) -->
 # Changelog
 
-## Unreleased
+## 0.2.3 (2026-11-22)
 
 ### Fixed
 
