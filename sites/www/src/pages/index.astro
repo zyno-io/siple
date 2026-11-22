@@ -1,0 +1,988 @@
+---
+/**
+ * Siple home. Structure: the hero (what it is, the download console, the real
+ * app with the same call driven from a shell), then the "config file" body:
+ * one section per real table of Siple's config.toml, outlined by the sticky
+ * FileBar. Then downloads, the licence in plain words, and the ZynoTalk promo.
+ *
+ * Every claim here is from the Siple repo (README, CHANGELOG, docs/,
+ * sites/docs/, skills/siple/SKILL.md). Commands and method names are real.
+ */
+import BaseLayout from '../layouts/BaseLayout.astro';
+import SiteHeader from '../components/SiteHeader.astro';
+import SiteFooter from '../components/SiteFooter.astro';
+import Shot from '../components/Shot.astro';
+import Terminal from '../components/Terminal.astro';
+import DownloadConsole from '../components/DownloadConsole.astro';
+import Downloads from '../components/Downloads.astro';
+import CallStates from '../components/CallStates.astro';
+import FileBar from '../components/FileBar.astro';
+import ZynoTalkPromo from '../components/ZynoTalkPromo.astro';
+import ConfigExcerpt from '../components/ConfigExcerpt.astro';
+import { site, doc } from '../data/site';
+import { softwareApplication, webSite } from '../data/seo';
+
+const tables = [
+  { id: 'calls', table: '[calls]', label: 'Lines and transfers' },
+  { id: 'agents', table: '[control]', label: 'Agents' },
+  { id: 'speech', table: '[speech]', label: 'Agent audio' },
+  { id: 'accounts', table: '[[account]]', label: 'Any PBX' },
+  { id: 'desktop', table: '[ui]', label: 'Desktop' },
+];
+const ref = (anchor: string) => `${doc.configRef}#${anchor}`;
+
+const heroLines = [
+  { k: 'c', t: '# the call below, from a shell' },
+  { k: 'p', t: `siple-cli ctl call.dial '{"account":"desk-1001","target":"1003"}'` },
+  { k: 'o', t: '{"call_id":"c1","call":{"state":"dialing",…},"event_seq":120}' },
+  { k: 'p', t: `siple-cli ctl call.mute '{"call_id":"c1"}'` },
+] as const;
+
+const agentLines = [
+  { k: 'c', t: '# Is Siple running? Accounts, calls, audio, event_seq' },
+  { k: 'p', t: 'siple-cli ctl status' },
+  { k: 'c', t: '# Place a call, then wait for the answer without races' },
+  { k: 'p', t: `siple-cli ctl call.dial '{"account":"office","target":"1002"}'` },
+  { k: 'o', t: '{"call_id":"c1","call":{"state":"dialing",…},"event_seq":120}' },
+  { k: 'p', t: `siple-cli ctl call.wait_for '{"call_id":"c1","state":"active","since":120}'` },
+  { k: 'c', t: '# Look methods up offline instead of guessing' },
+  { k: 'p', t: `siple-cli methods | grep '^transfer\\.' | cut -c1-72` },
+  { k: 'o', t: 'transfer.complete          Finish a consult. `mode` attended: REFER with' },
+  { k: 'o', t: 'transfer.swap              During consult_connected: hold the leg you ar' },
+  { k: 'o', t: 'transfer.cancel            Abandon a consult: hang up the consult call (' },
+  { k: 'c', t: '# Teach Claude Code (or any Agent Skills client) to use it' },
+  { k: 'p', t: 'siple-cli skill > ~/.claude/skills/siple/SKILL.md' },
+] as const;
+
+const layers = [
+  {
+    icon: 'fa-plug',
+    title: 'Control API',
+    text: 'Newline-delimited JSON-RPC 2.0 over a local socket or named pipe, restricted to your user. Optional loopback TCP with a token. A failure carries a stable <code>problem</code> kind to match on, with the plain title and hint to show.',
+    cmd: "siple-cli ctl <method> '<json>'",
+    link: { label: 'JSON-RPC basics', href: doc.jsonRpc },
+  },
+  {
+    icon: 'fa-book-open',
+    title: 'Agent skill',
+    text: 'A short SKILL.md that teaches an agent one command per action and to look methods up. No extra process runs.',
+    cmd: 'siple-cli skill',
+    link: { label: 'Install the skill', href: doc.skill },
+  },
+  {
+    icon: 'fa-diagram-project',
+    title: 'MCP server',
+    text: 'A stdio MCP server for Claude Code and other MCP clients: one tool per method, plus wait_for_event.',
+    cmd: 'claude mcp add siple -- siple-cli mcp',
+    link: { label: 'MCP quick start', href: doc.mcp },
+  },
+];
+
+const callsSnippet = `[calls]
+# hold the other lines when you answer or dial
+hold_scope = "all"
+# a refused transfer takes the call off hold again
+resume_after_failed_transfer = true
+# SIP status sent when you decline a waiting call
+decline_code = 486`;
+
+const controlSnippet = `[control]
+# "" = <config dir>/control.sock
+unix_socket = ""
+# "" = \\\\.\\pipe\\siple-<user>-<hash> (Windows)
+named_pipe = ""
+# "" = off; loopback only, token always required
+tcp_listen = ""`;
+
+const speechSnippet = `[speech]
+tts_command = ["piper", "--model", "en_US-lessac-medium.onnx",
+               "--output_file", "{out}"]
+stt_command = ["whisper-cli", "-m", "ggml-base.en.bin",
+               "-f", "{in}", "-l", "{lang}", "-nt", "-np"]
+stt_language = "en"`;
+
+const accountSnippet = `[[account]]
+id = "desk"
+username = "1001"
+password = "secret"
+domain = "pbx.example.test"
+transport = "tls"
+tls_verify = false            # or tls_fingerprint = "47:EE:..."
+srtp = "optional"`;
+
+const accountRows = [
+  { k: 'Transports', v: 'UDP, TCP and TLS 1.2/1.3 (rustls), or auto from DNS SRV. Outbound proxy, rport and NAT keep-alives.' },
+  { k: 'Certificates', v: 'The OS trust store, your own CA, or SHA-256 pinning for a self-signed PBX.' },
+  { k: 'Media', v: 'SDES-SRTP off, optional or mandatory, with automatic fallback. Opus, G.722 and G.711.' },
+  { k: 'DTMF', v: 'RFC 4733, SIP INFO or in-band.' },
+  { k: 'Passwords', v: 'In the config file, or in the macOS Keychain, Windows Credential Manager or Secret Service.' },
+  { k: 'Network changes', v: 'Re-registers after an address change or sleep and wake, and waits quietly while offline.', key: '[network]' },
+  { k: 'When it fails', v: 'Siple names the problem in plain words and says what to try (“Wrong username or password”). The server’s own answer sits on a details line or in a hover. A wire-level SIP trace per account has the rest.' },
+];
+
+const setupSteps = [
+  { t: 'Read.', v: 'The server comes first, with a warning when it is outside the account’s domain, an IP address or this computer.' },
+  { t: 'Continue.', v: 'Nothing has been saved or sent up to here.' },
+  { t: 'Type the password.', v: 'The rest of the form is already filled in.' },
+  { t: 'Test.', v: 'Siple signs in once on a private connection, and saves the account only when that works.' },
+];
+
+const desktopRows = [
+  { k: 'Tray and menu bar', v: 'Close the window and Siple keeps running in the tray, still registered and ready to ring.', key: 'tray = true', href: doc.tray },
+  { k: 'Keyboard', v: 'Answer, hang up, mute, hold, transfer and switch lines without the mouse. Rebind any chord.', key: '[ui.shortcuts]', href: doc.shortcuts, kbd: true },
+  { k: 'sip:, tel: and siple: links', v: 'Phone links open in Siple with the number filled in. It never dials by itself. Setup links open a review screen first.', key: 'handle_links', href: doc.links },
+  { k: 'Launch at login', v: 'Starts with your session, hidden in the tray if you like.', key: 'launch_at_login', href: doc.tray },
+  { k: 'Developer tools', v: 'Off by default. Turn them on for the Log pane and the Open logs and Open config buttons in the footer, and registration and subscription times in tooltips.', key: 'developer_tools', href: doc.configRef },
+  { k: 'Native', v: 'Rust and egui. No Electron, no OpenSSL, no telemetry; only an optional, anonymous check for new releases.', key: '' },
+];
+---
+
+<BaseLayout
+  title="Siple: the scriptable SIP softphone for macOS, Windows and Linux"
+  schema={[webSite, softwareApplication]}
+>
+  <SiteHeader />
+  <main id="main">
+    <!-- Hero: the offer, the action, and the proof (the real app, driven from a shell). -->
+    <section class="hero desk-grid desk-glow" aria-labelledby="hero-title">
+      <div class="wrap hero__in">
+        <div class="hero__top">
+          <div class="hero__copy">
+            <h1 id="hero-title" class="display">The scriptable SIP softphone.</h1>
+            <p class="lede hero__lede">
+              A native desktop softphone for macOS, Windows and Linux, with the desk-phone features your PBX
+              expects. Every button is also a command, so scripts and AI agents can drive the same calls.
+            </p>
+            <DownloadConsole />
+          </div>
+          <div class="hero__term">
+            <Terminal
+              title="siple-cli"
+              label="Terminal: dialling extension 1003 on account desk-1001 with siple-cli, then muting the call"
+              lines={heroLines as any}
+            />
+          </div>
+        </div>
+
+        <div class="hero__window">
+          <div class="hero__shot--wide">
+            <Shot
+              name="two_lines"
+              eager
+              alt="Siple with two lines: an active, muted call with Bob Martin over SRTP on line 1, a call on hold on line 2, and the extensions panel showing Reception idle, Bob Martin busy, Support queue ringing and Warehouse held."
+            />
+          </div>
+          <div class="hero__shot--narrow">
+            <Shot
+              name="two_lines"
+              variant="narrow"
+              width={840}
+              height={1000}
+              alt="Siple’s compact layout: line tabs for Bob Martin and a call on hold, and the active call with Bob Martin, muted, over SRTP, with Hold, Keypad, Transfer and Hang up."
+            />
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <div class="file">
+      <FileBar tables={tables} />
+
+      <!-- [calls] -->
+      <section id="calls" class="section" aria-labelledby="calls-title">
+        <div class="wrap">
+          <div class="sec-top">
+            <div class="sec-head">
+              <h2 id="calls-title" class="h-section">Built like the desk phone it replaces.</h2>
+              <p class="lede">
+                Several lines with automatic hold, call waiting, busy lamps for every extension, and transfers that work
+                the way a front desk expects: blind, attended or semi-attended.
+              </p>
+            </div>
+            <ConfigExcerpt code={callsSnippet} label="The [calls] table in config.toml" />
+          </div>
+          <CallStates />
+          <p class="sec-foot">
+            <a class="mono-link" href={ref('calls')}><b>[calls]</b><span>hold, waiting and transfer settings</span><i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>
+          </p>
+        </div>
+      </section>
+
+      <!-- [control] -->
+      <section id="agents" class="section section--inset" aria-labelledby="agents-title">
+        <div class="wrap">
+          <div class="sec-top">
+            <div class="sec-head">
+              <h2 id="agents-title" class="h-section">Whatever the GUI can do, an agent can do.</h2>
+              <p class="lede">
+                Every state Siple shows and every action it takes is a JSON-RPC method on the same engine. The method
+                list, the MCP tools and the API reference are generated from one catalog, so they can’t drift apart.
+              </p>
+            </div>
+            <ConfigExcerpt code={controlSnippet} note="where agents connect" label="The [control] table in config.toml" />
+          </div>
+          <div class="agents">
+            <div class="agents__term"><Terminal
+              title="siple-cli · any shell"
+              label="Terminal: checking status, dialling and waiting for an answer, looking up transfer methods, and installing the agent skill with siple-cli"
+              lines={agentLines as any}
+            /></div>
+            <ul class="layers">
+              {
+                layers.map((l) => (
+                  <li class="layer">
+                    <h3 class="h-card layer__title">
+                      <i class={`fa-solid ${l.icon}`} aria-hidden="true" />
+                      {l.title}
+                    </h3>
+                    <p class="small body-2" set:html={l.text} />
+                    <code class="layer__cmd">{l.cmd}</code>
+                    <a class="layer__link small" href={l.link.href}>
+                      {l.link.label}
+                      <i class="fa-solid fa-arrow-right" aria-hidden="true" />
+                    </a>
+                  </li>
+                ))
+              }
+            </ul>
+          </div>
+          <p class="sec-foot">
+            <a class="mono-link" href={ref('control')}><b>[control]</b><span>socket, pipe and TCP settings</span><i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>
+            <a class="mono-link" href={doc.agents}><span>AI agents in the docs</span><i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>
+          </p>
+        </div>
+      </section>
+
+      <!-- [speech] -->
+      <section id="speech" class="section" aria-labelledby="speech-title">
+        <div class="wrap speech">
+          <div class="sec-head speech__head">
+            <h2 id="speech-title" class="h-section">Agents can talk on the call, too.</h2>
+            <p class="lede">
+              <code>call.say</code> speaks into a call and <code>call.listen</code> returns what the other side said,
+              with voice-activity detection and an optional transcript. Turn-taking is race-free, and calls driven this
+              way need no microphone or sound card.
+            </p>
+            <p class="body-2">
+              Speech runs your own programs, set in <code>[speech]</code>: piper, espeak-ng, <code>say</code>, SAPI or
+              whisper.cpp. Nothing is bundled, and Siple never runs them through a shell.
+            </p>
+            <ConfigExcerpt code={speechSnippet} note="your programs, never a shell" label="The [speech] table in config.toml, with the piper and whisper.cpp examples from the reference" />
+            <p class="sec-foot sec-foot--flush">
+              <a class="mono-link" href={ref('speech')}><b>[speech]</b><span>text-to-speech and transcription commands</span><i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>
+            </p>
+          </div>
+          <ol class="turns" aria-label="Example of one conversational turn">
+            <li class="turn">
+              <span class="turn__who"><span class="tag tag--accent">agent</span></span>
+              <code class="turn__call">call.say {`{"call_id":"c1","text":"Front desk, how can I help?","wait":true}`}</code>
+              <span class="turn__res">finished when the audio ends, with its <code>rx_ms</code> position</span>
+            </li>
+            <li class="turn">
+              <span class="turn__who"><span class="tag">caller</span></span>
+              <code class="turn__call">call.listen {`{"call_id":"c1","since_rx_ms":<rx_ms>,"transcribe":true}`}</code>
+              <span class="turn__res">the next utterance after that point, with its transcript</span>
+            </li>
+            <li class="turn turn--note">
+              <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+              <span>If the caller talks over the agent, <code>barge_in_rx_ms</code> marks where they began, so nothing they said is lost while the agent thinks.</span>
+            </li>
+          </ol>
+        </div>
+      </section>
+
+      <!-- [[account]] -->
+      <section id="accounts" class="section section--rule" aria-labelledby="accounts-title">
+        <div class="wrap">
+          <div class="sec-head">
+            <h2 id="accounts-title" class="h-section">Works with the PBX you already have.</h2>
+            <p class="lede">
+              Siple speaks standard SIP, so it registers with Asterisk and FreePBX, FreeSWITCH, Kamailio-fronted
+              platforms and hosted providers alike. Add one account or several, each with its own transport and
+              security, or send people a link that fills theirs in.
+            </p>
+          </div>
+          <div class="accounts">
+            <ConfigExcerpt code={accountSnippet} label="Example account in config.toml" />
+            <dl class="spec">
+              {
+                accountRows.map((r) => (
+                  <div class="spec__row">
+                    <dt>{r.k}</dt>
+                    <dd>
+                      {r.v}
+                      {r.key && <code class="spec__key">{r.key}</code>}
+                    </dd>
+                  </div>
+                ))
+              }
+            </dl>
+          </div>
+          <div class="setup">
+            <figure class="setup__fig">
+              <div class="setup__shot">
+                <Shot
+                  name="setup_review"
+                  width={612}
+                  height={480}
+                  alt="Siple’s Check this setup link screen: the server pbx.vendor-hosting.test:5061 in large type, a warning that it is not part of example.test, then the account details with the password marked as not in the link, and Cancel and Continue."
+                />
+              </div>
+              <figcaption class="setup__cap">Check this setup link: the app’s own rendering, from its snapshot tests.</figcaption>
+            </figure>
+            <div class="setup__copy">
+              <h3 class="h-card">Set up a desk with a link</h3>
+              <p class="small body-2">
+                An administrator sends a <code>siple:</code> setup link that fills in the account: user name, server,
+                transport, SRTP and phone profile. It never carries a password, and Siple refuses a link that tries to.
+                The person opening it stays in charge:
+              </p>
+              <ol class="setup__steps">
+                {
+                  setupSteps.map((s) => (
+                    <li>
+                      <strong>{s.t}</strong> {s.v}
+                    </li>
+                  ))
+                }
+              </ol>
+              <p class="small body-2">
+                Copy a link from <strong>Settings › Accounts</strong>, or build one offline:
+              </p>
+              <code class="setup__cmd">{`siple-cli setup-link build '{"username":"1001","domain":"example.test","transport":"tls"}'`}</code>
+            </div>
+          </div>
+          <p class="sec-foot">
+            <a class="mono-link" href={ref('account')}><b>[[account]]</b><span>every account key</span><i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>
+            <a class="mono-link" href={doc.setupLinks}><span>Send a setup link</span><i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>
+            <a class="mono-link" href={doc.problems}><span>What Siple’s messages mean</span><i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>
+            <a class="mono-link" href={doc.firstRun}><span>First run and accounts in the docs</span><i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>
+          </p>
+        </div>
+      </section>
+
+      <!-- [ui] -->
+      <section id="desktop" class="section section--rule" aria-labelledby="desktop-title">
+        <div class="wrap desktop">
+          <div class="sec-head desktop__head">
+            <h2 id="desktop-title" class="h-section">At home on your desktop.</h2>
+            <p class="lede">
+              Light or dark, in the tray, on the keyboard. Every one of these is a line in <code>[ui]</code> that the
+              Settings window, the API and your editor all change live.
+            </p>
+          </div>
+          <div class="card desktop__card">
+            <fieldset class="theme-line">
+              <legend class="theme-line__legend">
+                <span class="theme-line__name">Theme</span>
+                <span class="theme-line__desc">Follows your system, or stays light or dark. This page follows the same line: try it.</span>
+              </legend>
+              <div class="theme-line__code" role="presentation">
+                <code class="theme-line__key">theme =</code>
+                <div class="seg" role="radiogroup" aria-label="Theme">
+                  {
+                    ['system', 'light', 'dark'].map((v) => (
+                      <label class="seg__opt">
+                        <input type="radio" name="ui-theme" value={v} checked={v === 'system'} />
+                        <span>"{v}"</span>
+                      </label>
+                    ))
+                  }
+                </div>
+              </div>
+            </fieldset>
+            <dl class="spec spec--flat">
+              {
+                desktopRows.map((r) => (
+                  <div class="spec__row">
+                    <dt>{r.k}</dt>
+                    <dd>
+                      {r.v}
+                      {r.kbd && (
+                        <span class="keys" aria-label="For example, Mod+1 to Mod+9 select a line">
+                          <kbd>Mod</kbd>+<kbd>1</kbd>–<kbd>9</kbd>
+                        </span>
+                      )}
+                      {r.key && <code class="spec__key">{r.key}</code>}
+                    </dd>
+                  </div>
+                ))
+              }
+            </dl>
+          </div>
+          <p class="sec-foot">
+            <a class="mono-link" href={ref('ui')}><b>[ui]</b><span>theme, tray, shortcuts and links</span><i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>
+          </p>
+        </div>
+      </section>
+    </div>
+
+    <Downloads />
+
+    <!-- Licence -->
+    <section id="licence" class="section" aria-labelledby="licence-title">
+      <div class="wrap licence">
+        <div class="sec-head licence__head">
+          <h2 id="licence-title" class="h-section">Source-available, in plain words.</h2>
+          <p class="lede">
+            Siple is licensed under the Functional Source License 1.1 with an Apache 2.0 future licence
+            (FSL-1.1-ALv2), copyright Signal24 LLC dba Zyno Consulting. It is a Fair Source licence, not an
+            OSI-approved open-source one.
+          </p>
+          <p class="licence__links small">
+            <a href={site.licenceText}>Read the licence</a>
+            <a href={doc.licence}>Licence summary and FAQ</a>
+            <a href={`mailto:${site.contact}`}>{site.contact}</a>
+          </p>
+        </div>
+        <ul class="card licence__rows">
+          <li class="licence__row">
+            <span class="tag tag--success"><i class="fa-solid fa-check" aria-hidden="true"></i>Allowed</span>
+            <p>
+              Use it, run it at work, self-host it, modify it, redistribute it and contribute to it. Build your own
+              products and automations on its control API and MCP server.
+            </p>
+          </li>
+          <li class="licence__row">
+            <span class="tag tag--danger"><i class="fa-solid fa-xmark" aria-hidden="true"></i>Not allowed</span>
+            <p>
+              A competing commercial use: selling Siple or a modified copy, offering it as a product or service that
+              substitutes for Siple, or re-branding it as your own softphone.
+            </p>
+          </li>
+          <li class="licence__row">
+            <span class="tag tag--info"><i class="fa-solid fa-clock" aria-hidden="true"></i>After two years</span>
+            <p>Each release also becomes available under the Apache License 2.0 on the second anniversary of its release.</p>
+          </li>
+        </ul>
+      </div>
+    </section>
+
+    <ZynoTalkPromo />
+  </main>
+  <SiteFooter />
+</BaseLayout>
+
+<script>
+  import '../scripts/release';
+</script>
+
+<style>
+  /* ── Hero ── */
+  .hero {
+    overflow: hidden;
+  }
+  .hero__in {
+    padding-top: 64px;
+  }
+  .hero__top {
+    position: relative;
+    z-index: 2;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 540px);
+    gap: 48px;
+    align-items: end;
+  }
+  .hero__copy {
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+  }
+  .hero__lede {
+    max-width: 60ch;
+  }
+  /* The terminal sits on the app window's top edge: the same call, two hands. */
+  .hero__term {
+    margin-bottom: -52px;
+  }
+  .hero__term :global(.term) {
+    box-shadow: var(--shadow-lg);
+  }
+  .hero__term :global(.term__body) {
+    font-size: 12px;
+  }
+  .hero__window {
+    position: relative;
+    margin-top: 40px;
+    border: 1px solid var(--border-strong);
+    border-bottom: 0;
+    border-radius: 14px 14px 0 0;
+    overflow: hidden;
+    background: var(--surface-3);
+    box-shadow: var(--shadow-lg);
+    /* The window runs off the bottom of the hero, like an app left open. */
+    max-height: 560px;
+    -webkit-mask-image: linear-gradient(to bottom, #000 80%, transparent);
+    mask-image: linear-gradient(to bottom, #000 80%, transparent);
+  }
+  .hero__shot--narrow {
+    display: none;
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    :global(.js) .hero__window {
+      animation: rise 900ms cubic-bezier(0.16, 1, 0.3, 1) both;
+    }
+    :global(.js) .hero__term {
+      animation: rise 900ms cubic-bezier(0.16, 1, 0.3, 1) 160ms both;
+    }
+  }
+  @keyframes rise {
+    from {
+      opacity: 0;
+      transform: translateY(24px);
+    }
+  }
+  @media (max-width: 1100px) {
+    .hero__top {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 32px;
+    }
+    .hero__term {
+      max-width: 620px;
+      margin: 0 0 -64px 24px;
+    }
+  }
+  @media (max-width: 640px) {
+    .hero__in {
+      padding-top: 40px;
+    }
+    .hero__term {
+      margin: 0 0 -48px;
+    }
+    .hero__shot--wide {
+      display: none;
+    }
+    .hero__shot--narrow {
+      display: block;
+    }
+    .hero__window {
+      max-height: 480px;
+      margin-left: 8px;
+      margin-right: 8px;
+    }
+  }
+
+  /* ── Config-file body ── */
+  .sec-head {
+    max-width: 760px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    margin-bottom: 44px;
+  }
+  .sec-top {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 470px);
+    gap: 48px;
+    align-items: end;
+    margin-bottom: 44px;
+  }
+  .sec-top .sec-head {
+    margin-bottom: 0;
+  }
+  @media (max-width: 1000px) {
+    .sec-top {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 28px;
+    }
+  }
+  .sec-foot {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 28px;
+    margin-top: 28px;
+  }
+  .sec-foot--flush {
+    margin-top: 4px;
+  }
+  .sec-foot .mono-link i {
+    font-size: 0.85em;
+  }
+
+  /* [control] */
+  .agents {
+    display: grid;
+    grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+    gap: 40px;
+    align-items: start;
+  }
+  .agents__term :global(.term) {
+    box-shadow: var(--shadow-md);
+  }
+  .layers {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .layer {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 20px 0;
+  }
+  .layer:first-child {
+    padding-top: 4px;
+  }
+  .layer + .layer {
+    border-top: 1px solid var(--border);
+  }
+  .layer__title {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .layer__title i {
+    width: 18px;
+    color: var(--link);
+    font-size: 14px;
+  }
+  .layer__cmd {
+    align-self: flex-start;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    font-size: 12.5px;
+  }
+  .layer__link {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    align-self: flex-start;
+    text-decoration: none;
+    font-weight: 500;
+  }
+  .layer__link:hover {
+    text-decoration: underline;
+  }
+  .layer__link i {
+    font-size: 0.8em;
+  }
+
+  /* [speech] */
+  .speech {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 56px;
+    align-items: center;
+  }
+  .speech__head {
+    margin-bottom: 0;
+  }
+  .turns {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .turn {
+    display: grid;
+    grid-template-columns: 64px minmax(0, 1fr);
+    gap: 6px 14px;
+    padding: 16px 18px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    background: var(--surface);
+    box-shadow: var(--shadow-sm);
+  }
+  .turn__who {
+    grid-row: span 2;
+  }
+  .turn__call {
+    padding: 0 !important;
+    background: none !important;
+    font-size: 12.5px !important;
+    color: var(--text);
+    overflow-wrap: anywhere;
+  }
+  .turn__res {
+    font-size: var(--t-sm);
+    color: var(--text-2);
+  }
+  .turn--note {
+    display: flex;
+    gap: 10px;
+    border-style: dashed;
+    background: transparent;
+    box-shadow: none;
+    font-size: var(--t-sm);
+    color: var(--text-2);
+  }
+  .turn--note i {
+    margin-top: 4px;
+    color: var(--info);
+  }
+
+  /* [[account]] */
+  .accounts {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 48px;
+    align-items: start;
+  }
+  .spec {
+    margin: 0;
+  }
+  .spec__row {
+    display: grid;
+    grid-template-columns: 150px minmax(0, 1fr);
+    gap: 16px;
+    padding: 13px 0;
+    border-top: 1px solid var(--border);
+  }
+  .spec__row:first-child {
+    border-top: 0;
+    padding-top: 2px;
+  }
+  .spec dt {
+    font-size: var(--t-sm);
+    font-weight: 600;
+  }
+  .spec dd {
+    margin: 0;
+    font-size: var(--t-sm);
+    color: var(--text-2);
+  }
+  .spec__key {
+    margin-left: 8px;
+    white-space: nowrap;
+    font-size: 11.5px !important;
+    color: var(--text-3);
+  }
+  /* Setup links: the real review screen beside the steps it enforces. */
+  .setup {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 48px;
+    align-items: center;
+    margin-top: 56px;
+    padding-top: 56px;
+    border-top: 1px solid var(--border);
+  }
+  .setup__fig {
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .setup__shot {
+    max-width: 560px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    background: var(--surface-3);
+    box-shadow: var(--shadow-lg);
+  }
+  .setup__cap {
+    font-size: var(--t-xs);
+    color: var(--text-3);
+  }
+  .setup__copy {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .setup__steps {
+    margin: 0;
+    padding-left: 1.4em;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    font-size: var(--t-sm);
+    color: var(--text-2);
+  }
+  .setup__steps strong {
+    color: var(--text);
+    font-weight: 600;
+  }
+  .setup__cmd {
+    align-self: flex-start;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    font-size: 12.5px;
+  }
+
+  /* [ui] */
+  .desktop__card {
+    overflow: hidden;
+  }
+  .theme-line {
+    margin: 0;
+    padding: 22px 24px;
+    border: 0;
+    border-bottom: 1px solid var(--border);
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 16px 32px;
+    background: color-mix(in srgb, var(--accent) 5%, var(--surface));
+  }
+  .theme-line__legend {
+    float: left;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .theme-line__name {
+    font-weight: 600;
+  }
+  .theme-line__desc {
+    font-size: var(--t-sm);
+    color: var(--text-2);
+  }
+  .theme-line__code {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .theme-line__key {
+    padding: 0 !important;
+    background: none !important;
+    font-size: 14px !important;
+    color: var(--text-2);
+    white-space: nowrap;
+  }
+  .seg {
+    display: inline-flex;
+    padding: 3px;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius);
+    background: var(--surface);
+    box-shadow: var(--shadow-sm);
+  }
+  .seg__opt {
+    position: relative;
+  }
+  .seg__opt input {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    margin: 0;
+    cursor: pointer;
+  }
+  .seg__opt span {
+    display: grid;
+    place-items: center;
+    height: 34px;
+    padding: 0 12px;
+    border-radius: 6px;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    color: var(--text-2);
+    transition: background-color 120ms ease, color 120ms ease;
+  }
+  .seg__opt:hover span {
+    background: var(--surface-2);
+  }
+  .seg__opt input:checked + span {
+    background: var(--accent);
+    color: var(--accent-text);
+  }
+  .seg__opt input:focus-visible + span {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+  }
+  .spec--flat .spec__row {
+    padding: 15px 24px;
+    grid-template-columns: 190px minmax(0, 1fr);
+  }
+  .spec--flat .spec__row:first-child {
+    padding-top: 15px;
+  }
+  .keys {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    margin-left: 8px;
+    font-size: 11px;
+    color: var(--text-3);
+    vertical-align: 1px;
+  }
+
+  /* Licence */
+  .licence {
+    display: grid;
+    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+    gap: 56px;
+    align-items: start;
+  }
+  .licence__head {
+    margin-bottom: 0;
+  }
+  .licence__links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 20px;
+  }
+  .licence__rows {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .licence__row {
+    display: grid;
+    grid-template-columns: 140px minmax(0, 1fr);
+    gap: 16px;
+    align-items: start;
+    padding: 20px 22px;
+  }
+  .licence__row + .licence__row {
+    border-top: 1px solid var(--border);
+  }
+  .licence__row .tag {
+    justify-self: start;
+    margin-top: 1px;
+  }
+  .licence__row p {
+    font-size: var(--t-sm);
+    color: var(--text-2);
+  }
+
+  @media (max-width: 1000px) {
+    .agents,
+    .speech,
+    .accounts,
+    .setup,
+    .licence {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 36px;
+    }
+  }
+  @media (max-width: 720px) {
+    .theme-line {
+      grid-template-columns: minmax(0, 1fr);
+      padding: 18px 16px;
+    }
+    .spec__row,
+    .spec--flat .spec__row {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 4px;
+    }
+    .spec--flat .spec__row {
+      padding: 14px 16px;
+    }
+    .licence__row {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 10px;
+      padding: 18px 16px;
+    }
+    .turn {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .turn__who {
+      grid-row: auto;
+    }
+  }
+  @media (max-width: 420px) {
+    .theme-line__code {
+      flex-wrap: wrap;
+    }
+    .seg__opt span {
+      height: 40px;
+      padding: 0 10px;
+    }
+  }
+</style>

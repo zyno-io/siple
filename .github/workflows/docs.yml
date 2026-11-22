@@ -1,6 +1,6 @@
 name: Docs
 
-# Builds the VitePress site in website/ and deploys it to GitHub Pages from main.
+# Builds the VitePress site in sites/docs/ and deploys it to GitHub Pages from main.
 # One-time setup (manual): repo Settings > Pages > Build and deployment > Source = "GitHub Actions".
 # Pull requests only build the site (dead links fail the build); they never deploy.
 
@@ -8,7 +8,7 @@ on:
   push:
     branches: [main]
     paths:
-      - 'website/**'
+      - 'sites/docs/**'
       - 'docs/**'
       - 'CHANGELOG.md'
       - 'CONTRIBUTING.md'
@@ -17,7 +17,7 @@ on:
       - '.github/workflows/docs.yml'
   pull_request:
     paths:
-      - 'website/**'
+      - 'sites/docs/**'
       - 'docs/**'
       - 'CHANGELOG.md'
       - 'CONTRIBUTING.md'
@@ -45,19 +45,19 @@ jobs:
           fetch-depth: 0 # full history for "last updated"
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version-file: website/.nvmrc
+          node-version-file: sites/docs/.nvmrc
           cache: npm
-          cache-dependency-path: website/package-lock.json
+          cache-dependency-path: sites/docs/package-lock.json
       - name: Install
-        working-directory: website
+        working-directory: sites/docs
         run: npm ci
       - name: Build (dead links fail the build)
-        working-directory: website
+        working-directory: sites/docs
         run: npm run build
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         if: github.event_name != 'pull_request'
         with:
-          path: website/.vitepress/dist
+          path: sites/docs/.vitepress/dist
 
   deploy:
     name: deploy

@@ -1,0 +1,332 @@
+---
+/**
+ * The download section: the latest release for every platform in one card,
+ * how each build is signed, the app stores (coming soon) and GitHub.
+ * Ships pointing at GitHub Releases; src/scripts/release.ts fills in the
+ * release, the asset links and which row is this computer.
+ */
+import StoreButtons from './StoreButtons.astro';
+import { platforms, site, doc } from '../data/site';
+
+const trustTone: Record<string, string> = {
+  Notarized: 'tag--success',
+  'Authenticode-signed': 'tag--success',
+};
+---
+
+<section id="download" class="section dl" aria-labelledby="download-title">
+  <div class="wrap">
+    <div class="dl__head">
+      <h2 id="download-title" class="h-section">Download Siple.</h2>
+      <p class="lede">
+        One app for macOS, Windows and Linux, published on GitHub Releases. Every build carries
+        SHA-256 checksums and build-provenance attestations.
+      </p>
+    </div>
+
+    <div class="dl__grid">
+      <div class="card dl-card">
+        <div class="dl-card__head">
+          <span class="lamp" data-lamp aria-hidden="true"></span>
+          <div class="dl-card__title">
+            <strong data-dl-version>GitHub Releases</strong>
+            <span class="tag tag--info" data-when="candidate">Release candidate</span>
+            <span class="tag tag--success" data-when="release"><i class="fa-solid fa-check" aria-hidden="true"></i>Latest</span>
+            <time class="dl-card__date" data-dl-date></time>
+          </div>
+          <a class="dl-card__notes" href={site.releases} data-dl-notes data-when="release candidate">Release notes<i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i></a>
+        </div>
+
+        <div class="notice notice--warning dl-card__notice" data-when="none">
+          <i class="fa-solid fa-hourglass-half" aria-hidden="true"></i>
+          <p>
+            <strong>First release coming soon.</strong> The first signed builds are being prepared. Watch <a href={site.repo}>the repository on GitHub</a> to hear when they land, or <a href={doc.buildFromSource}>build from source</a> today.
+          </p>
+        </div>
+        <div class="notice dl-card__notice" data-when="error">
+          <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+          <p>GitHub didn’t answer just now, so these links open the releases page, where every build is listed.</p>
+        </div>
+
+        <ul class="dl-rows">
+          {
+            platforms.map((p) => (
+              <li class="dl-row" data-dl-row={p.id}>
+                <i class={`fa-brands ${p.icon} dl-row__icon`} aria-hidden="true" />
+                <div class="dl-row__main">
+                  <span class="dl-row__name">
+                    {p.name}
+                    <span class="tag tag--accent dl-row__mine">This computer</span>
+                  </span>
+                  <span class="dl-row__req">{p.requires}</span>
+                  <span class="dl-row__file" data-dl-file>{p.file}</span>
+                  {p.note && <span class="dl-row__note" data-dl-note data-default={p.note}>{p.note}</span>}
+                  {p.alt && (
+                    <a href={site.releases} class="dl-row__alt" data-dl-alt hidden>
+                      <i class="fa-solid fa-box-archive" aria-hidden="true" />
+                      <span data-dl-alt-label>{p.alt.label}</span>
+                    </a>
+                  )}
+                </div>
+                <span class:list={['tag', trustTone[p.trust], 'dl-row__trust']}>
+                  <i class={`fa-solid ${p.trust === 'SHA-256 checksum' ? 'fa-hashtag' : 'fa-shield-halved'}`} aria-hidden="true" />
+                  {p.trust}
+                </span>
+                <a href={site.releases} class="btn dl-row__btn" data-dl-link>
+                  <i class="fa-solid fa-arrow-down" aria-hidden="true" />
+                  <span data-dl-link-label>On GitHub</span>
+                </a>
+              </li>
+            ))
+          }
+        </ul>
+
+        <div class="dl-card__foot">
+          <a href={site.releases} data-dl-sums class="mono-link"><i class="fa-solid fa-hashtag" aria-hidden="true"></i><b>SHA256SUMS</b></a>
+          <a href={site.verify}>How to verify a download</a>
+          <a href={site.releases}>All releases</a>
+        </div>
+      </div>
+
+      <aside class="dl__side" aria-label="More ways to get Siple">
+        <div class="dl__block">
+          <h3 class="h-card">Signed where it counts</h3>
+          <ul class="checks checks--sm">
+            <li><i class="fa-solid fa-check" aria-hidden="true"></i><span>macOS: signed with a Developer ID, notarized and stapled.</span></li>
+            <li><i class="fa-solid fa-check" aria-hidden="true"></i><span>Windows: <code>siple.exe</code> and <code>siple-cli.exe</code> are Authenticode-signed.</span></li>
+            <li><i class="fa-solid fa-check" aria-hidden="true"></i><span>Linux: the AppImages and tarballs are covered by <code>SHA256SUMS</code> and the attestation.</span></li>
+          </ul>
+        </div>
+        <div class="dl__block">
+          <h3 class="h-card">App stores</h3>
+          <p class="small body-2">Siple is on its way to the Mac App Store and the Microsoft Store.</p>
+          <StoreButtons />
+        </div>
+        <div class="dl__block">
+          <h3 class="h-card">Source</h3>
+          <p class="small body-2">
+            Build it with Rust 1.94+ and CMake. <a href={doc.buildFromSource}>Build from source</a>
+          </p>
+          <a href={site.repo} class="btn btn--lg dl__gh"><i class="fa-brands fa-github" aria-hidden="true"></i>zyno-io/siple on GitHub</a>
+        </div>
+      </aside>
+    </div>
+  </div>
+</section>
+
+<style>
+  .dl {
+    background: var(--surface-2);
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+  }
+  .dl__head {
+    max-width: 680px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    margin-bottom: 40px;
+  }
+  .dl__grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 300px;
+    gap: 48px;
+    align-items: start;
+  }
+  .dl-card {
+    overflow: hidden;
+  }
+  .dl-card__head {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+  }
+  .dl-card__title {
+    flex: 1;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 10px;
+    min-width: 0;
+  }
+  .dl-card__title strong {
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+  .dl-card__date {
+    font-size: var(--t-xs);
+    color: var(--text-3);
+    font-variant-numeric: tabular-nums;
+  }
+  .dl-card__notes {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: var(--t-sm);
+    text-decoration: none;
+  }
+  .dl-card__notes i {
+    font-size: 0.75em;
+  }
+  .dl-card__notice {
+    margin: 16px 20px 4px;
+  }
+  .dl-card__notice p {
+    margin: 0;
+  }
+  .dl-rows {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .dl-row {
+    position: relative;
+    display: grid;
+    grid-template-columns: 28px minmax(0, 1fr) auto auto;
+    align-items: center;
+    gap: 16px;
+    padding: 16px 20px;
+  }
+  .dl-row + .dl-row {
+    border-top: 1px solid var(--border);
+  }
+  .dl-row__icon {
+    font-size: 22px;
+    color: var(--text-2);
+    text-align: center;
+  }
+  .dl-row__main {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+  }
+  .dl-row__name {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-weight: 600;
+  }
+  .dl-row__req {
+    font-size: var(--t-xs);
+    color: var(--text-2);
+  }
+  .dl-row__file {
+    align-self: flex-start;
+    font-size: 12px;
+    color: var(--text-3);
+    overflow-wrap: anywhere;
+  }
+  .dl-row__file.is-file {
+    font-family: var(--font-mono);
+  }
+  .dl-row__note {
+    font-size: var(--t-xs);
+    color: var(--text-2);
+  }
+  .dl-row__alt {
+    align-self: flex-start;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 2px;
+    font-size: var(--t-xs);
+  }
+  .dl-row__alt[hidden],
+  .dl-row[hidden] {
+    display: none;
+  }
+  .dl-row__mine {
+    display: none;
+  }
+  /* This computer: the one marker of where to go next. */
+  .dl-row.is-mine {
+    background: color-mix(in srgb, var(--accent) 6%, var(--surface));
+  }
+  .dl-row.is-mine::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border: 1px solid var(--accent);
+    pointer-events: none;
+  }
+  .dl-row.is-mine .dl-row__mine {
+    display: inline-flex;
+  }
+  .dl-row.is-mine .dl-row__btn {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--accent-text);
+  }
+  .dl-row.is-mine .dl-row__btn:hover {
+    background: var(--accent-hover);
+    border-color: var(--accent-hover);
+  }
+  .dl-row.is-mine .dl-row__icon {
+    color: var(--text);
+  }
+  .dl-card__foot {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 24px;
+    padding: 14px 20px;
+    border-top: 1px solid var(--border);
+    background: var(--surface-2);
+    font-size: var(--t-sm);
+  }
+  .dl-card__foot a:not(.mono-link) {
+    text-decoration: none;
+  }
+  .dl-card__foot a:not(.mono-link):hover {
+    text-decoration: underline;
+  }
+  .dl__side {
+    display: flex;
+    flex-direction: column;
+    gap: 32px;
+  }
+  .dl__block {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .dl__gh {
+    align-self: flex-start;
+  }
+  @media (max-width: 1000px) {
+    .dl__grid {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .dl__side {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    }
+  }
+  @media (max-width: 720px) {
+    .dl-row {
+      grid-template-columns: 24px minmax(0, 1fr);
+      gap: 10px 14px;
+      padding: 16px;
+    }
+    .dl-row__trust {
+      grid-column: 2;
+      justify-self: start;
+    }
+    .dl-row__btn {
+      grid-column: 2;
+      justify-self: stretch;
+    }
+    .dl-card__head,
+    .dl-card__foot {
+      padding-left: 16px;
+      padding-right: 16px;
+    }
+    .dl-card__notice {
+      margin-left: 16px;
+      margin-right: 16px;
+    }
+  }
+</style>

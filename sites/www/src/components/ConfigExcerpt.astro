@@ -1,0 +1,69 @@
+---
+/**
+ * ConfigExcerpt: a few real lines of Siple's config.toml (keys and defaults
+ * from the repo's crates/siple-config/config.example.toml and docs/CONFIG.md).
+ * Each config-table section shows its own table, so the page reads as the
+ * file it is outlined as.
+ */
+interface Props {
+  code: string;
+  note?: string;
+  label: string;
+}
+const { code, note = 'edit it while Siple runs; no restart', label } = Astro.props;
+const html = code
+  .replace(/&/g, '&amp;')
+  .replace(/</g, '&lt;')
+  .replace(/>/g, '&gt;')
+  .replace(/("[^"]*")/g, '<span class="s">$1</span>')
+  .replace(/^(\[\[?[a-z.]+\]\]?)$/gm, '<span class="k">$1</span>')
+  .replace(/(#[^\n]*)$/gm, '<span class="c">$1</span>');
+---
+
+<figure class="cfg">
+  <figcaption class="cfg__cap"><i class="fa-solid fa-file-lines" aria-hidden="true"></i>config.toml<span>{note}</span></figcaption>
+  <pre class="snippet cfg__pre" tabindex="0" aria-label={label}><code set:html={html} /></pre>
+</figure>
+
+<style>
+  .cfg {
+    margin: 0;
+    min-width: 0;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    background: var(--surface-2);
+  }
+  .cfg__cap {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 36px;
+    padding: 0 16px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text);
+  }
+  .cfg__cap i {
+    color: var(--text-3);
+  }
+  .cfg__cap span {
+    margin-left: auto;
+    font-family: var(--font-sans);
+    font-weight: 400;
+    color: var(--text-3);
+    text-align: right;
+  }
+  .cfg__pre {
+    border: 0;
+    border-radius: 0;
+    font-size: 12.5px;
+  }
+  .cfg__pre :global(.k) {
+    color: var(--link);
+    font-weight: 600;
+  }
+</style>

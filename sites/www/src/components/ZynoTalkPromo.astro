@@ -1,0 +1,105 @@
+---
+/**
+ * The sibling promo: ZynoTalk, the cloud phone system from the same company.
+ * Copy uses only claims made on ZynoTalk's own site (zynotalk-web/src). Siple
+ * works with any SIP provider; this never implies ZynoTalk is needed.
+ * ZynoTalk's wordmark is drawn the way its site draws it (light "Zyno",
+ * medium "Talk", a small square in its cobalt).
+ */
+import { site } from '../data/site';
+---
+
+<section class="section section--tight promo" aria-labelledby="promo-title">
+  <div class="wrap">
+    <div class="promo__card">
+      <div class="promo__mark" aria-hidden="true">
+        <span class="zt"><span class="zt__dot"></span><span class="zt__zyno">Zyno</span><span class="zt__talk">Talk</span></span>
+        <span class="promo__kin">From the makers of Siple</span>
+      </div>
+      <div class="promo__body">
+        <h2 id="promo-title" class="h-sub">If you need a phone line for your business</h2>
+        <p class="body-2">
+          Siple works with any SIP provider. If you don’t have one yet, ZynoTalk is our cloud phone system:
+          HD audio, two-way SMS, voicemail and fax on real business numbers, with AI summaries, caller pop and voice
+          agents built in.
+        </p>
+      </div>
+      <a href={site.zynotalk} class="btn btn--lg promo__cta">Visit ZynoTalk<i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i></a>
+    </div>
+  </div>
+</section>
+
+<style>
+  .promo {
+    padding-top: 0;
+  }
+  .promo__card {
+    display: grid;
+    grid-template-columns: 200px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 40px;
+    padding: 32px 36px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    background: var(--surface);
+    box-shadow: var(--shadow-sm);
+  }
+  .promo__mark {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .zt {
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    font-size: 24px;
+    letter-spacing: -0.01em;
+    color: var(--text);
+  }
+  .zt__dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 2px;
+    background: #2855d4;
+  }
+  :global(:root[data-theme='dark']) .zt__dot {
+    background: #5c86f2;
+  }
+  @media (prefers-color-scheme: dark) {
+    :global(:root:not([data-theme='light'])) .zt__dot {
+      background: #5c86f2;
+    }
+  }
+  .zt__zyno {
+    font-weight: 400;
+    margin-right: -9px;
+    opacity: 0.8;
+  }
+  .zt__talk {
+    font-weight: 600;
+  }
+  .promo__kin {
+    font-size: var(--t-xs);
+    color: var(--text-3);
+  }
+  .promo__body {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-width: 62ch;
+  }
+  .promo__cta i {
+    font-size: 0.75em;
+  }
+  @media (max-width: 900px) {
+    .promo__card {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 20px;
+      padding: 24px;
+    }
+    .promo__cta {
+      justify-self: start;
+    }
+  }
+</style>

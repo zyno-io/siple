@@ -1,0 +1,86 @@
+---
+/**
+ * App store buttons, driven by `stores` in src/data/site.ts.
+ * Not live: a disabled button in the design system, labelled "Coming soon"
+ * (never Apple's or Microsoft's badge for a listing that doesn't exist).
+ * Live with `badge`: the official artwork as a link. Live without: a link button.
+ */
+import { stores } from '../data/site';
+---
+
+<ul class="stores" aria-label="App stores">
+  {
+    stores.map((s) => (
+      <li>
+        {s.available && s.badge ? (
+          <a href={s.url} class="stores__badge">
+            <img src={s.badge} alt={s.badgeAlt ?? `Get Siple from the ${s.name}`} height="44" />
+          </a>
+        ) : s.available ? (
+          <a href={s.url} class="btn btn--lg stores__btn">
+            <i class={`fa-brands ${s.icon}`} aria-hidden="true" />
+            <span class="stores__txt">
+              <span class="stores__pre">Get it on the</span>
+              {s.name}
+            </span>
+          </a>
+        ) : (
+          <button type="button" class="btn btn--lg stores__btn" disabled aria-disabled="true">
+            <i class={`fa-brands ${s.icon}`} aria-hidden="true" />
+            <span class="stores__txt">
+              <span class="stores__pre">Coming soon</span>
+              {s.name}
+            </span>
+          </button>
+        )}
+      </li>
+    ))
+  }
+</ul>
+
+<style>
+  .stores {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  .stores__btn {
+    height: 52px;
+    padding: 0 16px 0 14px;
+    gap: 11px;
+    justify-content: flex-start;
+    min-width: 196px;
+  }
+  .stores__btn i {
+    font-size: 20px;
+  }
+  .stores__txt {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 3px;
+    font-size: var(--t-sm);
+    font-weight: 600;
+  }
+  .stores__pre {
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--text-3);
+  }
+  /* Disabled, but still legible: the label is information, not decoration. */
+  .stores__btn[disabled] {
+    opacity: 1;
+    background: transparent;
+    border-style: dashed;
+    box-shadow: none;
+    color: var(--text-2);
+  }
+  .stores__badge img {
+    display: block;
+    height: 44px;
+    width: auto;
+  }
+</style>
