@@ -97,7 +97,8 @@ The `Website` GitHub Actions workflow (`.github/workflows/www.yml`) builds `dist
 ZynoHosting CLI:
 
 - `www-staging.siple.app` (alpha cluster, `--environment alpha`) deploys automatically on every push to `main`.
-- `siple.app` (production) is manual: Actions > Website > Run workflow on `main`, target `production`.
+- `siple.app` (production) deploys on every release tag (`v*`, built from the tagged commit), or manually:
+  Actions > Website > Run workflow on `main`, target `production`.
 - Pull requests only build.
 
 Each deploy job reads a per-site **deploy token** (`ZYNOHOSTING_DEPLOY_TOKEN`) from its GitHub environment
