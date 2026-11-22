@@ -5,11 +5,16 @@
 # A type 2 AppImage is one file: a static runtime (it mounts the image with FUSE, or extracts it
 # with --appimage-extract-and-run) followed by a squashfs image of an AppDir. That is all this
 # script assembles, by hand: a hand-built AppDir, `mksquashfs`, and `cat` onto the pinned runtime.
-# There is no appimagetool and no linuxdeploy. Nothing is bundled (the binaries need only glibc,
-# libgcc_s and ALSA from the host and dlopen the GUI libraries), so linuxdeploy adds nothing, and
-# appimagetool would be a second pinned binary that is itself an AppImage and downloads the
-# runtime unless given one. The AppRun sets no environment (no LD_LIBRARY_PATH): bundled paths
-# would leak into xdg-open, the browser and [speech] hooks.
+# There is no appimagetool and no linuxdeploy. The Siple binaries need only glibc, libgcc_s and ALSA from
+# the host (scripts/linux-needed-check.sh), but winit, wgpu and egui dlopen the X11, Wayland and xkb
+# libraries, which minimal desktops lack. So the script copies those from the build container into
+# usr/lib (the AppImage convention: everything except the AppImageCommunity excludelist and glibc; the
+# list and how it is derived are in scripts/appimage-libs.sh), with their licences and a generated
+# BUNDLED-LIBRARIES.txt. linuxdeploy would do the same by guessing; appimagetool would be a second
+# pinned binary that is itself an AppImage and downloads the runtime unless given one. AppRun puts
+# usr/lib on LD_LIBRARY_PATH for Siple only and saves the host value, which every child process Siple
+# starts gets back (siple_config::channel::apply_host_env): bundled libraries must not leak into
+# xdg-open, the browser or [speech] hooks.
 #
 # Run it inside rust:1.100-bookworm (glibc 2.36) after scripts/package-linux.sh, the same way CI does:
 #
@@ -20,7 +25,8 @@
 #   APPIMAGE_RUNTIME=<file>  offline runtime; the sha256, size and signature checks still apply, the
 #                            signature is read from <file>.sig
 #   SOURCE_DATE_EPOCH        squashfs timestamps (default: `git log -1 --format=%ct`, else 0)
-# Needs: mksquashfs, curl, sha256sum, gpg, gpgv, tar, objdump (objdump only outside --self-test).
+# Needs: mksquashfs, curl, sha256sum, gpg, gpgv, tar; outside --self-test also objdump, dpkg-query, ldconfig
+# and the runtime packages of the GUI libraries ($GUI_DEB_PACKAGES in scripts/appimage-libs.sh).
 # The runtime of the architecture and its signature are pinned in scripts/appimage-pins.sh and verified before anything
 # is executed.
 set -euo pipefail
@@ -31,6 +37,8 @@ cd "$ROOT"
 . "$ROOT/scripts/appimage-pins.sh"
 # shellcheck source=scripts/linux-arch.sh
 . "$ROOT/scripts/linux-arch.sh"
+# shellcheck source=scripts/appimage-libs.sh
+. "$ROOT/scripts/appimage-libs.sh"
 runtime_pins "$LINUX_ARCH"
 APPID=io.zyno.siple
 CACHE="$ROOT/target/appimage"
@@ -96,6 +104,85 @@ fetch_runtime() {
   echo "==> runtime $RUNTIME_RELEASE verified (sha256, size, signature by $RUNTIME_KEY_FPR)"
 }
 
+# --- the bundled GUI libraries ------------------------------------------------------------------
+
+# bundle_gui_libs APPDIR: copies GUI_DLOPEN_SONAMES and their transitive NEEDED libraries (minus the
+# excludelist, which includes glibc) from this machine's multiarch library directory into
+# APPDIR/usr/lib, their Debian licences into usr/share/doc/siple/bundled-licenses/<package>/, and
+# writes usr/share/doc/siple/BUNDLED-LIBRARIES.txt. Fails if a bundled library needs a library that is
+# neither bundled nor excluded, or if a wanted library is missing from the container.
+bundle_gui_libs() {
+  local appdir="$1" lib doc excl multiarch dir
+  lib="$appdir/usr/lib"
+  doc="$appdir/usr/share/doc/siple"
+  case "$LINUX_ARCH" in
+    x86_64) multiarch=x86_64-linux-gnu ;;
+    aarch64) multiarch=aarch64-linux-gnu ;;
+  esac
+  excl="$(excluded_sonames "$ROOT/packaging/appimage/excludelist")"
+  is_excluded() { printf '%s\n' "$excl" | grep -qxF "$1"; }
+  # find_lib SONAME: the file on this machine.
+  find_lib() {
+    for dir in "/usr/lib/$multiarch" "/lib/$multiarch"; do
+      [ -e "$dir/$1" ] && { echo "$dir/$1"; return 0; }
+    done
+    return 1
+  }
+  install -d -m 755 "$lib" "$doc/bundled-licenses"
+  local queue="$GUI_DLOPEN_SONAMES" bundled="" s src real n
+  while [ -n "$queue" ]; do
+    s="${queue%% *}"
+    if [ "$queue" = "$s" ]; then queue=""; else queue="${queue#* }"; fi
+    case " $bundled " in *" $s "*) continue ;; esac
+    is_excluded "$s" && die "$s is on the excludelist but wanted as a GUI library"
+    src="$(find_lib "$s")" || die "$s is not in /usr/lib/$multiarch (apt-get install $GUI_DEB_PACKAGES)"
+    real="$(readlink -f "$src")"
+    install -m 755 "$real" "$lib/$s"
+    bundled="$bundled $s"
+    for n in $(objdump -p "$real" | awk '/NEEDED/ {print $2}'); do
+      is_excluded "$n" || queue="$queue $n"
+    done
+    queue="${queue# }"
+  done
+  # Verify the closure from the copies themselves: every NEEDED is bundled or excluded.
+  local f
+  for f in "$lib"/*; do
+    for n in $(objdump -p "$f" | awk '/NEEDED/ {print $2}'); do
+      [ -f "$lib/$n" ] || is_excluded "$n" ||
+        die "bundled $(basename "$f") needs $n, which is neither bundled nor on the excludelist"
+    done
+  done
+  # Provenance and licences.
+  local out="$doc/BUNDLED-LIBRARIES.txt" pkg ver pkgs=""
+  {
+    echo "Libraries bundled in this AppImage (usr/lib)"
+    echo "============================================"
+    echo
+    echo "Siple loads the X11, Wayland and xkb libraries at run time. They are copied unmodified from the"
+    echo "Debian 12 (bookworm) build image so minimal desktops that lack them work. Everything on the"
+    echo "AppImageCommunity excludelist (libX11, libxcb, libGL/EGL, libwayland-client, ALSA, glibc, ...) comes"
+    echo "from the host instead. Licences: bundled-licenses/<package>/copyright (MIT/X11 style)."
+    echo
+    printf '%-28s %-24s %s\n' "library" "Debian package" "version"
+  } >"$out"
+  # shellcheck disable=SC2086  # a word list
+  for s in $(printf '%s\n' $bundled | LC_ALL=C sort); do
+    real="$(readlink -f "$(find_lib "$s")")"
+    pkg="$(dpkg -S "$real" 2>/dev/null | head -1 | cut -d: -f1)"
+    [ -n "$pkg" ] || die "no Debian package owns $real"
+    ver="$(dpkg-query -W -f='${Version}' "$pkg")"
+    printf '%-28s %-24s %s\n' "$s" "$pkg" "$ver" >>"$out"
+    case " $pkgs " in *" $pkg "*) ;; *) pkgs="$pkgs $pkg" ;; esac
+  done
+  for pkg in $pkgs; do
+    [ -f "/usr/share/doc/$pkg/copyright" ] || die "/usr/share/doc/$pkg/copyright is missing"
+    install -d -m 755 "$doc/bundled-licenses/$pkg"
+    install -m 644 "/usr/share/doc/$pkg/copyright" "$doc/bundled-licenses/$pkg/copyright"
+  done
+  chmod 644 "$out"
+  echo "==> bundled:$bundled"
+}
+
 # --- the build -----------------------------------------------------------------------------------
 
 # build_appimage TARBALL OUT VERSION WORK EPOCH [stub]: unpacks TARBALL under WORK, assembles the
@@ -137,9 +224,23 @@ build_appimage() {
   install -m 644 "$ROOT/packaging/appimage/APPIMAGE-RUNTIME.txt" "$appdir/usr/share/doc/siple/APPIMAGE-RUNTIME.txt"
 
   # Guards.
-  # (a) no bundled libraries
-  [ -z "$(find "$appdir" -name '*.so*')" ] || die "the AppDir bundles a library"
-  # (b) the host contract (a stub has no ELF headers)
+  # (a) the GUI libraries: bundled from the container, never in a stub build, and none excluded
+  local so
+  if [ -z "$stub" ]; then
+    bundle_gui_libs "$appdir"
+    for so in $GUI_DLOPEN_SONAMES; do
+      [ -f "$appdir/usr/lib/$so" ] || die "$so is not bundled"
+    done
+  else
+    [ -z "$(find "$appdir" -name '*.so*')" ] || die "a stub AppDir bundles a library"
+  fi
+  [ -z "$(find "$appdir" -name '*.so*' ! -path "$appdir/usr/lib/*")" ] || die "a library outside usr/lib"
+  local excl_list
+  excl_list="$(excluded_sonames "$ROOT/packaging/appimage/excludelist")"
+  for so in $(find "$appdir/usr/lib" -type f -name '*.so*' 2>/dev/null | sed 's|.*/||'); do
+    ! printf '%s\n' "$excl_list" | grep -qxF "$so" || die "$so is on the excludelist and must not be bundled"
+  done
+  # (b) the host contract of the Siple binaries (a stub has no ELF headers)
   if [ -z "$stub" ]; then
     "$ROOT/scripts/linux-needed-check.sh" "$appdir/usr/bin/siple" "$appdir/usr/bin/siple-cli"
   fi

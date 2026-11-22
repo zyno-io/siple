@@ -6,7 +6,9 @@
 #
 # The allowlist is the complete host contract of both Linux artifacts (tarball and AppImage): glibc,
 # ALSA and libgcc_s from the host; the dynamic loader is the one of this machine's architecture
-# (x86_64 or aarch64, see linux-arch.sh). The glibc floor is that of the build image (bookworm,
+# (x86_64 or aarch64, see linux-arch.sh). It checks the Siple binaries only: the GUI libraries they
+# dlopen are not NEEDED, so a regression that links one (a feature flip) fails here, and the AppImage
+# bundles those separately (package-appimage.sh checks the bundled libraries' own NEEDED lists). The glibc floor is that of the build image (bookworm,
 # 2.36), reported below. Needs objdump.
 set -euo pipefail
 

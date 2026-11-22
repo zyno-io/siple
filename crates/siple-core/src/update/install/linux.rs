@@ -70,6 +70,7 @@ pub struct RealExec;
 impl Exec for RealExec {
     fn version_output(&self, exe: &Path) -> Result<String, String> {
         let mut cmd = Command::new(exe);
+        siple_config::channel::apply_host_env(&mut cmd);
         cmd.arg("--version");
         run_capped(cmd, EXEC_TIMEOUT)
     }
