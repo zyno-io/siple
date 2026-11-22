@@ -759,7 +759,8 @@ impl CallManager {
     /// `[calls] hold_scope`, except
     /// - `except` (the call being answered / activated) and its same-process peer leg,
     /// - one leg of every self-call (two calls of this process with the same SIP Call-ID): the
-    ///   leg of `initiator` is held, the other leg then sits in `RemoteHeld` by itself, and
+    ///   leg of `initiator` is held (of a self-call between two other accounts, the dialling
+    ///   leg), the other leg then sits in `RemoteHeld` by itself, and
     /// - unless `explicit`, calls of accounts with `auto_hold = false`.
     ///
     /// Calls that use no audio device are never auto-held (`auto_holdable`).
@@ -786,8 +787,16 @@ impl CallManager {
             .filter(|c| explicit || c.live_cfg().auto_hold)
             .map(|c| (c.clone(), c.snapshot()))
             .collect();
-        // The initiator's own calls first, so it is its leg of a self-call that gets held.
-        cands.sort_by_key(|(c, _)| c.account != initiator);
+        // The initiator's own calls first, so it is its leg of a self-call that gets held. Of a
+        // self-call between two other accounts the outbound (dialling) leg comes first: table
+        // order would leave it to a race, since the dialler registers its call only after
+        // sending the INVITE and the callee's leg may be in the table before it.
+        cands.sort_by_key(|(c, _)| {
+            (
+                c.account != initiator,
+                c.direction != CallDirection::Outbound,
+            )
+        });
         let except_cid = except
             .and_then(|e| live.iter().find(|c| c.id == e))
             .map(|c| c.snapshot().sip_call_id);
