@@ -4,6 +4,9 @@ Siple AppImage: the runtime and what it contains
 Siple's AppImage is one file: the AppImage type 2 runtime followed by a squashfs image of Siple.
 This notice covers the runtime, which is not Siple's own code. Siple itself is FSL-1.1-ALv2
 (see LICENSE); the licences of its Rust dependencies are in THIRD-PARTY-NOTICES.html.
+The AppImage also bundles GUI libraries (X11, xkbcommon, Wayland): they are listed with their Debian
+packages and versions in usr/share/doc/siple/BUNDLED-LIBRARIES.txt, and their licences are in
+usr/share/doc/siple/bundled-licenses/.
 
 Runtime
   Project:  AppImage/type2-runtime, https://github.com/AppImage/type2-runtime

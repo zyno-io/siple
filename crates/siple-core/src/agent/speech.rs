@@ -305,6 +305,8 @@ async fn run(job: Job<'_>) -> Result<Output, SpeechError> {
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true);
+    // The AppImage's bundled libraries are for Siple only; the hook gets the host's library path.
+    siple_config::channel::apply_host_env(cmd.as_std_mut());
     for (k, v) in &job.env {
         cmd.env(k, v);
     }

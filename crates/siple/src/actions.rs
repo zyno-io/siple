@@ -514,6 +514,8 @@ pub fn open_path(path: &Path, as_text: bool) -> std::io::Result<()> {
     #[cfg(not(any(target_os = "macos", windows)))]
     {
         let _ = as_text;
-        Command::new("xdg-open").arg(path).spawn().map(|_| ())
+        let mut cmd = Command::new("xdg-open");
+        siple_core::config::channel::apply_host_env(&mut cmd);
+        cmd.arg(path).spawn().map(|_| ())
     }
 }

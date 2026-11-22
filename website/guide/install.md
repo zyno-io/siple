@@ -99,10 +99,14 @@ install -Dm644 share/pixmaps/io.zyno.siple.png ~/.local/share/pixmaps/io.zyno.si
 The launcher entry runs `siple %u`, so `~/.local/bin` must be on your `PATH`. To make Siple the default for phone links, see [Phone links](/guide/links); for setup links run `xdg-mime default io.zyno.siple.desktop x-scheme-handler/siple`.
 
 ::: details Packages Siple needs on Linux
-- **The AppImage** also needs `fuse3` (or `--appimage-extract-and-run`).
-- **Sound:** `libasound2` (`libasound2t64` on Ubuntu 24.04+ and Debian 13), and `ca-certificates`.
-- **The app window:** `libxkbcommon0 libxkbcommon-x11-0 libwayland-client0 libwayland-egl1 libx11-6 libx11-xcb1 libxcursor1
+- **The AppImage** includes the GUI libraries (xkbcommon, the X11 and Wayland helper libraries), so a minimal desktop works. It needs
+  what AppImages never bundle: a running X11 or Wayland session (with its `libX11`, `libxcb` and `libwayland-client`), a Vulkan or GL
+  driver, ALSA (`libasound2`, `libasound2t64` on Ubuntu 24.04+ and Debian 13), `ca-certificates`, and `fuse3` (or
+  `--appimage-extract-and-run`).
+- **Sound (tarball):** `libasound2` (`libasound2t64` on Ubuntu 24.04+ and Debian 13), and `ca-certificates`.
+- **The app window (tarball):** `libxkbcommon0 libxkbcommon-x11-0 libwayland-client0 libwayland-egl1 libx11-6 libx11-xcb1 libxcursor1
   libxrandr2 libxi6`, a Vulkan or GL driver (`mesa-vulkan-drivers`, or `libegl1 libgl1-mesa-dri`) and `xdg-utils`.
+  If a library is missing, Siple says which one and which package provides it, instead of crashing.
 - **Headless `siple-cli` only:** just ALSA (`libasound2`).
 :::
 

@@ -108,6 +108,8 @@ pub fn spawn_pending() {
     let carried = CARRIED.get().map(Vec::as_slice).unwrap_or_default();
     let (program, args) = command_line(&spec, std::process::id(), carried, window);
     let mut cmd = std::process::Command::new(&program);
+    // The new AppImage's AppRun sets its own library path from the host's, not from ours.
+    siple_core::config::channel::apply_host_env(&mut cmd);
     cmd.args(&args)
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())

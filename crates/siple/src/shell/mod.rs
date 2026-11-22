@@ -127,8 +127,23 @@ impl ShellTx {
 struct WindowStatus {
     visible: bool,
     focused: bool,
+    /// A tray icon exists and is online.
     tray: bool,
+    /// `[ui] tray` is set (an icon is wanted, whether or not the desktop could show one).
+    tray_enabled: bool,
     close_to_tray: bool,
+}
+
+/// Why `ui.hide` is refused, or `None` when it can proceed: the window could not be brought back
+/// without a tray icon.
+fn hide_refusal(tray_enabled: bool, tray_ready: bool) -> Option<&'static str> {
+    if tray_ready {
+        None
+    } else if tray_enabled {
+        Some("hiding needs a tray icon, and this desktop has no system tray (StatusNotifier) host")
+    } else {
+        Some("hiding needs the tray: set `[ui] tray = true`")
+    }
 }
 
 /// The control-API face of the GUI.
@@ -152,11 +167,8 @@ impl UiHost for GuiHost {
                 Ok(json!({"visible": true}))
             }
             UiRequest::Hide => {
-                if !st.tray {
-                    return Err(ApiError::new(
-                        ErrorKind::InvalidState,
-                        "hiding needs the tray: set `[ui] tray = true`",
-                    ));
+                if let Some(why) = hide_refusal(st.tray_enabled, st.tray) {
+                    return Err(ApiError::new(ErrorKind::InvalidState, why));
                 }
                 self.tx.send(ShellMsg::Ui(UiRequest::Hide));
                 Ok(json!({"visible": false}))
@@ -471,6 +483,7 @@ impl Shell {
             visible: self.visible,
             focused,
             tray: self.tray_ready(),
+            tray_enabled: ui_cfg.tray,
             close_to_tray: ui_cfg.tray && ui_cfg.close_to_tray,
         };
         links
@@ -936,13 +949,15 @@ impl eframe::App for ShellApp {
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
+        // The window exists and draws: later failures are not a missing GUI library.
+        crate::gui_libs::WINDOW_STARTED.store(true, std::sync::atomic::Ordering::Relaxed);
         self.inner.ui(ui, frame);
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::session_can_hide;
+    use super::{hide_refusal, session_can_hide};
 
     #[test]
     fn hiding_is_unavailable_only_on_wayland() {
@@ -952,5 +967,19 @@ mod tests {
         assert!(session_can_hide(true, Some(""), Some("")));
         assert!(session_can_hide(true, None, None));
         assert!(session_can_hide(false, Some("wayland-0"), Some("3")));
+    }
+
+    #[test]
+    fn hide_refusal_tells_a_missing_host_from_a_disabled_tray() {
+        assert_eq!(hide_refusal(true, true), None);
+        assert_eq!(hide_refusal(false, true), None);
+        let off = hide_refusal(false, false).unwrap();
+        assert!(off.contains("set `[ui] tray = true`"), "{off}");
+        let no_host = hide_refusal(true, false).unwrap();
+        assert!(
+            no_host.contains("no system tray (StatusNotifier) host"),
+            "{no_host}"
+        );
+        assert!(!no_host.contains("tray = true"));
     }
 }

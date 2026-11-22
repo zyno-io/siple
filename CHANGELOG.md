@@ -17,6 +17,12 @@ AppImage for Linux, and Linux on ARM.
 
 ### Fixed
 
+- The AppImage starts on minimal desktops that lack `libxkbcommon-x11` and the other X11/Wayland helper libraries: it now bundles
+  them (only the libraries every desktop provides are taken from the host). A missing GUI library, in the AppImage or the
+  tarball, now gives a clear message naming the library and its Debian/Ubuntu and Fedora package (also as a dialog when
+  started from a file manager) instead of a crash.
+- `ui.hide` on a desktop without a system tray (StatusNotifier) host says so, instead of asking to set `[ui] tray = true`
+  when it already is.
 - The Linux tarball can update itself when it was started from a terminal that is itself an AppImage.
 
 ## 0.2.1 (2026-11-21)
