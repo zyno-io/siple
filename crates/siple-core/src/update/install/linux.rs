@@ -224,6 +224,8 @@ pub(super) fn reports_version(out: &str, version: &str) -> bool {
 
 /// Whether `out` is the `--version` output of `program` (clap prints `<name> <version>`, so the
 /// first word is the program name) and names `version`.
+// Only the AppImage platform (Linux) uses it.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 pub(super) fn reports_program_version(out: &str, program: &str, version: &str) -> bool {
     out.split_whitespace().next() == Some(program) && reports_version(out, version)
 }
