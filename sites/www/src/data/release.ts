@@ -27,7 +27,8 @@ function load(): { version: string; date: string; label: string } {
   if (!month) throw new Error(`release.ts: bad date in the ${version} CHANGELOG heading`);
   // Release and tag builds in CI set SIPLE_EXPECT_VERSION to the tag: a CHANGELOG that wasn't updated for it would
   // otherwise publish an older version under the new tag.
-  const expected = process.env.SIPLE_EXPECT_VERSION?.replace(/^v/, '');
+  // A release-candidate tag (v0.3.0-rc.1) builds the version it leads up to.
+  const expected = process.env.SIPLE_EXPECT_VERSION?.replace(/^v/, '').replace(/-.*$/, '');
   if (expected && expected !== version) {
     throw new Error(`release.ts: building tag v${expected}, but the newest CHANGELOG section is ${version}`);
   }

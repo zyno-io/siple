@@ -97,8 +97,10 @@ ZynoHosting CLI:
 - `www-staging.siple.app` (alpha cluster, `--environment alpha`) deploys automatically on every push to `main`.
 - `siple.app` (production) deploys when a stable GitHub release is **published** (`release.yml` uploads a draft;
   publishing it fires the run), built from the release's tag. Release candidates (`v0.3.0-rc.1`) never deploy it.
-  Manually: Actions > Website > Run workflow from a stable tag (`v1.2.3`), target `production`. The build fails if
-  the newest CHANGELOG version isn't the tag, and the deploy stops if any download link isn't live yet.
+  Manually (e.g. a copy fix between releases): Actions > Website > Run workflow from `main` or a stable tag
+  (`v1.2.3`), target `production`. A tag build fails if the newest CHANGELOG version isn't the tag, and every
+  production deploy stops if any download link isn't live yet (so a run from `main` during a release-candidate
+  cycle, when the CHANGELOG already names the coming version, deploys nothing).
 - Pull requests only build.
 
 Each deploy job reads a per-site **deploy token** (`ZYNOHOSTING_DEPLOY_TOKEN`) from its GitHub environment

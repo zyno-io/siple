@@ -48,7 +48,7 @@ export const doc = {
 
 /**
  * Release links, fixed at build time for the version in src/data/release.ts (the newest CHANGELOG section). Production
- * is built from a published release's tag and deployed only after every link checks live (.github/workflows/www.yml);
+ * is deployed only after every link checks live (.github/workflows/www.yml);
  * nothing is looked up in the browser.
  */
 export const releasePage = (version: string) => `${repo}/releases/tag/v${version}`;

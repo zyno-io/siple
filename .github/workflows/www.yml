@@ -4,7 +4,8 @@ name: Website
 #   - www-staging.siple.app (alpha cluster): automatically on every push to main.
 #   - siple.app (production): when a stable GitHub release is published (release.yml uploads a draft; publishing it
 #     by hand fires `release: published`). The site is built from the release's tag. Release candidates never
-#     publish it. Manually: Actions > Website > Run workflow from a stable tag (v1.2.3), target = production.
+#     publish it. Manually: Actions > Website > Run workflow from main or a stable tag (v1.2.3), target =
+#     production (e.g. a copy fix between releases).
 #     Before deploying, the job checks that the CHANGELOG version matches the tag and that every download link in
 #     the built page is live, so siple.app never links to a draft or missing asset.
 # Pull requests only build the site; they never deploy.
@@ -51,6 +52,9 @@ concurrency:
 jobs:
   build:
     name: build
+    # A published release candidate has nothing to build: it never deploys, and its tag (v0.3.0-rc.1) isn't a
+    # CHANGELOG version.
+    if: github.event_name != 'release' || (!github.event.release.prerelease && !contains(github.event.release.tag_name, '-'))
     runs-on: ubuntu-latest
     env:
       # @playwright/test (VRT, local only) is a devDependency; the build never needs its browsers.
@@ -119,11 +123,13 @@ jobs:
   deploy-production:
     name: deploy (siple.app)
     needs: build
-    # Stable tags only (no "-", so no v1.2.3-rc.1), from a published release or a manual run on that tag.
+    # A published stable release (its tag has no "-", so no v1.2.3-rc.1), or a manual run from main or a stable tag.
+    # A manual run from main while main's CHANGELOG names an unreleased version stops at the link check below.
     if: >-
-      startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, '-') &&
-      ((github.event_name == 'release' && !github.event.release.prerelease && !github.event.release.draft) ||
-       (github.event_name == 'workflow_dispatch' && inputs.target == 'production'))
+      (github.event_name == 'release' && !github.event.release.prerelease && !github.event.release.draft &&
+       startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, '-')) ||
+      (github.event_name == 'workflow_dispatch' && inputs.target == 'production' &&
+       (github.ref == 'refs/heads/main' || (startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, '-'))))
     runs-on: ubuntu-latest
     environment:
       name: www-production
@@ -152,7 +158,7 @@ jobs:
         # A draft release's assets 404; never publish a page whose buttons are broken.
         run: |
           set -euo pipefail
-          urls=$(grep -oE 'https://github\.com/zyno-io/siple/releases/download/[^"<> ]+' dist/index.html | sort -u)
+          urls=$(grep -oE 'https://github\.com/zyno-io/siple/releases/download/[^"<> ]+' dist/index.html | sort -u || true)
           [ -n "$urls" ] || { echo "::error::no release download links in dist/index.html"; exit 1; }
           bad=0
           for u in $urls; do
