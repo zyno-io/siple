@@ -1,4 +1,4 @@
-//! Update detection: tells the user a newer release exists. Direct builds can also download,
+//! Update detection: tells the user a newer release exists. Direct builds (zip, dmg, tarball, AppImage) can also download,
 //! verify and install it in place ([`install`], `app.install_update`); the store editions only
 //! point to their store.
 //!

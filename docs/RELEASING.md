@@ -14,7 +14,7 @@ You review the draft and publish it by hand.
    and the packages keep the numeric version (macOS and Windows version fields must be numeric).
 3. Nothing to approve: the `release` environment only limits its secrets to `v*` tags (no required reviewers, by the
    owner's choice), so a pushed tag signs and drafts the release automatically.
-4. Check the draft release (4 packages: Linux, macOS, Windows x64 and arm64; `THIRD-PARTY-NOTICES.html`, `SHA256SUMS`), edit
+4. Check the draft release (7 packages: Linux tarball and AppImage for x86_64 and aarch64, macOS, Windows x64 and arm64; `THIRD-PARTY-NOTICES.html`, `SHA256SUMS`), edit
    the generated notes, publish.
 
 `workflow_dispatch` (Actions tab, "Release") builds **unsigned** dev packages as `unsigned-*` run artifacts. It uses
@@ -25,7 +25,7 @@ no secrets, signs nothing and publishes nothing. A tag without all secrets below
 | Job | Runner | Secrets | What |
 | --- | --- | --- | --- |
 | `preflight` | ubuntu | no | tag == `v` + workspace version |
-| `linux`, `macos`, `windows`, `licenses` | per OS | no | cargo build + package. On tags the macOS/Windows jobs stop before signing. `windows` is an x64/arm64 matrix; arm64 is cross-compiled on the x64 runner |
+| `linux`, `macos`, `windows`, `licenses` | per OS | no | cargo build + package (`linux`: an x86_64 / aarch64 matrix, each native on its own runner (`ubuntu-latest`, `ubuntu-24.04-arm`) in the multi-arch `rust:1.100-bookworm` image: the tarball, then the AppImage from the same binaries). On tags the macOS/Windows jobs stop before signing. `windows` is an x64/arm64 matrix; arm64 is cross-compiled on the x64 runner |
 | `macos-sign` | macos | `release` env | rcodesign: sign `.app` -> notarize -> staple -> zip + dmg -> sign, notarize, staple dmg |
 | `windows-sign` | windows | `release` env | per arch: Azure Artifact Signing of `siple.exe` + `siple-cli.exe`, verify, then zip |
 | `release` | ubuntu | `release` env | `SHA256SUMS`, attestations, `gh release create --draft` |
@@ -83,6 +83,54 @@ secrets (`tenant`, `appId`, `password`). Rotate the secret before it expires.
   `apple-codesign-<v>-macos-universal.tar.gz` from the `indygreg/apple-platform-rs` release, verify it against the
   release page, update version and hash.
 
+## Linux AppImage
+
+The AppImage is built in the `linux` job right after the tarball, from the same binaries: `scripts/package-appimage.sh`
+unpacks `dist/Siple-<version>-linux-<arch>.tar.gz` (`<arch>` is `x86_64` or `aarch64`, from `uname -m` through `scripts/linux-arch.sh`; builds are native, never cross-compiled), assembles the AppDir (layout in the contract table below), packs it with
+`mksquashfs` (Debian bookworm `squashfs-tools`, zstd) and concatenates the image onto the pinned
+[type2-runtime](https://github.com/AppImage/type2-runtime) (`scripts/appimage-pins.sh`: release, commit, sha256, size, upstream
+signature key). There is no appimagetool and no linuxdeploy: nothing is bundled, and `AppRun` sets no environment.
+`scripts/linux-needed-check.sh` (the NEEDED allowlist) runs on both artifacts, and the script refuses an AppDir that holds a
+library. Two builds of the same tarball give the same bytes (`SOURCE_DATE_EPOCH`, default the commit time).
+
+- **No zsync, no embedded update information.** Siple's updater is minisign-verified, call-aware and restarts safely. Update
+  information in the file would let AppImageLauncher, Gear Lever or AppImageUpdate replace it behind Siple's back, without the
+  signature check and possibly during a call, and `.zsync` files would join the asset contract.
+- **`scripts/appimage-smoke.sh`** (release job; the container has no FUSE, so everything runs with extract-and-run): the runtime
+  commit, `--version` of `siple` and `siple-cli` (through `--cli`, and through a `siple-cli` symlink for the argv0 dispatch), and a headless engine whose
+  `status.build.channel` must be `appimage`.
+- **`scripts/package-appimage.sh --self-test`** (job `appimage` of `ci.yml`): stub binaries instead of cargo, the pinned runtime,
+  the golden file list, the `AppRun` dispatch and reproducibility.
+- **The runtime's notice** is `packaging/appimage/APPIMAGE-RUNTIME.txt`, shipped as `usr/share/doc/siple/APPIMAGE-RUNTIME.txt`:
+  the runtime is MIT and links libfuse (LGPL-2.1) statically; the notice gives the exact upstream sources. Releases do not attach
+  source archives.
+- **Local build** (Linux with docker; the dev Mac cannot build it):
+
+  ```sh
+  docker run --rm -v "$PWD":/src -w /src rust:1.100-bookworm bash -c '
+    apt-get update -qq && apt-get install -y -qq cmake pkg-config libasound2-dev squashfs-tools &&
+    scripts/package-linux.sh && scripts/package-appimage.sh && scripts/appimage-smoke.sh dist/Siple-*-linux-$(uname -m).AppImage'
+  ```
+
+  Without FUSE on the host, run the result with `--appimage-extract-and-run` first or `APPIMAGE_EXTRACT_AND_RUN=1`.
+  `scripts/package-appimage.sh --self-test` needs a Linux machine of the architecture it builds for (x86_64 or aarch64), too. The aarch64 files are built only by the `linux` matrix job of the release workflow on the arm runner (dispatch it for an unsigned dev build).
+
+### Bumping the pins
+
+- **AppImage runtime** (`scripts/appimage-pins.sh`): pick a dated release of `AppImage/type2-runtime` (never `continuous`) and
+  1. for each architecture (`x86_64`, `aarch64`) download `runtime-<arch>`, `runtime-<arch>.sig` and `signing-pubkey.asc` from the release, and `signing-pubkey.asc` from the
+     repository at the release's `target_commitish`. The two key files must be byte-identical (`cmp`), and
+     `packaging/appimage/type2-runtime-signing-pubkey.asc` must equal them too. A new key is a deliberate review and changes
+     `RUNTIME_KEY_FPR`. `gpgv --status-fd 1 --keyring <dearmored key> runtime-<arch>.sig runtime-<arch>` must print
+     `VALIDSIG $RUNTIME_KEY_FPR`.
+  2. `gh api repos/AppImage/type2-runtime/releases/tags/<tag> --jq '.assets[]|select(.name|test("^runtime-(x86_64|aarch64)(\\.sig)?$"))|[.name,.digest,.size]'`
+     must equal the local `sha256sum` and size.
+  3. `./runtime-x86_64 --appimage-version` names the commit (the aarch64 one only runs on ARM; its commit is in `strings runtime-aarch64 | grep type2-runtime/commit`).
+  4. Edit the values in `scripts/appimage-pins.sh` (release, commit, key, and size, sha256 and signature sha256 per architecture), and the versions and hashes in `packaging/appimage/APPIMAGE-RUNTIME.txt`
+     (read `scripts/common/install-dependencies.sh` of that commit for libfuse and squashfuse).
+  `squashfs-tools` is not pinned: it comes from the Debian bookworm archive like the other build packages, and the build logs its
+  version.
+
 ## Version of release candidates
 
 The packages keep the numeric Cargo version (macOS and Windows version fields must be numeric), so `0.2.0-rc.1` and `0.2.0-rc.2`
@@ -137,10 +185,16 @@ signature is a change of the updater's interface: old versions in the field stop
 | `SHA256SUMS.minisig` | minisign signature (prehashed) of `SHA256SUMS` by the release key, trusted comment exactly `siple <tag> SHA256SUMS`. A release without it is not installed in place. |
 | `Siple-<version>-macos.zip` | `<version>` is the full version (`0.2.0`, `0.2.0-rc.1`). Exactly one top-level entry, `Siple.app`, made by `ditto -c -k --keepParent`; app identifier `io.zyno.siple`, `Contents/MacOS/siple-cli` identifier `io.zyno.siple-cli`, Developer ID team `VUDU4KEQ99`, notarized; `CFBundleShortVersionString` is the numeric core (`0.2.0` for `0.2.0-rc.1`). |
 | `Siple-<core>-windows-x64.zip`, `Siple-<core>-windows-arm64.zip` | `<core>` is the numeric core (a release candidate keeps `0.2.0`). Flat zip: `siple.exe`, `siple-cli.exe`, `config.example.toml`, `LICENSE`, `README.md`, `THIRD-PARTY-NOTICES.html`, `docs/API.md`, `docs/CONFIG.md`. Both exes Authenticode-signed by Signal24 LLC (Artifact Signing, RFC 3161 timestamp), PE machine of the architecture, `FileVersion` the numeric core. |
-| `Siple-<core>-linux-x86_64.tar.gz` | One top directory `siple-<core>/` with `bin/siple`, `bin/siple-cli`, `share/...`, `LICENSE`, `THIRD-PARTY-NOTICES.html`; regular files and directories only. `bin/siple --version` and `bin/siple-cli --version` print the full version. |
+| `Siple-<core>-linux-x86_64.tar.gz`, `Siple-<core>-linux-aarch64.tar.gz` | One top directory `siple-<core>/` with `bin/siple`, `bin/siple-cli`, `share/...`, `LICENSE`, `THIRD-PARTY-NOTICES.html`; regular files and directories only. `bin/siple --version` and `bin/siple-cli --version` print the full version. |
+| `Siple-<core>-linux-x86_64.AppImage`, `Siple-<core>-linux-aarch64.AppImage` | AppImage type 2: the pinned type2-runtime of that architecture followed by a zstd squashfs of the AppDir (`AppRun`, the root `io.zyno.siple.desktop` and icon, `usr/bin/{siple,siple-cli}`, `usr/share/...`; `AppRun` dispatches `siple-cli` by a first `--cli` (the contract: AppImageLauncher replaces argv0 with the file name) or by argv0; the updater probes the CLI with `--cli`). No bundled libraries, no embedded update information. With `APPIMAGE_EXTRACT_AND_RUN=1`, `<file> --version` and `<file> --cli --version` print the full version. |
 
 The updater accepts the full-version or the numeric-core spelling of a file name (the release candidates mix them) and requires
-exactly one match per platform. The Windows signer pins (publisher name, the Artifact Signing identity EKU, the Microsoft Identity
+exactly one match per platform (the `release` job checks it: "Exactly one file per asset").
+An install picks the Linux file of its own CPU (`std::env::consts::ARCH`: `x86_64` gets the `linux-x86_64` names, exactly as before; `aarch64` gets `linux-aarch64`; no other architecture installs in place). Releases older than the aarch64 files only list the x86_64 names, and no aarch64 install of those exists. **`SHA256SUMS` lists all four Linux files**; dropping one breaks that architecture's in-place updates.
+
+The tarball and the AppImage are separate assets with separate names: each edition's updater matches its own file by exact name and ignores the other (older tarball builds
+ignore the AppImage and keep updating from the tarball). **Removing either file from a release breaks that edition's in-place updates**, and the
+AppImage must ship in every release from its first one onward. A release without the AppImage gives an AppImage install `install.reason = no_asset`, and the pill opens the release page. The Windows signer pins (publisher name, the Artifact Signing identity EKU, the Microsoft Identity
 Verification root) are in `crates/siple-core/src/update/install/windows.rs`; the macOS requirement is in `install/macos.rs`. When the
 signing identity changes, ship an app that accepts both before releasing with the new one.
 
@@ -324,11 +378,12 @@ repository's release workflow from the tagged commit). The public key is in `pac
 ```sh
 minisign -Vm SHA256SUMS -P RWRY7rDN9/UXId/KmnBcB1BTI/HNfTk0mM1OD+bxK4JUKDG5RLZGYIIH   # needs SHA256SUMS.minisig next to it
 sha256sum -c SHA256SUMS --ignore-missing          # shasum -a 256 -c on macOS
-gh attestation verify Siple-<version>-linux-x86_64.tar.gz --repo zyno-io/siple
+gh attestation verify Siple-<version>-linux-<x86_64|aarch64>.tar.gz --repo zyno-io/siple
+gh attestation verify Siple-<version>-linux-<x86_64|aarch64>.AppImage --repo zyno-io/siple
 gh attestation verify SHA256SUMS --repo zyno-io/siple
 ```
 
 ## Not covered yet
 
-- Linux packages are not signed beyond checksums + attestations (no `.deb`/`.rpm`/AppImage yet). The Flathub listing is pending (see "Flatpak (Flathub)").
+- Linux packages are not signed beyond checksums + attestations (no `.deb`/`.rpm` yet). The Flathub listing is pending (see "Flatpak (Flathub)").
 - The Windows zip is signed inside (exes); the zip itself is covered by `SHA256SUMS` and the attestation.

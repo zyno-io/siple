@@ -33,6 +33,14 @@ pub enum RelaunchSpec {
     MacBundle(std::path::PathBuf),
     /// Windows and Linux: run this executable.
     Exe(std::path::PathBuf),
+    /// Linux AppImage: run this `.AppImage` (never its mount). `extract_and_run`: this copy runs
+    /// without FUSE, so start the new one the same way.
+    AppImage {
+        /// The `.AppImage` file.
+        file: std::path::PathBuf,
+        /// Start it with `--appimage-extract-and-run`.
+        extract_and_run: bool,
+    },
 }
 
 /// A request to the GUI.

@@ -5,7 +5,7 @@
 //! nothing changed. It runs as a task of the app (never inside an API call), is cancellable until
 //! the swap, never swaps or restarts while a call is active ([`IdleProbe`]) and never elevates.
 //!
-//! The per-OS parts are behind [`Platform`]: `macos`, `windows` and `linux`. The checks that
+//! The per-OS parts are behind [`Platform`]: `macos`, `windows`, `linux` and `appimage`. The checks that
 //! make a download trustworthy are in [`super::sums`] (signed checksum list) and
 //! [`super::download`] (the transfer); the platform checks (OS code signature, archive layout)
 //! are in `stage`.
@@ -33,6 +33,8 @@ use crate::events::EventLog;
 use crate::state::{InstalledUpdate, StateStore};
 use crate::ui_host::RelaunchSpec;
 
+#[cfg(unix)]
+pub mod appimage;
 pub mod env;
 pub mod journal;
 pub mod linux;
@@ -140,9 +142,10 @@ impl NotPossible {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Target {
     /// macOS: the `.app` bundle. Windows and Linux: the directory that holds the files the swap
-    /// replaces (the exe's directory; the install root).
+    /// replaces (the exe's directory; the install root). Linux AppImage: the directory of the
+    /// `.AppImage`.
     pub root: PathBuf,
-    /// The running executable.
+    /// The running executable (Linux AppImage: the `.AppImage` file, not the binary in its mount).
     pub exe: PathBuf,
 }
 
@@ -173,7 +176,7 @@ pub struct Committed {
 }
 
 /// The per-OS half of an install. Implementations: `macos::MacPlatform`,
-/// `windows::WindowsPlatform`, `linux::LinuxPlatform`; tests use fakes. All methods are blocking
+/// `windows::WindowsPlatform`, `linux::LinuxPlatform`, `appimage::AppImagePlatform`; tests use fakes. All methods are blocking
 /// (the installer runs them on a blocking thread) except [`Platform::asset`] and
 /// [`Platform::probe`], which are quick.
 pub trait Platform: Send + Sync {
@@ -280,12 +283,25 @@ pub fn native_platform() -> Arc<dyn Platform> {
     }
     #[cfg(target_os = "linux")]
     {
-        Arc::new(linux::LinuxPlatform::new(env))
+        linux_platform_for(siple_config::channel::current(), env)
     }
     #[cfg(not(any(target_os = "macos", windows, target_os = "linux")))]
     {
         let _ = env;
         Arc::new(NoPlatform::disabled())
+    }
+}
+
+/// The Linux platform of `channel`: the AppImage replaces its own file, the tarball its tree.
+#[cfg(target_os = "linux")]
+fn linux_platform_for(
+    channel: &siple_config::channel::Channel,
+    env: env::Env,
+) -> Arc<dyn Platform> {
+    if channel.kind == siple_config::channel::ChannelKind::AppImage {
+        Arc::new(appimage::AppImagePlatform::new(env))
+    } else {
+        Arc::new(linux::LinuxPlatform::new(env))
     }
 }
 
@@ -1265,3 +1281,19 @@ impl Installer {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(all(test, target_os = "linux"))]
+mod platform_choice_tests {
+    use super::*;
+    use siple_config::channel::Channel;
+
+    #[test]
+    fn the_appimage_channel_gets_the_appimage_platform() {
+        let env = || env::fake::FakeFs::default().env("/x/siple", Some(1000), &[]);
+        let ai = linux_platform_for(&Channel::appimage(Path::new("/x/Siple.AppImage")), env());
+        let arch = std::env::consts::ARCH;
+        assert_eq!(ai.asset(), AssetPlatform::linux_appimage(arch));
+        let tar = linux_platform_for(&Channel::DIRECT, env());
+        assert_eq!(tar.asset(), AssetPlatform::linux_tarball(arch));
+    }
+}

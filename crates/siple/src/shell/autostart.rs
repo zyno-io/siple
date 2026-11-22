@@ -168,6 +168,25 @@ pub fn entry_path(
     }
 }
 
+/// The config directory (the parent of `autostart/`) of an AppImage. The runtime's portable mode
+/// (`<file>.config`, `<file>.home` next to the file) points `XDG_CONFIG_HOME` or `HOME` into a
+/// folder the desktop never reads, so the entry goes to the account's real home (`real_home`, from
+/// the password database, which `HOME` cannot move); a real `XDG_CONFIG_HOME` is kept, the portable
+/// `<file>.config` is not.
+pub fn appimage_config_dir(
+    file: &Path,
+    real_home: Option<&Path>,
+    var: &dyn Fn(&str) -> Option<std::ffi::OsString>,
+) -> Option<PathBuf> {
+    let mut portable = file.as_os_str().to_owned();
+    portable.push(".config");
+    let portable = PathBuf::from(portable);
+    var("XDG_CONFIG_HOME")
+        .map(PathBuf::from)
+        .filter(|x| x.is_absolute() && *x != portable)
+        .or_else(|| real_home.map(|h| h.join(".config")))
+}
+
 /// Writes `content` unless the file already holds it; creates parent directories.
 fn write_if_changed(path: &Path, content: &str) -> std::io::Result<()> {
     if std::fs::read_to_string(path).is_ok_and(|c| c == content) {
@@ -286,8 +305,15 @@ fn apply_for(
         );
         return Ok(());
     }
-    let exe = std::env::current_exe()?;
-    let extra = profile_args(config);
+    // The AppImage edition starts its file, never the temporary mount the process runs from.
+    let exe = channel.launch_target()?;
+    // A runtime option (`--appimage-extract-and-run`) must be the first argument.
+    let mut extra: Vec<String> = channel
+        .launch_args_prefix()
+        .iter()
+        .map(|a| (*a).to_string())
+        .collect();
+    extra.extend(profile_args(config));
     let name = entry_name(config);
     #[cfg(target_os = "windows")]
     {
@@ -309,9 +335,17 @@ fn apply_for(
     #[cfg(not(target_os = "windows"))]
     {
         let macos = cfg!(target_os = "macos");
+        let config_dir = match channel.appimage {
+            Some(file) => appimage_config_dir(
+                file,
+                siple_core::config::channel::real_home().as_deref(),
+                &|k| std::env::var_os(k),
+            ),
+            None => dirs::config_dir(),
+        };
         let path = entry_path(
             dirs::home_dir().as_deref(),
-            dirs::config_dir().as_deref(),
+            config_dir.as_deref(),
             macos,
             &name,
         )
@@ -351,6 +385,83 @@ mod tests {
         }
         #[cfg(not(target_os = "windows"))]
         assert_eq!(entry.as_ref().map(|p| p.exists()), before);
+    }
+
+    #[test]
+    fn the_appimage_login_entry_starts_the_file() {
+        use siple_core::config::channel::Channel;
+        let ch = Channel::appimage(Path::new("/home/u/My Apps/Siple.AppImage"));
+        assert!(!ch.is_packaged() && !uses_portal(&ch));
+        let entry = linux_autostart_entry(&ch.launch_target().unwrap(), &[]);
+        assert!(
+            entry.contains("Exec=\"/home/u/My Apps/Siple.AppImage\""),
+            "{entry}"
+        );
+    }
+
+    #[test]
+    fn an_extracted_appimage_login_entry_starts_with_the_runtime_option() {
+        use siple_core::config::channel::Channel;
+        let file = Path::new("/home/u/Siple.AppImage");
+        let args = |ch: &Channel| -> Vec<String> {
+            ch.launch_args_prefix()
+                .iter()
+                .map(|a| a.to_string())
+                .collect()
+        };
+        let mounted = Channel::appimage(file);
+        let entry = linux_autostart_entry(&mounted.launch_target().unwrap(), &args(&mounted));
+        assert!(entry.contains("Exec=/home/u/Siple.AppImage\n"), "{entry}");
+        let extracted = mounted.with_extracted(true);
+        let entry = linux_autostart_entry(&extracted.launch_target().unwrap(), &args(&extracted));
+        assert!(
+            entry.contains("Exec=/home/u/Siple.AppImage --appimage-extract-and-run\n"),
+            "{entry}"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_appimage_entry_goes_to_the_real_config_dir_not_the_portable_one() {
+        let file = Path::new("/apps/Siple.AppImage");
+        let home = Path::new("/home/u");
+        let dir = |env: &[(&str, &str)], home: Option<&Path>| {
+            let env: std::collections::HashMap<String, String> = env
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect();
+            appimage_config_dir(file, home, &|k| env.get(k).map(std::ffi::OsString::from))
+        };
+        // No XDG_CONFIG_HOME: the real home.
+        assert_eq!(dir(&[], Some(home)), Some(PathBuf::from("/home/u/.config")));
+        // Portable `.config`: not used.
+        assert_eq!(
+            dir(
+                &[("XDG_CONFIG_HOME", "/apps/Siple.AppImage.config")],
+                Some(home)
+            ),
+            Some(PathBuf::from("/home/u/.config"))
+        );
+        // Portable `.home` moves only HOME, which is not consulted.
+        assert_eq!(
+            dir(&[("HOME", "/apps/Siple.AppImage.home")], Some(home)),
+            Some(PathBuf::from("/home/u/.config"))
+        );
+        // A real XDG_CONFIG_HOME is respected; a relative or empty one is not.
+        assert_eq!(
+            dir(&[("XDG_CONFIG_HOME", "/data/cfg")], Some(home)),
+            Some(PathBuf::from("/data/cfg"))
+        );
+        assert_eq!(
+            dir(&[("XDG_CONFIG_HOME", "cfg")], Some(home)),
+            Some(PathBuf::from("/home/u/.config"))
+        );
+        assert_eq!(
+            dir(&[("XDG_CONFIG_HOME", "")], Some(home)),
+            Some(PathBuf::from("/home/u/.config"))
+        );
+        // Nothing known.
+        assert_eq!(dir(&[], None), None);
     }
 
     #[test]

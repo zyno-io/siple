@@ -69,7 +69,7 @@ All of these keys are under `[ui]`. See the [reference](/reference/configuration
 `tray = false` makes closing the window quit the app.
 
 `launch_at_login = true` writes a macOS LaunchAgent, a Windows `Run` registry entry or a Linux XDG autostart entry for the
-running executable. `false` removes it. A non-default `--config` profile gets its own entry. In the Flatpak edition the
+running executable (the AppImage edition: the `.AppImage` file, not its temporary mount). `false` removes it. A non-default `--config` profile gets its own entry. In the Flatpak edition the
 setting goes through your desktop's Background portal, which may ask once; there is one entry for the app, so the profile that
 enabled it last wins.
 

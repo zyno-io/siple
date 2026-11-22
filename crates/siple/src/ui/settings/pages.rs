@@ -747,10 +747,20 @@ pub(in crate::ui) fn sec_toggle_pub(
 }
 
 /// The MCP client configuration for `channel`: the Flatpak edition's CLI is reached through
-/// `flatpak run`, every other edition has `siple-cli` on its path.
+/// `flatpak run`, the AppImage's through the file with `--cli`, every other edition has
+/// `siple-cli` on its path.
 fn mcp_snippet(channel: &siple_core::config::channel::Channel) -> String {
     use siple_core::config::channel::ChannelKind;
-    if channel.kind == ChannelKind::Flatpak {
+    if let Some(file) = channel.appimage {
+        // The runtime option must come first; `--cli mcp` selects the CLI whatever argv[0] is.
+        let mut args: Vec<&str> = channel.launch_args_prefix().to_vec();
+        args.extend(["--cli", "mcp"]);
+        // serde_json escapes the path.
+        serde_json::to_string_pretty(&serde_json::json!({
+            "mcpServers": {"siple": {"command": file.to_string_lossy(), "args": args}}
+        }))
+        .unwrap_or_default()
+    } else if channel.kind == ChannelKind::Flatpak {
         format!(
             "{{\n  \"mcpServers\": {{\n    \"siple\": {{\n      \"command\": \"flatpak\",\n      \"args\": [\"run\", \"--command=siple-cli\", \"{}\", \"mcp\"]\n    }}\n  }}\n}}",
             siple_core::config::APP_ID
@@ -791,6 +801,13 @@ mod speech_label_tests {
             "not available in this edition"
         );
         assert_eq!(speech_commands_label(true, &Channel::DIRECT), "configured");
+        assert_eq!(
+            speech_commands_label(
+                true,
+                &Channel::appimage(std::path::Path::new("/x/Siple.AppImage"))
+            ),
+            "configured"
+        );
         assert_eq!(speech_commands_label(false, &Channel::DIRECT), "(none)");
     }
 }
@@ -812,5 +829,32 @@ mod mcp_snippet_tests {
         );
         let d: serde_json::Value = serde_json::from_str(&direct).unwrap();
         assert_eq!(d["mcpServers"]["siple"]["args"], serde_json::json!(["mcp"]));
+    }
+
+    #[test]
+    fn the_appimage_snippet_runs_the_file_with_cli() {
+        for path in [
+            "/home/u/Applications/Siple.AppImage",
+            "/home/u/My \"Apps\"/Siple.AppImage",
+        ] {
+            let ch = Channel::appimage(Box::leak(std::path::PathBuf::from(path).into_boxed_path()));
+            let v: serde_json::Value = serde_json::from_str(&mcp_snippet(&ch)).unwrap();
+            assert_eq!(v["mcpServers"]["siple"]["command"], path);
+            assert_eq!(
+                v["mcpServers"]["siple"]["args"],
+                serde_json::json!(["--cli", "mcp"])
+            );
+        }
+    }
+
+    #[test]
+    fn an_extracted_appimage_snippet_starts_with_the_runtime_option() {
+        let ch =
+            Channel::appimage(std::path::Path::new("/home/u/Siple.AppImage")).with_extracted(true);
+        let v: serde_json::Value = serde_json::from_str(&mcp_snippet(&ch)).unwrap();
+        assert_eq!(
+            v["mcpServers"]["siple"]["args"],
+            serde_json::json!(["--appimage-extract-and-run", "--cli", "mcp"])
+        );
     }
 }

@@ -16,6 +16,7 @@ method, prints the JSON result and exits. No MCP server or other long-running he
    - Windows: `siple-cli.exe` in the same folder as `siple.exe` (wherever the user unzipped Siple;
      ask if you cannot find it)
    - Linux: `bin/siple-cli` inside the extracted `siple-<version>` folder
+   - Linux AppImage: `<path>/Siple….AppImage --cli` (or a `siple-cli` wrapper script that runs it with `--cli`; a symlink fails under AppImageLauncher)
    - Linux Flatpak: `flatpak run --command=siple-cli io.zyno.siple` (file arguments only under `~/.var/app/io.zyno.siple/`)
 2. **Siple must be running.** `siple-cli ctl status` fails when it is not: with
    `no running instance found`, or with a connection error if Siple crashed or was killed. Ask the user to start the Siple app. Only if they

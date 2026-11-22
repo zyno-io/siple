@@ -69,64 +69,88 @@ pub struct RealExec;
 
 impl Exec for RealExec {
     fn version_output(&self, exe: &Path) -> Result<String, String> {
-        // A freshly written file can be "text file busy" for a moment when another thread forks
-        // while it is still open for writing.
-        let mut child = None;
-        for _ in 0..20 {
-            match Command::new(exe)
-                .arg("--version")
-                .stdin(Stdio::null())
-                .stdout(Stdio::piped())
-                .stderr(Stdio::piped())
-                .spawn()
-            {
-                Ok(c) => {
-                    child = Some(c);
-                    break;
-                }
-                Err(e) if e.raw_os_error() == Some(26) => {
-                    std::thread::sleep(Duration::from_millis(50));
-                }
-                Err(e) => return Err(format!("cannot start: {e}")),
-            }
-        }
-        let Some(mut child) = child else {
-            return Err("cannot start: text file busy".to_string());
-        };
-        let read = |s: Option<Box<dyn Read + Send>>| {
-            std::thread::spawn(move || {
-                let mut buf = Vec::new();
-                if let Some(s) = s {
-                    let _ = s.take(64 * 1024).read_to_end(&mut buf);
-                }
-                String::from_utf8_lossy(&buf).into_owned()
-            })
-        };
-        let out = read(child.stdout.take().map(|s| Box::new(s) as _));
-        let err = read(child.stderr.take().map(|s| Box::new(s) as _));
-        let deadline = Instant::now() + EXEC_TIMEOUT;
-        let status = loop {
-            match child.try_wait() {
-                Ok(Some(s)) => break s,
-                Ok(None) if Instant::now() >= deadline => {
-                    let _ = child.kill();
-                    let _ = child.wait();
-                    return Err(format!("no answer within {} s", EXEC_TIMEOUT.as_secs()));
-                }
-                Ok(None) => std::thread::sleep(Duration::from_millis(10)),
-                Err(e) => return Err(format!("cannot wait: {e}")),
-            }
-        };
-        let stdout = out.join().unwrap_or_default();
-        let stderr = err.join().unwrap_or_default();
-        if !status.success() {
-            return Err(format!(
-                "exited with {status}: {}",
-                stderr.trim().chars().take(200).collect::<String>()
-            ));
-        }
-        Ok(stdout)
+        let mut cmd = Command::new(exe);
+        cmd.arg("--version");
+        run_capped(cmd, EXEC_TIMEOUT)
     }
+}
+
+/// Runs `cmd` (stdin closed) and returns its standard output. Each stream is capped at 64 KiB, the
+/// child is killed after `timeout`, and a failed exit status is an error with the start of stderr.
+pub(super) fn run_capped(mut cmd: Command, timeout: Duration) -> Result<String, String> {
+    cmd.stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    // A freshly written file can be "text file busy" for a moment when another thread forks
+    // while it is still open for writing.
+    let mut child = None;
+    for _ in 0..20 {
+        match cmd.spawn() {
+            Ok(c) => {
+                child = Some(c);
+                break;
+            }
+            Err(e) if e.raw_os_error() == Some(26) => {
+                std::thread::sleep(Duration::from_millis(50));
+            }
+            Err(e) => return Err(format!("cannot start: {e}")),
+        }
+    }
+    let Some(mut child) = child else {
+        return Err("cannot start: text file busy".to_string());
+    };
+    let read = |s: Option<Box<dyn Read + Send>>| {
+        std::thread::spawn(move || {
+            let mut buf = Vec::new();
+            if let Some(s) = s {
+                let _ = s.take(64 * 1024).read_to_end(&mut buf);
+            }
+            String::from_utf8_lossy(&buf).into_owned()
+        })
+    };
+    let out = read(child.stdout.take().map(|s| Box::new(s) as _));
+    let err = read(child.stderr.take().map(|s| Box::new(s) as _));
+    let deadline = Instant::now() + timeout;
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(s)) => break s,
+            Ok(None) if Instant::now() >= deadline => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(format!("no answer within {} s", timeout.as_secs()));
+            }
+            Ok(None) => std::thread::sleep(Duration::from_millis(10)),
+            Err(e) => return Err(format!("cannot wait: {e}")),
+        }
+    };
+    let stdout = out.join().unwrap_or_default();
+    let stderr = err.join().unwrap_or_default();
+    if !status.success() {
+        return Err(format!(
+            "exited with {status}: {}",
+            stderr.trim().chars().take(200).collect::<String>()
+        ));
+    }
+    Ok(stdout)
+}
+
+/// Creates `<root>/.siple-update/<id>/` (0700, new and empty).
+pub(super) fn new_stage_dir(root: &Path) -> Result<PathBuf, InstallError> {
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let base = root.join(STAGING);
+    make_dir(&base, true, 0o700).map_err(|e| InstallError::io("cannot create staging", &e))?;
+    let nanos = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .map_or(0, |d| d.as_nanos());
+    let id = format!(
+        "{:x}-{:x}-{:x}",
+        std::process::id(),
+        nanos,
+        COUNTER.fetch_add(1, Ordering::Relaxed)
+    );
+    let dir = base.join(id);
+    make_dir(&dir, false, 0o700).map_err(|e| InstallError::io("cannot create staging", &e))?;
+    Ok(dir)
 }
 
 /// Size limits of an unpacked archive.
@@ -181,11 +205,7 @@ impl LinuxPlatform {
             let out = self.exec.version_output(&exe).map_err(|e| {
                 InstallError::untrusted(format!("the new {name} does not run here: {e}"))
             })?;
-            let found = out.split_whitespace().any(|t| {
-                t.trim_matches(|c: char| !(c.is_ascii_alphanumeric() || c == '.' || c == '-'))
-                    == version
-            });
-            if !found {
+            if !reports_version(&out, version) {
                 return Err(InstallError::untrusted(format!(
                     "the new {name} does not report version {version}"
                 )));
@@ -195,9 +215,50 @@ impl LinuxPlatform {
     }
 }
 
+/// Whether `out` (a `--version` output) names `version` as one of its words.
+pub(super) fn reports_version(out: &str, version: &str) -> bool {
+    out.split_whitespace().any(|t| {
+        t.trim_matches(|c: char| !(c.is_ascii_alphanumeric() || c == '.' || c == '-')) == version
+    })
+}
+
+/// Whether `out` is the `--version` output of `program` (clap prints `<name> <version>`, so the
+/// first word is the program name) and names `version`.
+// Only the AppImage platform (Linux) uses it.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+pub(super) fn reports_program_version(out: &str, program: &str, version: &str) -> bool {
+    out.split_whitespace().next() == Some(program) && reports_version(out, version)
+}
+
+/// A Flatpak or Snap sandbox: nothing is replaced from inside.
+pub(super) fn sandbox_refusal(env: &Env) -> Option<NotPossible> {
+    let no = NotPossible::new;
+    if env.fs.exists(Path::new("/.flatpak-info")) || env.var("FLATPAK_ID").is_some() {
+        return Some(no("sandboxed", "running inside a Flatpak sandbox"));
+    }
+    if env.var("SNAP").is_some() {
+        return Some(no("sandboxed", "running inside a Snap"));
+    }
+    None
+}
+
+/// Running inside a container (update the image instead).
+pub(super) fn in_container(env: &Env) -> bool {
+    let fs = &env.fs;
+    let cgroup = fs
+        .read_to_string(Path::new("/proc/1/cgroup"))
+        .unwrap_or_default();
+    fs.exists(Path::new("/.dockerenv"))
+        || fs.exists(Path::new("/run/.containerenv"))
+        || env.var("container").is_some()
+        || ["docker", "kubepods", "containerd", "libpod"]
+            .iter()
+            .any(|k| cgroup.contains(k))
+}
+
 impl Platform for LinuxPlatform {
     fn asset(&self) -> Option<AssetPlatform> {
-        Some(AssetPlatform::LinuxX64)
+        AssetPlatform::linux_tarball(std::env::consts::ARCH)
     }
 
     fn probe(&self) -> Result<Target, NotPossible> {
@@ -207,25 +268,18 @@ impl Platform for LinuxPlatform {
         if env.var("SIPLE_NO_SELF_UPDATE").is_some() {
             return Err(no("disabled", "SIPLE_NO_SELF_UPDATE is set"));
         }
-        if fs.exists(Path::new("/.flatpak-info")) || env.var("FLATPAK_ID").is_some() {
-            return Err(no("sandboxed", "running inside a Flatpak sandbox"));
+        if let Some(n) = sandbox_refusal(env) {
+            return Err(n);
         }
-        if env.var("SNAP").is_some() {
-            return Err(no("sandboxed", "running inside a Snap"));
-        }
-        if env.var("APPIMAGE").is_some() {
+        // Only a copy that runs from inside an AppImage is one. A terminal that is itself an
+        // AppImage leaks `APPIMAGE`/`APPDIR` to the tarball started from it.
+        if env.var("APPIMAGE").is_some()
+            && let Some(appdir) = env.var("APPDIR")
+            && siple_config::channel::runs_inside(&env.exe, &fs.canonical(Path::new(appdir)))
+        {
             return Err(no("sandboxed", "running from an AppImage"));
         }
-        let cgroup = fs
-            .read_to_string(Path::new("/proc/1/cgroup"))
-            .unwrap_or_default();
-        if fs.exists(Path::new("/.dockerenv"))
-            || fs.exists(Path::new("/run/.containerenv"))
-            || env.var("container").is_some()
-            || ["docker", "kubepods", "containerd", "libpod"]
-                .iter()
-                .any(|k| cgroup.contains(k))
-        {
+        if in_container(env) {
             return Err(no("container", "running inside a container"));
         }
 
@@ -270,21 +324,7 @@ impl Platform for LinuxPlatform {
     }
 
     fn stage_dir(&self, target: &Target) -> Result<PathBuf, InstallError> {
-        static COUNTER: AtomicU64 = AtomicU64::new(0);
-        let base = target.root.join(STAGING);
-        make_dir(&base, true, 0o700).map_err(|e| InstallError::io("cannot create staging", &e))?;
-        let nanos = SystemTime::now()
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .map_or(0, |d| d.as_nanos());
-        let id = format!(
-            "{:x}-{:x}-{:x}",
-            std::process::id(),
-            nanos,
-            COUNTER.fetch_add(1, Ordering::Relaxed)
-        );
-        let dir = base.join(id);
-        make_dir(&dir, false, 0o700).map_err(|e| InstallError::io("cannot create staging", &e))?;
-        Ok(dir)
+        new_stage_dir(&target.root)
     }
 
     fn stage(
@@ -342,38 +382,7 @@ impl Platform for LinuxPlatform {
         let Some(root) = self.root_of_exe() else {
             return;
         };
-        let staging = root.join(STAGING);
-        if let Ok(rd) = std::fs::read_dir(&staging) {
-            let ops = StdOps::unix();
-            let dirs: Vec<PathBuf> = rd
-                .filter_map(Result::ok)
-                .filter(|e| e.file_type().is_ok_and(|t| t.is_dir()))
-                .map(|e| e.path())
-                .collect();
-            for d in &dirs {
-                let j = d.join(JOURNAL_NAME);
-                if j.exists() {
-                    journal::recover(&j, &ops);
-                }
-            }
-            for d in &dirs {
-                let stale = std::fs::metadata(d)
-                    .and_then(|m| m.modified())
-                    .ok()
-                    .and_then(|t| t.elapsed().ok())
-                    .is_some_and(|age| age > STALE_AFTER);
-                if stale && !d.join(JOURNAL_NAME).exists() {
-                    let _ = std::fs::remove_dir_all(d);
-                }
-            }
-            let _ = std::fs::remove_dir(&staging); // only when empty
-        }
-        // A journal that could not be finished still needs the backups.
-        let pending = std::fs::read_dir(&staging)
-            .into_iter()
-            .flatten()
-            .flatten()
-            .any(|e| e.path().join(JOURNAL_NAME).exists());
+        let pending = recover_staging(&root.join(STAGING), &StdOps::unix());
         if !pending {
             sweep_backups(&root);
         }
@@ -403,6 +412,42 @@ impl Platform for LinuxPlatform {
         }
         let _ = std::fs::remove_dir(&staging); // only when empty
     }
+}
+
+/// Finishes or undoes the interrupted swaps in `staging` (a `.siple-update` directory) and removes
+/// stale journal-less staging directories. Returns whether a journal is still pending (its
+/// backups are still needed).
+pub(super) fn recover_staging(staging: &Path, ops: &dyn journal::Ops) -> bool {
+    if let Ok(rd) = std::fs::read_dir(staging) {
+        let dirs: Vec<PathBuf> = rd
+            .filter_map(Result::ok)
+            .filter(|e| e.file_type().is_ok_and(|t| t.is_dir()))
+            .map(|e| e.path())
+            .collect();
+        for d in &dirs {
+            let j = d.join(JOURNAL_NAME);
+            if j.exists() {
+                journal::recover(&j, ops);
+            }
+        }
+        for d in &dirs {
+            let stale = std::fs::metadata(d)
+                .and_then(|m| m.modified())
+                .ok()
+                .and_then(|t| t.elapsed().ok())
+                .is_some_and(|age| age > STALE_AFTER);
+            if stale && !d.join(JOURNAL_NAME).exists() {
+                let _ = std::fs::remove_dir_all(d);
+            }
+        }
+        let _ = std::fs::remove_dir(staging); // only when empty
+    }
+    // A journal that could not be finished still needs the backups.
+    std::fs::read_dir(staging)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .any(|e| e.path().join(JOURNAL_NAME).exists())
 }
 
 /// Removes `*.old-<digits>` files of shipped names in the archive-owned places of `root`.
@@ -464,7 +509,7 @@ fn list_files(base: &Path, rel: &Path, out: &mut Vec<PathBuf>) -> io::Result<()>
 }
 
 /// Creates a directory with `mode` (Unix).
-fn make_dir(p: &Path, recursive: bool, mode: u32) -> io::Result<()> {
+pub(super) fn make_dir(p: &Path, recursive: bool, mode: u32) -> io::Result<()> {
     let mut b = std::fs::DirBuilder::new();
     b.recursive(recursive);
     #[cfg(unix)]
@@ -478,13 +523,13 @@ fn make_dir(p: &Path, recursive: bool, mode: u32) -> io::Result<()> {
 }
 
 #[cfg(unix)]
-fn set_mode(p: &Path, mode: u32) -> io::Result<()> {
+pub(super) fn set_mode(p: &Path, mode: u32) -> io::Result<()> {
     use std::os::unix::fs::PermissionsExt;
     std::fs::set_permissions(p, std::fs::Permissions::from_mode(mode))
 }
 
 #[cfg(not(unix))]
-fn set_mode(_: &Path, _: u32) -> io::Result<()> {
+pub(super) fn set_mode(_: &Path, _: u32) -> io::Result<()> {
     Ok(())
 }
 
@@ -679,6 +724,32 @@ mod tests {
     use crate::update::install::env::fake::FakeFs;
     use crate::update::version::Version;
 
+    #[test]
+    fn program_version_distinguishes_the_cli_from_the_gui() {
+        assert!(reports_program_version(
+            "siple-cli 0.2.1\n",
+            "siple-cli",
+            "0.2.1"
+        ));
+        assert!(reports_program_version("siple 0.2.1\n", "siple", "0.2.1"));
+        assert!(!reports_program_version(
+            "siple 0.2.1\n",
+            "siple-cli",
+            "0.2.1"
+        ));
+        assert!(!reports_program_version(
+            "siple-cli 0.2.1\n",
+            "siple",
+            "0.2.1"
+        ));
+        assert!(!reports_program_version(
+            "siple-cli 0.2.0\n",
+            "siple-cli",
+            "0.2.1"
+        ));
+        assert!(!reports_program_version("", "siple", "0.2.1"));
+    }
+
     // ---- probe ----
 
     const EXE: &str = "/home/u/siple-0.1.0/bin/siple";
@@ -711,6 +782,16 @@ mod tests {
         let t = probe(good_fs(), EXE, Some(1000), &[]).unwrap();
         assert_eq!(t.root, Path::new(ROOT));
         assert_eq!(t.exe, Path::new(EXE));
+    }
+
+    #[test]
+    fn probe_accepts_a_tarball_started_from_an_appimage_terminal() {
+        let vars = [
+            ("APPIMAGE", "/home/u/Apps/Term.AppImage"),
+            ("APPDIR", "/tmp/.mount_TermAB"),
+        ];
+        let t = probe(good_fs(), EXE, Some(1000), &vars).unwrap();
+        assert_eq!(t.root, Path::new(ROOT));
     }
 
     #[test]
@@ -754,14 +835,6 @@ mod tests {
                 EXE,
                 Some(1000),
                 vec![("SNAP", "/snap/x")],
-                "sandboxed",
-            ),
-            (
-                "appimage",
-                good_fs(),
-                EXE,
-                Some(1000),
-                vec![("APPIMAGE", "/a.AppImage")],
                 "sandboxed",
             ),
             (
@@ -920,6 +993,18 @@ mod tests {
             let got = probe(fs, exe, uid, &vars).expect_err(name);
             assert_eq!(got.reason, reason, "{name}");
         }
+    }
+
+    // Unix paths: `runs_inside` needs absolute paths, and `/home/...` is not absolute on Windows.
+    #[cfg(unix)]
+    #[test]
+    fn probe_refuses_a_tarball_exe_inside_an_appimage() {
+        let vars = vec![
+            ("APPIMAGE", "/a.AppImage"),
+            ("APPDIR", "/home/u/siple-0.1.0"),
+        ];
+        let got = probe(good_fs(), EXE, Some(1000), &vars).expect_err("inside APPDIR");
+        assert_eq!(got.reason, "sandboxed");
     }
 
     #[test]

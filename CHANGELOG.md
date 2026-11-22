@@ -1,6 +1,22 @@
 <!-- siple-rename: keep (this file documents the legacy ZynoPhone names on purpose) -->
 # Changelog
 
+## Unreleased
+
+### New
+
+- AppImage edition for Linux, x86_64 and aarch64 (`Siple-<version>-linux-x86_64.AppImage`, `-linux-aarch64.AppImage`), and an aarch64 tarball (`Siple-<version>-linux-aarch64.tar.gz`), both built natively. Download one file, `chmod +x` and run it.
+  It updates itself in place like the tarball: signed checksum list, a test run of the new file, the file replaced in one
+  step, and a restart only after the call. The CLI is reached with `--cli` or a small `siple-cli` wrapper script.
+  Launch at login starts the AppImage file. Same baseline as the tarball (glibc 2.36, Debian 12+, Ubuntu 23.04+). It needs
+  FUSE 3 (`fusermount3`), or `--appimage-extract-and-run` without it. `status.build.channel` is `appimage`.
+
+- The in-app updater picks the Linux file of its own CPU architecture. x86_64 installs resolve the same files as before.
+
+### Fixed
+
+- The Linux tarball can update itself when it was started from a terminal that is itself an AppImage.
+
 ## 0.2.1 (2026-11-21)
 
 ### Fixed

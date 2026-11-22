@@ -213,10 +213,18 @@ pub enum AssetPlatform {
     WindowsArm64,
     /// `Siple-<v>-linux-x86_64.tar.gz`.
     LinuxX64,
+    /// `Siple-<v>-linux-aarch64.tar.gz`.
+    LinuxArm64,
+    /// `Siple-<v>-linux-x86_64.AppImage`.
+    LinuxAppImageX64,
+    /// `Siple-<v>-linux-aarch64.AppImage`.
+    LinuxAppImageArm64,
 }
 
 impl AssetPlatform {
-    /// The archive of the running binary, when there is one for this OS and architecture.
+    /// The archive of the running binary, when there is one for this OS and architecture: the
+    /// tarball on Linux (`AppImagePlatform::asset` names the AppImage). No production caller.
+    ///
     pub fn current() -> Option<Self> {
         if cfg!(target_os = "macos") {
             Some(Self::MacosZip)
@@ -224,10 +232,28 @@ impl AssetPlatform {
             Some(Self::WindowsX64)
         } else if cfg!(all(windows, target_arch = "aarch64")) {
             Some(Self::WindowsArm64)
-        } else if cfg!(all(target_os = "linux", target_arch = "x86_64")) {
-            Some(Self::LinuxX64)
+        } else if cfg!(target_os = "linux") {
+            Self::linux_tarball(std::env::consts::ARCH)
         } else {
             None
+        }
+    }
+
+    /// The Linux tarball for a CPU architecture (`std::env::consts::ARCH`: `x86_64`, `aarch64`).
+    pub fn linux_tarball(arch: &str) -> Option<Self> {
+        match arch {
+            "x86_64" => Some(Self::LinuxX64),
+            "aarch64" => Some(Self::LinuxArm64),
+            _ => None,
+        }
+    }
+
+    /// The Linux AppImage for a CPU architecture (`std::env::consts::ARCH`).
+    pub fn linux_appimage(arch: &str) -> Option<Self> {
+        match arch {
+            "x86_64" => Some(Self::LinuxAppImageX64),
+            "aarch64" => Some(Self::LinuxAppImageArm64),
+            _ => None,
         }
     }
 
@@ -237,6 +263,9 @@ impl AssetPlatform {
             Self::WindowsX64 => "windows-x64.zip",
             Self::WindowsArm64 => "windows-arm64.zip",
             Self::LinuxX64 => "linux-x86_64.tar.gz",
+            Self::LinuxArm64 => "linux-aarch64.tar.gz",
+            Self::LinuxAppImageX64 => "linux-x86_64.AppImage",
+            Self::LinuxAppImageArm64 => "linux-aarch64.AppImage",
         }
     }
 
@@ -377,6 +406,94 @@ mod tests {
             rc.select(AssetPlatform::LinuxX64, &ver).unwrap().0,
             "Siple-0.3.0-linux-x86_64.tar.gz"
         );
+    }
+
+    #[test]
+    fn the_appimage_and_the_tarball_are_told_apart() {
+        let h = "a".repeat(64);
+        let list = |names: &[&str]| {
+            let t: String = names.iter().map(|n| format!("{h}  {n}\n")).collect();
+            Sums::parse(t.as_bytes()).unwrap()
+        };
+        let ver = v("0.3.0");
+        let tar = "Siple-0.3.0-linux-x86_64.tar.gz";
+        let img = "Siple-0.3.0-linux-x86_64.AppImage";
+        let both = list(&[tar, img]);
+        assert_eq!(both.select(AssetPlatform::LinuxX64, &ver).unwrap().0, tar);
+        assert_eq!(
+            both.select(AssetPlatform::LinuxAppImageX64, &ver)
+                .unwrap()
+                .0,
+            img
+        );
+        // The old-version contract: either edition ignores the other's file.
+        assert_eq!(
+            list(&[tar]).select(AssetPlatform::LinuxAppImageX64, &ver),
+            Err(SumsError::NoAsset)
+        );
+        assert_eq!(
+            list(&[img]).select(AssetPlatform::LinuxX64, &ver),
+            Err(SumsError::NoAsset)
+        );
+        // A release candidate: the full spelling is accepted, both spellings are ambiguous.
+        let rc = v("0.3.0-rc.1");
+        let full = "Siple-0.3.0-rc.1-linux-x86_64.AppImage";
+        assert_eq!(
+            list(&[full])
+                .select(AssetPlatform::LinuxAppImageX64, &rc)
+                .unwrap()
+                .0,
+            full
+        );
+        assert_eq!(
+            list(&[full, img]).select(AssetPlatform::LinuxAppImageX64, &rc),
+            Err(SumsError::Ambiguous)
+        );
+        assert_eq!(
+            list(&["Siple-0.3.0-linux-x86_64.AppImage.zsync"])
+                .select(AssetPlatform::LinuxAppImageX64, &ver),
+            Err(SumsError::NoAsset)
+        );
+    }
+
+    #[test]
+    fn linux_assets_follow_the_architecture() {
+        use AssetPlatform::*;
+        assert_eq!(AssetPlatform::linux_tarball("x86_64"), Some(LinuxX64));
+        assert_eq!(AssetPlatform::linux_tarball("aarch64"), Some(LinuxArm64));
+        assert_eq!(
+            AssetPlatform::linux_appimage("x86_64"),
+            Some(LinuxAppImageX64)
+        );
+        assert_eq!(
+            AssetPlatform::linux_appimage("aarch64"),
+            Some(LinuxAppImageArm64)
+        );
+        for other in ["arm", "arm64", "riscv64", "x86", ""] {
+            assert_eq!(AssetPlatform::linux_tarball(other), None, "{other}");
+            assert_eq!(AssetPlatform::linux_appimage(other), None, "{other}");
+        }
+        // All four coexist in one list; each picks exactly its own (x86_64 names are unchanged).
+        let h = "a".repeat(64);
+        let names = [
+            "Siple-0.3.0-linux-x86_64.tar.gz",
+            "Siple-0.3.0-linux-aarch64.tar.gz",
+            "Siple-0.3.0-linux-x86_64.AppImage",
+            "Siple-0.3.0-linux-aarch64.AppImage",
+        ];
+        let t: String = names.iter().map(|n| format!("{h}  {n}\n")).collect();
+        let list = Sums::parse(t.as_bytes()).unwrap();
+        let ver = v("0.3.0");
+        for (p, want) in [LinuxX64, LinuxArm64, LinuxAppImageX64, LinuxAppImageArm64]
+            .into_iter()
+            .zip(names)
+        {
+            assert_eq!(list.select(p, &ver).unwrap().0, want);
+        }
+        // An older list without aarch64 files gives the aarch64 editions no asset.
+        let old = Sums::parse(format!("{h}  {}\n", names[0]).as_bytes()).unwrap();
+        assert_eq!(old.select(LinuxArm64, &ver), Err(SumsError::NoAsset));
+        assert_eq!(old.select(LinuxX64, &ver).unwrap().0, names[0]);
     }
 
     #[test]

@@ -9,7 +9,7 @@ how you installed Siple.
 
 | Your edition | What the pill offers |
 |---|---|
-| Direct download (zip, dmg, tarball) | **Install and restart** downloads the new version, checks it and installs it in place. If that is not possible, **Download** and **Release notes** open the release page in your browser. |
+| Direct download (zip, dmg, tarball, AppImage; Linux x86_64 and aarch64) | **Install and restart** downloads the new version, checks it and installs it in place. If that is not possible, **Download** and **Release notes** open the release page in your browser. |
 | Mac App Store | **Open App Store** opens Siple's page there. The App Store installs the update. |
 | Flatpak (Flathub) | No pill. Flatpak installs the update: use your software center or `flatpak update`. Siple makes no check of its own. |
 | Microsoft Store | **Open Microsoft Store** opens Siple's page there. The Store does not tell a version number, so the pill reads **Update**. The Store installs the update. |
@@ -25,7 +25,8 @@ To hide an update you do not want yet:
 1. Select the **Update** pill in the header.
 2. Choose **Install and restart**. During a call the button reads **Install, restart after the call**.
 3. Siple downloads the new version, checks it, replaces itself and restarts. Your accounts, settings and passwords are not
-   touched.
+   touched. The AppImage replaces its own file and keeps its name; the previous one stays next to it as `<name>.old-<number>`
+   until the new version has run for a minute.
 
 Nothing is downloaded until you choose **Install and restart** (or a script or agent you run calls `app.install_update`). Siple never restarts during a call. With a call going on, the pill reads
 **Install, restart after the call** and then **Restart to update**. Otherwise Siple waits for five quiet seconds first. The app

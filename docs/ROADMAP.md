@@ -39,8 +39,8 @@ Store editions (Mac App Store, Microsoft Store, Flathub) have their own page: [S
 - **`pickup = "replaces"`** is experimental and not interop-verified.
 - **No echo cancellation or noise suppression**: a headset is assumed. **No STUN or ICE**: NAT handling is rport, Contact
   rewrite, keep-alives, `public_address` and `symmetric_rtp`.
-- **Linux tarball** needs glibc 2.36 (Debian 12, Ubuntu 23.04 and later); Ubuntu 22.04 is excluded until the Flatpak is on
-  Flathub or an AppImage exists.
+- **Linux tarball and AppImage** (x86_64 and aarch64, both built natively; 32-bit ARM is not built) need glibc 2.36 (Debian 12, Ubuntu 23.04 and later); Ubuntu 22.04 is excluded until the
+  Flatpak is on Flathub.
 - **crates.io:** the crates cannot be published while `vendor/rsipstack` carries Siple patches (path dependency).
 
 ## Desktop app
@@ -83,7 +83,7 @@ Store editions (Mac App Store, Microsoft Store, Flathub) have their own page: [S
 
 ## Platforms and packaging
 
-- Packages: Homebrew cask and `siple-cli` formula, winget, AppImage, `.deb` / `.rpm`. The Flathub submission of the
+- Packages: Homebrew cask and `siple-cli` formula, winget, `.deb` / `.rpm`. The Flathub submission of the
   Flatpak build is deferred (see [STORE.md](STORE.md#flathub)).
 - Windows arm64: libopus builds as portable C (no NEON). The `cmake` crate does not set `CMAKE_SYSTEM_PROCESSOR` with this
   toolchain file, and its default `ARM64` would not match opus's `(arm|aarch64)` check anyway. To enable NEON, set

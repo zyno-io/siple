@@ -107,7 +107,9 @@ mod tests {
         let mut child = sleeper(10);
         let t = Instant::now();
         assert!(!wait_for_exit(child.id(), Duration::from_millis(300)));
-        assert!(t.elapsed() >= Duration::from_millis(300));
+        // Not exactly 300 ms: on Windows the wait can return a few ms early (the timer ticks about
+        // every 15.6 ms), so the lower bound leaves room for that granularity.
+        assert!(t.elapsed() >= Duration::from_millis(250));
         assert!(t.elapsed() < Duration::from_secs(5));
         child.kill().unwrap();
         child.wait().unwrap();

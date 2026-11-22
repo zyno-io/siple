@@ -591,6 +591,21 @@ async fn mas_channel_gates_speech_and_reports_build() {
         app.shutdown().await;
     }
 
+    // AppImage: reports its edition and the speech request is not `unsupported`.
+    let app = start_as(&env, Channel::appimage(Path::new("/x/Siple.AppImage"))).await;
+    let mut c = client(&app).await;
+    let build = c.server_info().unwrap()["build"].clone();
+    assert_eq!(build["channel"], "appimage");
+    assert_eq!(build["sandboxed"], false);
+    match c
+        .call("speech.transcribe", json!({"wav_base64": "AAAA"}))
+        .await
+    {
+        Err(ClientError::Api(e)) => assert_ne!(e.kind, ErrorKind::Unsupported),
+        other => panic!("{other:?}"),
+    }
+    app.shutdown().await;
+
     // Direct: same request is not `unsupported`.
     let app = start_as(&env, Channel::DIRECT).await;
     let mut c = client(&app).await;

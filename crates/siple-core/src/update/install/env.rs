@@ -13,6 +13,10 @@ pub trait Fs: Send + Sync {
     fn exists(&self, p: &Path) -> bool;
     /// The path is a directory.
     fn is_dir(&self, p: &Path) -> bool;
+    /// The path is a regular file (symlinks are followed).
+    fn is_file(&self, p: &Path) -> bool;
+    /// The path with symlinks resolved; the path itself when that fails.
+    fn canonical(&self, p: &Path) -> PathBuf;
     /// A small text file, when it can be read.
     fn read_to_string(&self, p: &Path) -> Option<String>;
     /// A file can be created in (and removed from) this directory by this process.
@@ -86,6 +90,14 @@ impl Fs for RealFs {
 
     fn is_dir(&self, p: &Path) -> bool {
         p.is_dir()
+    }
+
+    fn is_file(&self, p: &Path) -> bool {
+        p.is_file()
+    }
+
+    fn canonical(&self, p: &Path) -> PathBuf {
+        std::fs::canonicalize(p).unwrap_or_else(|_| p.into())
     }
 
     fn read_to_string(&self, p: &Path) -> Option<String> {
@@ -237,6 +249,12 @@ pub(crate) mod fake {
         }
         fn is_dir(&self, p: &Path) -> bool {
             self.dirs.contains(p)
+        }
+        fn is_file(&self, p: &Path) -> bool {
+            self.files.contains_key(p)
+        }
+        fn canonical(&self, p: &Path) -> PathBuf {
+            p.into()
         }
         fn read_to_string(&self, p: &Path) -> Option<String> {
             self.files.get(p).cloned()

@@ -8,8 +8,9 @@
 //!   [`windows_entries`] (pure), applied with `winreg`.
 //! - macOS: `CFBundleURLTypes` in `Info.plist` (packaging) and an Apple Event handler in the
 //!   running app (`platform::macos`); nothing to do at runtime.
-//! - Linux: `MimeType=x-scheme-handler/...` in the `.desktop` file and `xdg-mime default` at
-//!   install time (packaging); the app does not run `xdg-mime`.
+//! - Linux tarball and AppImage: `MimeType=x-scheme-handler/...` in the `.desktop` file and
+//!   `xdg-mime default` at install time (the user, or an AppImage integrator); the app does not
+//!   run `xdg-mime`.
 
 use std::path::Path;
 

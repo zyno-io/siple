@@ -49,26 +49,44 @@ jobs:
           esac
 
   linux:
-    name: Linux x86_64 tarball
+    name: Linux ${{ matrix.arch }} tarball and AppImage
     needs: preflight
-    runs-on: ubuntu-latest
+    # Native builds in the multi-arch image, no cross-compiling (a free arm runner for public repos).
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-latest
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
     # glibc 2.36 baseline: runs on Debian 12+ / Ubuntu 23.04+ (see scripts/package-linux.sh).
     container: rust:1.100-bookworm
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Install build dependencies
-        run: apt-get update -qq && apt-get install -y -qq cmake pkg-config libasound2-dev
+        run: apt-get update -qq && apt-get install -y -qq cmake pkg-config libasound2-dev squashfs-tools
       - uses: taiki-e/install-action@25f51f6b1bf4e18876107cece836f4f77ac17c8c # v2.90.7
         with:
           tool: cargo-about
       - name: Package
         run: scripts/package-linux.sh # fails on unexpected NEEDED libraries
-      # Linux has no code-signing step: integrity comes from SHA256SUMS + build-provenance
-      # attestations, created in the `release` job over the final files.
+      # Same binaries as the tarball; the runtime is pinned by sha256 and its upstream signature is
+      # checked (scripts/appimage-pins.sh).
+      - name: AppImage
+        run: scripts/package-appimage.sh
+      - name: "AppImage smoke test (no FUSE here, extract-and-run)"
+        run: scripts/appimage-smoke.sh dist/Siple-*-linux-${{ matrix.arch }}.AppImage
+      # Linux (tarball and AppImage) has no code-signing step: integrity comes from SHA256SUMS +
+      # build-provenance attestations, created in the `release` job over the final files.
+      # upload-artifact drops the executable bit; content hashes are unaffected and users chmod +x.
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: ${{ env.IS_TAG == 'true' && 'release-linux' || 'unsigned-linux' }}
-          path: dist/Siple-*-linux-x86_64.tar.gz
+          name: ${{ env.IS_TAG == 'true' && format('release-linux-{0}', matrix.arch) || format('unsigned-linux-{0}', matrix.arch) }}
+          path: |
+            dist/Siple-*-linux-${{ matrix.arch }}.tar.gz
+            dist/Siple-*-linux-${{ matrix.arch }}.AppImage
           if-no-files-found: error
 
   macos:
@@ -357,6 +375,15 @@ jobs:
           merge-multiple: true
           path: dist
 
+      # The in-app updater picks its file by exact name and needs exactly one match per platform.
+      - name: Exactly one file per asset
+        run: |
+          for p in '*-linux-x86_64.tar.gz' '*-linux-aarch64.tar.gz' '*-linux-x86_64.AppImage' \
+            '*-linux-aarch64.AppImage' '*-macos.zip' '*-macos.dmg' '*-windows-x64.zip' '*-windows-arm64.zip' 'THIRD-PARTY-NOTICES.html'; do
+            n="$(find dist -maxdepth 1 -name "$p" | wc -l)"
+            [ "$n" = 1 ] || { echo "::error::expected exactly one dist/$p, found $n"; exit 1; }
+          done
+
       - name: SHA256SUMS over the final files
         run: |
           cd dist
@@ -404,6 +431,7 @@ jobs:
             dist/*.tar.gz
             dist/*.zip
             dist/*.dmg
+            dist/*.AppImage
             dist/THIRD-PARTY-NOTICES.html
             dist/SHA256SUMS
             dist/SHA256SUMS.minisig

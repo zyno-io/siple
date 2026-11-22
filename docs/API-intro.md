@@ -39,8 +39,8 @@ connection is closed. A connection that does not complete `hello` within 10 s (3
 
 - `token` is optional on the Unix socket / named pipe (the OS already restricts access) but
   mandatory on TCP. If sent it must be correct.
-- `build` says which edition answers: `channel` is `direct`, `mas` (Mac App Store, sandboxed) or
-  `msix` (Microsoft Store package); `store` is true for store editions, which are compiled without the GitHub update source (they
+- `build` says which edition answers: `channel` is `direct`, `appimage` (Linux AppImage), `mas` (Mac App Store, sandboxed),
+  `msix` (Microsoft Store package) or `flatpak`; `store` is true for store editions, which are compiled without the GitHub update source (they
   check their own store instead: see `app.update_status` `source`).
   `status` carries the same object. Some features are unavailable in some editions (see `unsupported`).
 - `instance_id` is random per process run. **If it differs from the one you saw before, the

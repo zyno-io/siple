@@ -1,5 +1,5 @@
 //! Distribution channel: how this process was installed (direct download, Mac App Store,
-//! Microsoft Store MSIX, Flatpak) and the file locations that follow from it.
+//! Microsoft Store MSIX, Flatpak, Linux AppImage) and the file locations that follow from it.
 //!
 //! Detection looks at the process, not at the build: macOS sandbox containers set
 //! `APP_SANDBOX_CONTAINER_ID`, an MSIX process has a package identity, and a Linux Flatpak sandbox
@@ -26,6 +26,9 @@ pub enum ChannelKind {
     Msix,
     /// Flatpak sandbox (Flathub): config in the per-app `$XDG_CONFIG_HOME`, no external programs.
     Flatpak,
+    /// Linux AppImage (direct download, one self-mounting file): platform defaults apply; the
+    /// running executable lives in a temporary mount, `Channel::appimage` is the file.
+    AppImage,
 }
 
 impl ChannelKind {
@@ -36,6 +39,7 @@ impl ChannelKind {
             Self::MacAppStore => "mas",
             Self::Msix => "msix",
             Self::Flatpak => "flatpak",
+            Self::AppImage => "appimage",
         }
     }
 }
@@ -53,6 +57,11 @@ pub struct Channel {
     pub package_family: Option<&'static str>,
     /// MSIX application user model id (toast identity).
     pub aumid: Option<&'static str>,
+    /// AppImage: the `.AppImage` file this process runs from (`$APPIMAGE`, canonical).
+    pub appimage: Option<&'static Path>,
+    /// AppImage: this copy runs from an extraction directory (no FUSE), so every later start of the
+    /// file needs `--appimage-extract-and-run` too.
+    pub appimage_extracted: bool,
 }
 
 impl Channel {
@@ -63,6 +72,8 @@ impl Channel {
         can_exec: true,
         package_family: None,
         aumid: None,
+        appimage: None,
+        appimage_extracted: false,
     };
     /// A Mac App Store sandboxed process.
     pub const MAC_APP_STORE: Channel = Channel {
@@ -71,6 +82,8 @@ impl Channel {
         can_exec: false,
         package_family: None,
         aumid: None,
+        appimage: None,
+        appimage_extracted: false,
     };
 
     /// A Flatpak (Flathub) process.
@@ -80,6 +93,8 @@ impl Channel {
         can_exec: false,
         package_family: None,
         aumid: None,
+        appimage: None,
+        appimage_extracted: false,
     };
 
     /// An MSIX-packaged process.
@@ -90,14 +105,77 @@ impl Channel {
             can_exec: true,
             package_family: Some(package_family),
             aumid,
+            appimage: None,
+            appimage_extracted: false,
         }
     }
 
-    /// Installed through a store (OS-managed install and updates, no self-update, no OS
+    /// A Linux AppImage process running from `file` (the canonical `$APPIMAGE`).
+    pub fn appimage(file: &'static Path) -> Channel {
+        Channel {
+            kind: ChannelKind::AppImage,
+            sandboxed: false,
+            can_exec: true,
+            package_family: None,
+            aumid: None,
+            appimage: Some(file),
+            appimage_extracted: false,
+        }
+    }
+
+    /// The same AppImage channel, running from an extraction directory (`--appimage-extract-and-run`,
+    /// no FUSE).
+    pub fn with_extracted(mut self, extracted: bool) -> Channel {
+        self.appimage_extracted = extracted;
+        self
+    }
+
+    /// Store or sandbox managed (OS-managed install and updates, no self-update, no OS
     /// integration written by the app itself).
     pub fn is_packaged(&self) -> bool {
-        self.kind != ChannelKind::Direct
+        matches!(
+            self.kind,
+            ChannelKind::MacAppStore | ChannelKind::Msix | ChannelKind::Flatpak
+        )
     }
+
+    /// Arguments that must come first when the file is started again: `--appimage-extract-and-run`
+    /// for an AppImage that runs from an extraction directory (the runtime honours it only as the
+    /// first argument), nothing otherwise.
+    pub fn launch_args_prefix(&self) -> &'static [&'static str] {
+        if self.appimage.is_some() && self.appimage_extracted {
+            &["--appimage-extract-and-run"]
+        } else {
+            &[]
+        }
+    }
+
+    /// What a login item or a relaunch must start: the AppImage file, never its temporary mount;
+    /// otherwise the running executable.
+    pub fn launch_target(&self) -> std::io::Result<PathBuf> {
+        match self.appimage {
+            Some(f) => Ok(f.to_path_buf()),
+            None => std::env::current_exe(),
+        }
+    }
+}
+
+/// What the AppImage runtime names the extraction directory of an `--appimage-extract-and-run` start
+/// (`appimage_extracted_XXXXXX`, unlike the `.mount_XXXXXX` of a FUSE mount).
+const EXTRACTED_PREFIX: &str = "appimage_extracted_";
+
+/// Whether `appdir` (`$APPDIR`) is an extraction directory, not a FUSE mount. The one source of
+/// truth for the login item, the MCP snippet and the relaunch.
+pub fn appdir_is_extracted(appdir: &Path) -> bool {
+    appdir
+        .file_name()
+        .and_then(|n| n.to_str())
+        .is_some_and(|n| n.starts_with(EXTRACTED_PREFIX))
+}
+
+/// Whether `exe` lies inside `appdir` (both absolute; `exe` is not `appdir` itself).
+pub fn runs_inside(exe: &Path, appdir: &Path) -> bool {
+    exe.is_absolute() && appdir.is_absolute() && exe != appdir && exe.starts_with(appdir)
 }
 
 /// The channel of this process, detected once.
@@ -156,17 +234,50 @@ fn detect() -> Channel {
 
 #[cfg(target_os = "linux")]
 fn detect() -> Channel {
-    detect_in(Path::new("/"))
+    let exe = std::env::current_exe()
+        .ok()
+        .and_then(|e| std::fs::canonicalize(e).ok());
+    detect_in(Path::new("/"), &|k| std::env::var_os(k), exe.as_deref())
 }
 
 /// Flatpak writes `/.flatpak-info` into every sandbox; it never exists on the host. It must name
 /// this app: the tarball run inside another app's sandbox (or a stray file) is not the Flatpak edition.
+/// Otherwise the AppImage runtime's `APPIMAGE`/`APPDIR` (see [`appimage_file`]) make it the AppImage.
 #[cfg(any(target_os = "linux", test))]
-fn detect_in(root: &Path) -> Channel {
+fn detect_in(
+    root: &Path,
+    var: &dyn Fn(&str) -> Option<std::ffi::OsString>,
+    exe: Option<&Path>,
+) -> Channel {
     match std::fs::read_to_string(root.join(".flatpak-info")) {
         Ok(text) if flatpak_info_app(&text).as_deref() == Some(FLATPAK_APP_ID) => Channel::FLATPAK,
-        _ => Channel::DIRECT,
+        _ => match appimage_file(var, exe) {
+            // Leaked once: the channel lives for the whole process.
+            Some(f) => {
+                let extracted = var("APPDIR").is_some_and(|d| appdir_is_extracted(Path::new(&d)));
+                Channel::appimage(Box::leak(f.into_boxed_path())).with_extracted(extracted)
+            }
+            None => Channel::DIRECT,
+        },
     }
+}
+
+/// The canonical `.AppImage` file when this process runs from one: `APPIMAGE` (a regular file) and
+/// `APPDIR` are absolute and the executable lies inside `APPDIR`. A terminal that is itself an
+/// AppImage (WezTerm, VS Code...) leaks both variables to every shell; the executable check keeps
+/// programs started there `Direct`.
+#[cfg(any(target_os = "linux", test))]
+fn appimage_file(
+    var: &dyn Fn(&str) -> Option<std::ffi::OsString>,
+    exe: Option<&Path>,
+) -> Option<PathBuf> {
+    let abs = |k: &str| var(k).map(PathBuf::from).filter(|p| p.is_absolute());
+    let file = std::fs::canonicalize(abs("APPIMAGE")?).ok()?;
+    let appdir = std::fs::canonicalize(abs("APPDIR")?).ok()?;
+    if !file.is_file() {
+        return None;
+    }
+    runs_inside(exe?, &appdir).then_some(file)
 }
 
 /// The Flatpak application id.
@@ -268,11 +379,40 @@ pub fn mas_group_dir() -> Option<PathBuf> {
     real_home().map(|h| mas_group_in(&h))
 }
 
+/// Marks every inherited descriptor above stderr close-on-exec.
+///
+/// The AppImage runtime (FUSE mode) leaves the read end of its keep-alive pipe (fd 3) and the
+/// mount directory (fd 1023) open without `FD_CLOEXEC`. The FUSE daemon unmounts only when every
+/// holder of the pipe has closed it, so a relaunched new version or a browser started by
+/// `xdg-open` would keep the old mount (and the replaced, deleted file) alive and successive
+/// updates would chain mounts.
+#[cfg(target_os = "linux")]
+pub fn cloexec_inherited_fds() {
+    let fds: Vec<i32> = match std::fs::read_dir("/proc/self/fd") {
+        Ok(rd) => rd
+            .filter_map(|e| e.ok()?.file_name().to_str()?.parse().ok())
+            .collect(),
+        Err(_) => return,
+    };
+    for fd in fds.into_iter().filter(|&fd| fd > 2) {
+        // SAFETY: fcntl on an arbitrary integer descriptor only reads or sets its flags; a
+        // closed one (the directory handle itself) returns EBADF.
+        unsafe {
+            let flags = libc::fcntl(fd, libc::F_GETFD);
+            if flags >= 0 {
+                libc::fcntl(fd, libc::F_SETFD, flags | libc::FD_CLOEXEC);
+            }
+        }
+    }
+}
+
 /// Config directory for `channel`, or `None` when it cannot be determined.
-/// [`ChannelKind::Direct`] uses the platform default.
+/// [`ChannelKind::Direct`] and [`ChannelKind::AppImage`] use the platform default.
 pub fn config_dir_for_channel(channel: &Channel) -> Option<PathBuf> {
     match channel.kind {
-        ChannelKind::Direct => crate::paths::direct_config_dir(),
+        // The AppImage uses the same config as the tarball; the runtime's portable `<file>.config`
+        // arrives as `XDG_CONFIG_HOME`, which `direct_config_dir()` honours.
+        ChannelKind::Direct | ChannelKind::AppImage => crate::paths::direct_config_dir(),
         ChannelKind::MacAppStore => real_home().map(|h| mas_dir_in(&h)),
         ChannelKind::Msix => {
             let pfn = channel.package_family?;
@@ -347,27 +487,34 @@ mod tests {
         let f = std::hint::black_box(Channel::FLATPAK);
         assert!(f.is_packaged() && f.sandboxed && !f.can_exec);
         assert_eq!(ChannelKind::Flatpak.as_str(), "flatpak");
+        let a = Channel::appimage(Path::new("/x/Siple.AppImage"));
+        assert!(!a.is_packaged() && a.can_exec && !a.sandboxed);
+        assert_eq!(a.kind.as_str(), "appimage");
     }
 
     #[test]
     fn flatpak_is_detected_by_flatpak_info() {
         let d = tempfile::tempdir().unwrap();
-        assert_eq!(detect_in(d.path()), Channel::DIRECT);
+        assert_eq!(detect_in(d.path(), &|_| None, None), Channel::DIRECT);
         std::fs::create_dir(d.path().join(".flatpak-info")).unwrap();
-        assert_eq!(detect_in(d.path()), Channel::DIRECT);
+        assert_eq!(detect_in(d.path(), &|_| None, None), Channel::DIRECT);
         std::fs::remove_dir(d.path().join(".flatpak-info")).unwrap();
         std::fs::write(d.path().join(".flatpak-info"), "[Application]\n").unwrap();
-        assert_eq!(detect_in(d.path()), Channel::DIRECT, "no name");
+        assert_eq!(
+            detect_in(d.path(), &|_| None, None),
+            Channel::DIRECT,
+            "no name"
+        );
         let info = d.path().join(".flatpak-info");
         std::fs::write(&info, "[Application]\nname=io.zyno.siple\nruntime=x\n").unwrap();
-        assert_eq!(detect_in(d.path()), Channel::FLATPAK);
+        assert_eq!(detect_in(d.path(), &|_| None, None), Channel::FLATPAK);
         std::fs::write(
             &info,
             "[Instance]\nx=1\n\n [ Application ] \n name = io.zyno.siple \n",
         )
         .unwrap();
         assert_eq!(
-            detect_in(d.path()),
+            detect_in(d.path(), &|_| None, None),
             Channel::FLATPAK,
             "whitespace is tolerated"
         );
@@ -386,7 +533,11 @@ mod tests {
             "",
         ] {
             std::fs::write(&info, text).unwrap();
-            assert_eq!(detect_in(d.path()), Channel::DIRECT, "{text:?}");
+            assert_eq!(
+                detect_in(d.path(), &|_| None, None),
+                Channel::DIRECT,
+                "{text:?}"
+            );
         }
     }
 
@@ -396,6 +547,228 @@ mod tests {
             config_dir_for_channel(&Channel::FLATPAK),
             crate::paths::direct_config_dir()
         );
+    }
+
+    /// A tempdir with `appdir/usr/bin/siple` and `x/Siple.AppImage`: (guard, appdir, exe, file).
+    fn appimage_fixture() -> (tempfile::TempDir, PathBuf, PathBuf, PathBuf) {
+        let d = tempfile::tempdir().unwrap();
+        let root = std::fs::canonicalize(d.path()).unwrap();
+        let appdir = root.join("appdir");
+        std::fs::create_dir_all(appdir.join("usr/bin")).unwrap();
+        let exe = appdir.join("usr/bin/siple");
+        std::fs::write(&exe, "x").unwrap();
+        std::fs::create_dir(root.join("x")).unwrap();
+        let file = root.join("x/Siple.AppImage");
+        std::fs::write(&file, "x").unwrap();
+        (d, appdir, exe, file)
+    }
+
+    fn vars<'a>(
+        appimage: Option<&'a Path>,
+        appdir: Option<&'a Path>,
+    ) -> impl Fn(&str) -> Option<std::ffi::OsString> + 'a {
+        move |k| match k {
+            "APPIMAGE" => appimage.map(|p| p.as_os_str().to_owned()),
+            "APPDIR" => appdir.map(|p| p.as_os_str().to_owned()),
+            _ => None,
+        }
+    }
+
+    #[test]
+    fn appimage_is_detected_from_appimage_appdir_and_exe() {
+        let (d, appdir, exe, file) = appimage_fixture();
+        let none = tempfile::tempdir().unwrap();
+        let c = detect_in(none.path(), &vars(Some(&file), Some(&appdir)), Some(&exe));
+        assert_eq!(c.kind, ChannelKind::AppImage);
+        assert_eq!(c.appimage, Some(file.as_path()));
+        drop(d);
+    }
+
+    #[test]
+    fn leaked_appimage_variables_do_not_make_an_appimage() {
+        let (_d, appdir, _exe, file) = appimage_fixture();
+        let none = tempfile::tempdir().unwrap();
+        let outside = Path::new("/usr/bin/siple");
+        let c = detect_in(
+            none.path(),
+            &vars(Some(&file), Some(&appdir)),
+            Some(outside),
+        );
+        assert_eq!(c, Channel::DIRECT);
+    }
+
+    #[test]
+    fn appimage_needs_absolute_variables_and_a_file() {
+        let (d, appdir, exe, file) = appimage_fixture();
+        let none = tempfile::tempdir().unwrap();
+        let go = |a: Option<&Path>, b: Option<&Path>, e: Option<&Path>| {
+            detect_in(none.path(), &vars(a, b), e)
+        };
+        assert_eq!(go(None, Some(&appdir), Some(&exe)), Channel::DIRECT);
+        assert_eq!(go(Some(&file), None, Some(&exe)), Channel::DIRECT);
+        assert_eq!(
+            go(Some(Path::new("")), Some(&appdir), Some(&exe)),
+            Channel::DIRECT
+        );
+        assert_eq!(
+            go(
+                Some(Path::new("x/Siple.AppImage")),
+                Some(&appdir),
+                Some(&exe)
+            ),
+            Channel::DIRECT,
+            "relative"
+        );
+        assert_eq!(
+            go(Some(Path::new("appdir")), Some(&appdir), Some(&exe)),
+            Channel::DIRECT,
+            "relative appdir"
+        );
+        let missing = d.path().join("nope.AppImage");
+        assert_eq!(
+            go(Some(&missing), Some(&appdir), Some(&exe)),
+            Channel::DIRECT
+        );
+        assert_eq!(
+            go(Some(&appdir), Some(&appdir), Some(&exe)),
+            Channel::DIRECT,
+            "APPIMAGE is a directory"
+        );
+        assert_eq!(
+            go(Some(&file), Some(&d.path().join("gone")), Some(&exe)),
+            Channel::DIRECT
+        );
+        assert_eq!(
+            go(Some(&file), Some(&appdir), Some(&appdir)),
+            Channel::DIRECT,
+            "exe == appdir"
+        );
+        assert_eq!(go(Some(&file), Some(&appdir), None), Channel::DIRECT);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlinked_appdir_is_canonicalized() {
+        let (d, appdir, exe, file) = appimage_fixture();
+        let link = d.path().join("link");
+        std::os::unix::fs::symlink(&appdir, &link).unwrap();
+        let flink = d.path().join("flink.AppImage");
+        std::os::unix::fs::symlink(&file, &flink).unwrap();
+        let none = tempfile::tempdir().unwrap();
+        let c = detect_in(none.path(), &vars(Some(&flink), Some(&link)), Some(&exe));
+        assert_eq!(c.kind, ChannelKind::AppImage);
+        assert_eq!(c.appimage, Some(file.as_path()));
+    }
+
+    #[test]
+    fn the_flatpak_wins_over_appimage_variables() {
+        let (_d, appdir, exe, file) = appimage_fixture();
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(
+            root.path().join(".flatpak-info"),
+            "[Application]\nname=io.zyno.siple\n",
+        )
+        .unwrap();
+        let c = detect_in(root.path(), &vars(Some(&file), Some(&appdir)), Some(&exe));
+        assert_eq!(c, Channel::FLATPAK);
+    }
+
+    #[test]
+    fn appimage_uses_the_direct_config_dir() {
+        let c = Channel::appimage(Path::new("/x/Siple.AppImage"));
+        assert_eq!(
+            config_dir_for_channel(&c),
+            crate::paths::direct_config_dir()
+        );
+    }
+
+    #[test]
+    fn extraction_directories_are_told_from_mounts() {
+        assert!(appdir_is_extracted(Path::new(
+            "/tmp/appimage_extracted_ab12cd"
+        )));
+        assert!(!appdir_is_extracted(Path::new("/tmp/.mount_SipleAB")));
+        assert!(!appdir_is_extracted(Path::new("/")));
+    }
+
+    #[test]
+    fn launch_args_prefix_is_set_only_for_an_extracted_appimage() {
+        let mounted = Channel::appimage(Path::new("/x/Siple.AppImage"));
+        assert!(mounted.launch_args_prefix().is_empty());
+        let extracted = mounted.with_extracted(true);
+        assert_eq!(
+            extracted.launch_args_prefix(),
+            ["--appimage-extract-and-run"]
+        );
+        assert!(
+            Channel::DIRECT
+                .with_extracted(true)
+                .launch_args_prefix()
+                .is_empty(),
+            "only the AppImage channel has a prefix"
+        );
+    }
+
+    #[test]
+    fn extraction_is_detected_from_the_appdir_name() {
+        let (_d, appdir, exe, file) = appimage_fixture();
+        let none = tempfile::tempdir().unwrap();
+        let c = detect_in(none.path(), &vars(Some(&file), Some(&appdir)), Some(&exe));
+        assert!(!c.appimage_extracted, "appdir is not appimage_extracted_*");
+        let extracted = appdir.parent().unwrap().join("appimage_extracted_AbC123");
+        std::fs::rename(&appdir, &extracted).unwrap();
+        let exe = extracted.join("usr/bin/siple");
+        let c = detect_in(
+            none.path(),
+            &vars(Some(&file), Some(&extracted)),
+            Some(&exe),
+        );
+        assert_eq!(c.kind, ChannelKind::AppImage);
+        assert!(c.appimage_extracted);
+        assert_eq!(c.launch_args_prefix(), ["--appimage-extract-and-run"]);
+    }
+
+    #[test]
+    fn launch_target_is_the_appimage_file() {
+        let c = Channel::appimage(Path::new("/x/Siple.AppImage"));
+        assert_eq!(c.launch_target().unwrap(), Path::new("/x/Siple.AppImage"));
+        assert_eq!(
+            Channel::DIRECT.launch_target().unwrap(),
+            std::env::current_exe().unwrap()
+        );
+    }
+
+    // Unix paths: `/a/b` is not absolute on Windows, and AppImages are Linux-only.
+    #[cfg(unix)]
+    #[test]
+    fn runs_inside_is_strict() {
+        assert!(runs_inside(
+            Path::new("/a/b/usr/bin/siple"),
+            Path::new("/a/b")
+        ));
+        assert!(!runs_inside(Path::new("/a/b"), Path::new("/a/b")));
+        assert!(!runs_inside(Path::new("/a/bc/x"), Path::new("/a/b")));
+        assert!(!runs_inside(Path::new("a/b/x"), Path::new("a/b")));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn cloexec_marks_inherited_descriptors() {
+        let mut fds = [0i32; 2];
+        // SAFETY: `fds` has room for two descriptors.
+        assert_eq!(unsafe { libc::pipe(fds.as_mut_ptr()) }, 0);
+        let flags = |fd| unsafe { libc::fcntl(fd, libc::F_GETFD) };
+        assert_eq!(flags(fds[0]) & libc::FD_CLOEXEC, 0);
+        let std_before: Vec<i32> = (0..3).map(flags).collect();
+        cloexec_inherited_fds();
+        assert_ne!(flags(fds[0]) & libc::FD_CLOEXEC, 0);
+        assert_ne!(flags(fds[1]) & libc::FD_CLOEXEC, 0);
+        assert_eq!((0..3).map(flags).collect::<Vec<_>>(), std_before);
+        // SAFETY: closing the pipe ends opened above.
+        unsafe {
+            libc::close(fds[0]);
+            libc::close(fds[1]);
+        }
     }
 
     #[cfg(unix)]

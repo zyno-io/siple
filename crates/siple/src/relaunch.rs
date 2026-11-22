@@ -8,6 +8,10 @@
 //! by then; the new process also waits for this pid (`--wait-pid`, a permanent part of the command
 //! line) before it looks for them.
 //!
+//! The Linux AppImage is started as the file itself (never its temporary mount); a copy that ran
+//! without FUSE restarts the new one the same way with `--appimage-extract-and-run`, which the
+//! runtime only honours as the first argument.
+//!
 //! Carried over: `--config <absolute path>` when the config is not the default one (the macOS
 //! `open -n` drops environment variables such as `SIPLE_CONFIG`) and `--no-audio`. A link argument
 //! is never carried over. The window state at the moment of the update is passed as
@@ -79,6 +83,20 @@ pub fn command_line(
             args.extend(["--window".to_string(), window_arg(window).to_string()]);
             (exe.display().to_string(), args)
         }
+        RelaunchSpec::AppImage {
+            file,
+            extract_and_run,
+        } => {
+            // A runtime option counts only as the first argument that starts with `--`.
+            let mut args = Vec::new();
+            if *extract_and_run {
+                args.push("--appimage-extract-and-run".to_string());
+            }
+            args.extend(["--wait-pid".to_string(), pid]);
+            args.extend(carried.iter().cloned());
+            args.extend(["--window".to_string(), window_arg(window).to_string()]);
+            (file.display().to_string(), args)
+        }
     }
 }
 
@@ -111,6 +129,30 @@ pub fn spawn_pending() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn appimage_relaunch_runs_the_file_not_the_mount() {
+        let spec = |extract_and_run| RelaunchSpec::AppImage {
+            file: "/home/u/Applications/Siple.AppImage".into(),
+            extract_and_run,
+        };
+        let (p, a) = command_line(&spec(false), 7, &[], WindowArg::Shown);
+        assert_eq!(p, "/home/u/Applications/Siple.AppImage");
+        assert_eq!(a, ["--wait-pid", "7", "--window", "shown"]);
+        let carried = ["--no-audio".to_string()];
+        let (_, a) = command_line(&spec(true), 7, &carried, WindowArg::Hidden);
+        assert_eq!(
+            a,
+            [
+                "--appimage-extract-and-run",
+                "--wait-pid",
+                "7",
+                "--no-audio",
+                "--window",
+                "hidden"
+            ]
+        );
+    }
 
     #[test]
     fn mac_uses_open_with_a_new_instance_and_the_old_pid() {
