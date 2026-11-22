@@ -4,23 +4,11 @@
 # it never blocks release.yml. docs/RELEASING.md, "Flatpak (Flathub)".
 name: Flatpak
 
+# Disabled while the Flathub submission is deferred (docs/STORE.md): runs only when dispatched by hand
+# (`gh workflow run flatpak.yml --ref <tag or branch>`). Restore the tag, pull_request and weekly
+# triggers from git history when Flathub is back on the table.
 on:
   workflow_dispatch:
-  push:
-    tags: ["v*"]
-  pull_request:
-    paths:
-      - packaging/flatpak/**
-      - packaging/linux/**
-      - packaging/icons/**
-      - scripts/flatpak-*
-      - scripts/flathub-manifest.sh
-      - .github/workflows/flatpak.yml
-      - Cargo.lock
-      - Cargo.toml
-      - CHANGELOG.md
-  schedule:
-    - cron: "17 5 * * 1" # weekly: runtime, Rust extension and linter drift
 
 permissions:
   contents: read

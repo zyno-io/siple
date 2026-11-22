@@ -8,7 +8,7 @@ needed to finish it. How the store packages are built, signed and uploaded today
 `.pkg` (signed when `STORE_MAS_ENABLED` and its secrets are set) and, for final `X.Y.Z` tags only, an unsigned Microsoft
 Store `.msixbundle` (x64 + arm64); release candidates get TestFlight and the sideload bundle only. The editions exist in code (`build.channel` `mas` / `msix`,
 see [CONFIG.md](CONFIG.md#location)); neither is published yet. Since 0.2.0 the Flatpak edition
-(`io.zyno.siple`, `build.channel` `flatpak`) is built by `.github/workflows/flatpak.yml`; the Flathub submission is pending.
+(`io.zyno.siple`, `build.channel` `flatpak`) is built by `.github/workflows/flatpak.yml` (dispatch only for now, to save CI time); the Flathub submission is pending.
 
 ## Decisions
 

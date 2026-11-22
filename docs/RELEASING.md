@@ -30,8 +30,8 @@ no secrets, signs nothing and publishes nothing. A tag without all secrets below
 | `windows-sign` | windows | `release` env | per arch: Azure Artifact Signing of `siple.exe` + `siple-cli.exe`, verify, then zip |
 | `release` | ubuntu | `release` env | `SHA256SUMS`, attestations, `gh release create --draft` |
 
-`flatpak.yml` (no secrets) is a separate run, like `store.yml`: it builds, lints and smoke-tests the Flatpak bundles as workflow
-artifacts and never blocks `release.yml`. See "Flatpak (Flathub)".
+`flatpak.yml` (no secrets, **disabled for now**: dispatch only, see "Flatpak (Flathub)") is a separate run, like `store.yml`: it builds,
+lints and smoke-tests the Flatpak bundles as workflow artifacts and never blocks `release.yml`. See "Flatpak (Flathub)".
 
 Secrets are only in jobs that never run `cargo` (a malicious build script cannot read them). macOS is signed on a
 macOS runner because the bundle is built there, `rcodesign` runs natively, and `hdiutil` (dmg) and `xcrun stapler` /
@@ -334,8 +334,9 @@ What is left before the store editions are listed: [STORE.md](STORE.md).
 
 ## Flatpak (Flathub)
 
-`.github/workflows/flatpak.yml` runs on `v*` tags, on `workflow_dispatch`, weekly (runtime, Rust extension and linter drift) and on
-pull requests that touch the packaging files. It is its own run (it never blocks `release.yml`) and has no secrets. It builds
+`.github/workflows/flatpak.yml` is **disabled for now**: while the Flathub submission is deferred it runs only when dispatched by
+hand (`gh workflow run flatpak.yml --ref <tag>`). Before that it ran on `v*` tags, weekly and on pull requests that touch the
+packaging files; restore those triggers from git history when Flathub is back. It is its own run (it never blocks `release.yml`) and has no secrets. It builds
 `packaging/flatpak/io.zyno.siple.yml` on x86_64 and aarch64 natively, inside Flathub's build image
 (`ghcr.io/flathub-infra/flatpak-github-actions:freedesktop-26.08`, pinned by digest), like Flathub does (screenshot mirroring;
 without `--sandbox`, which refuses the manifest's local `type: dir` source: the Flathub-rendered manifest uses a git source and
