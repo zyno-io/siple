@@ -30,7 +30,7 @@ Linux) while its window is hidden. Turn it off to keep the Dock icon, or to mini
 ## Start in the tray when you sign in
 
 1. Turn on **Start hidden** under **Settings › Notifications** so Siple opens without a window.
-2. Turn on launch at login. This one is a config file setting, not a switch in the window: see the details below.
+2. Turn on **Start Siple when you log in** under **Settings › Notifications**.
 
 Together they put Siple in your tray each time you sign in to your computer.
 
@@ -61,15 +61,15 @@ All of these keys are under `[ui]`. See the [reference](/reference/configuration
 | **Closing the window keeps Siple running** | `close_to_tray` | on |
 | **Hide from the taskbar / Dock while hidden** | `hide_from_taskbar` | on |
 | **Start hidden** | `start_hidden` | off |
-| (config file only) | `launch_at_login` | off |
+| **Start Siple when you log in** | `launch_at_login` | off |
 | **Show the window on an incoming call** | `show_on_incoming` | on |
 | **Show the window when a call is answered** | `show_on_answer` | off |
 | **Desktop notifications** | `notifications` | on |
 
 `tray = false` makes closing the window quit the app.
 
-`launch_at_login = true` writes a macOS LaunchAgent, a Windows `Run` registry entry or a Linux XDG autostart entry for the
-running executable (the AppImage edition: the `.AppImage` file, not its temporary mount). `false` removes it. A non-default `--config` profile gets its own entry. In the Flatpak edition the
+Turning on **Start Siple when you log in** (`launch_at_login = true`) writes a macOS LaunchAgent (the Mac App Store edition adds a login item in **System Settings › General › Login Items** instead, and the switch there wins; a non-default `--config` profile leaves it alone), a Windows `Run` registry entry or a Linux XDG autostart entry for the
+running executable (the AppImage edition: the `.AppImage` file, not its temporary mount). `false` removes it. A non-default `--config` profile gets its own entry. The Microsoft Store edition has no switch: turn Siple on in **Windows Settings › Apps › Startup**. In the Flatpak edition the
 setting goes through your desktop's Background portal, which may ask once; there is one entry for the app, so the profile that
 enabled it last wins.
 

@@ -139,6 +139,20 @@ impl Channel {
         )
     }
 
+    /// Whether the app can change which links it opens at runtime (`[ui] handle_links`). Store and
+    /// sandboxed editions cannot: the Info.plist, AppxManifest or Flatpak desktop file declares the
+    /// schemes at install time, so the setting would do nothing there.
+    pub fn can_register_links(&self) -> bool {
+        !self.is_packaged()
+    }
+
+    /// Whether the app itself can switch launch at login (`[ui] launch_at_login`): the login entry
+    /// (direct), the Background portal (Flatpak) or `SMAppService` (Mac App Store). Not in the
+    /// Microsoft Store edition: the user turns the StartupTask on in Windows Settings > Apps > Startup.
+    pub fn launch_at_login_in_app(&self) -> bool {
+        self.kind != ChannelKind::Msix
+    }
+
     /// Arguments that must come first when the file is started again: `--appimage-extract-and-run`
     /// for an AppImage that runs from an extraction directory (the runtime honours it only as the
     /// first argument), nothing otherwise.
@@ -626,6 +640,15 @@ mod tests {
         let m = Channel::msix("a_b", Some("a_b!App"));
         assert!(m.is_packaged() && m.can_exec && !m.sandboxed);
         assert_eq!(ChannelKind::MacAppStore.as_str(), "mas");
+        assert!(Channel::DIRECT.launch_at_login_in_app());
+        assert!(Channel::MAC_APP_STORE.launch_at_login_in_app());
+        assert!(Channel::FLATPAK.launch_at_login_in_app());
+        assert!(Channel::appimage(Path::new("/x/Siple.AppImage")).launch_at_login_in_app());
+        assert!(!m.launch_at_login_in_app());
+        assert!(Channel::DIRECT.can_register_links());
+        assert!(!Channel::MAC_APP_STORE.can_register_links());
+        assert!(!Channel::FLATPAK.can_register_links());
+        assert!(!m.can_register_links());
         let f = std::hint::black_box(Channel::FLATPAK);
         assert!(f.is_packaged() && f.sandboxed && !f.can_exec);
         assert_eq!(ChannelKind::Flatpak.as_str(), "flatpak");

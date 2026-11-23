@@ -1,6 +1,19 @@
 <!-- siple-rename: keep (this file documents the legacy ZynoPhone names on purpose) -->
 # Changelog
 
+## Unreleased
+
+### New
+
+- Settings and the first-run wizard have a **Start Siple when you log in** switch (it was config-file only). The Microsoft Store edition shows a note instead, because only you can turn its startup task on, in Windows Settings > Apps > Startup.
+- Mac App Store edition: launch at login works (a login item you can also switch off in System Settings > General > Login Items).
+- Support page on siple.app, linked from the footer.
+
+### Fixed
+
+- Mac App Store, Microsoft Store and Flatpak editions: the link-handling switch is gone from Settings and the first-run wizard, where it did nothing. These editions register the links when they are installed; if another app opens them, make Siple the default (see the links guide).
+- Mac App Store edition: the MCP snippet in Settings > Developer shows the full path of the bundled `siple-cli`, which is not on `PATH`.
+
 ## 0.2.5 (2026-11-23)
 
 ### New

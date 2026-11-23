@@ -689,6 +689,34 @@ fn settings_toggle_hints_stay_inside_the_window() {
     }
 }
 
+/// Launch at login is a switch in the tray and window group; it emits the config edit.
+#[test]
+fn launch_at_login_toggle_emits_the_config_edit() {
+    for size in [WIDE, NARROW] {
+        let mut h = settings_harness(base_snapshot(), Section::Notifications, size);
+        click_switch(&mut h, "Start Siple when you log in");
+        let req = only_edit(take(&mut h));
+        assert_eq!(
+            rpc::edits_of(&req),
+            [ConfigEdit::SetSection {
+                section: "ui".into(),
+                key: "launch_at_login".into(),
+                value: EditValue::Bool(true)
+            }]
+        );
+        // The hint wraps inside the window.
+        let hint = h
+            .query_all_by_label_contains("Combine with Start hidden")
+            .next()
+            .expect("the launch-at-login hint");
+        assert!(
+            hint.rect().max.x <= size.x + 0.5,
+            "{size:?}: hint past the window ({:?})",
+            hint.rect()
+        );
+    }
+}
+
 #[test]
 fn header_badge_counts_ringing_extensions() {
     let mut h = harness(base_snapshot(), MEDIUM);
