@@ -5,6 +5,7 @@
 
 ### New
 
+- Settings and the first-run wizard have a **Start Siple when you log in** switch (it was config-file only). The Microsoft Store edition shows a note instead, because only you can turn its startup task on, in Windows Settings > Apps > Startup.
 - Mac App Store edition: launch at login works (a login item you can also switch off in System Settings > General > Login Items).
 - Support page on siple.app, linked from the footer.
 

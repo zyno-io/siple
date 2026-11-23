@@ -244,6 +244,7 @@ pub(super) fn notifications(ui: &mut egui::Ui, cx: &Cx, out: &mut Vec<UiAction>)
             "",
             &v,
         );
+        launch_at_login_row(ui, p, out, &v, true);
         sec_toggle(ui, p, out, "ui", "start_hidden", "Start hidden", "", &v);
         sec_toggle(
             ui,
@@ -748,6 +749,43 @@ pub(in crate::ui) fn sec_toggle_pub(
     v: &Value,
 ) {
     sec_toggle(ui, p, out, section, key, label, "", v);
+}
+
+/// The launch-at-login switch, or in the Microsoft Store edition (where only the user can enable
+/// the startup task) a faint note on where to do it. `with_hint` adds the explanation line.
+pub(in crate::ui) fn launch_at_login_row(
+    ui: &mut egui::Ui,
+    p: &Palette,
+    out: &mut Vec<UiAction>,
+    v: &Value,
+    with_hint: bool,
+) {
+    let ch = siple_core::config::channel::current();
+    if !ch.launch_at_login_in_app() {
+        ui.label(
+            RichText::new("Turn on Siple in Windows Settings > Apps > Startup.")
+                .size(FS_SMALL)
+                .color(p.faint),
+        );
+        return;
+    }
+    let hint = match (with_hint, ch.kind) {
+        (false, _) => "",
+        (true, siple_core::config::channel::ChannelKind::MacAppStore) => {
+            "If it's switched off in System Settings > General > Login Items, turn it on there."
+        }
+        (true, _) => "Combine with Start hidden to start in the tray.",
+    };
+    sec_toggle(
+        ui,
+        p,
+        out,
+        "ui",
+        "launch_at_login",
+        "Start Siple when you log in",
+        hint,
+        v,
+    );
 }
 
 /// Faint one-liner shown instead of the `handle_links` toggle in editions that declare the link

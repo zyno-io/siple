@@ -64,6 +64,7 @@ Open:
 
 Done:
 
+- Settings and the first-run wizard have a launch-at-login switch (`Channel::launch_at_login_in_app`: every edition but the Microsoft Store, where a note points to Windows Settings > Apps > Startup).
 - Launch at login uses `SMAppService.mainAppService` register / unregister (`shell/autostart.rs`, `objc2-service-management`).
   It shows up in System Settings > General > Login Items. The System Settings switch wins: if the user switched it off
   there, Siple logs it and does not register again. A non-default `--config` profile leaves it alone. Not exercised in the sandbox yet (open item 1).

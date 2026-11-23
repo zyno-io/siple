@@ -14,7 +14,7 @@ use siple_core::provision::SetupLink;
 use super::draft::{self, DraftForm};
 use super::form::{group, message_box, primary_button, small_button, test_result_box};
 use super::rpc::{self, RpcReply, RpcRequest, RpcTag, TestRun};
-use super::settings::{links_automatic_note, sec_toggle_pub};
+use super::settings::{launch_at_login_row, links_automatic_note, sec_toggle_pub};
 use super::{Cx, UiAction, UiState, audio, setup_link};
 use crate::snapshot::Snapshot;
 use crate::theme::{FS_BODY, FS_SMALL, FS_TITLE, SP_L, SP_S};
@@ -580,6 +580,7 @@ fn done_step(ui: &mut egui::Ui, cx: &Cx, out: &mut Vec<UiAction>, st: &mut UiSta
         } else {
             links_automatic_note(ui, p);
         }
+        launch_at_login_row(ui, p, out, &v, false);
         sec_toggle_pub(ui, p, out, "ui", "tray", "Show in the tray / menu bar", &v);
         sec_toggle_pub(
             ui,
