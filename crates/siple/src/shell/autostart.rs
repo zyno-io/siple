@@ -410,11 +410,25 @@ pub fn location_problem(exe: &Path, read_only: impl Fn(&Path) -> bool) -> Option
         .then_some("Move Siple to Applications first, then turn this on.")
 }
 
+/// Whether `p` is on a read-only volume (`statvfs`; the updater's check, which the store build
+/// does not compile).
+#[cfg(target_os = "macos")]
+fn read_only_volume(p: &Path) -> bool {
+    use std::os::unix::ffi::OsStrExt;
+    let Ok(c) = std::ffi::CString::new(p.as_os_str().as_bytes()) else {
+        return false;
+    };
+    // SAFETY: `c` is a valid NUL-terminated path and `st` a valid out-pointer.
+    let mut st: libc::statvfs = unsafe { std::mem::zeroed() };
+    unsafe {
+        libc::statvfs(c.as_ptr(), &mut st) == 0 && (st.f_flag as u64 & libc::ST_RDONLY as u64) != 0
+    }
+}
+
 /// [`location_problem`] for the running macOS direct build, looked up once.
 pub fn running_location_problem() -> Option<&'static str> {
     #[cfg(target_os = "macos")]
     {
-        use siple_core::update::install::env::{Fs, RealFs};
         static P: std::sync::OnceLock<Option<&'static str>> = std::sync::OnceLock::new();
         *P.get_or_init(|| {
             let ch = siple_core::config::channel::current();
@@ -422,7 +436,7 @@ pub fn running_location_problem() -> Option<&'static str> {
                 return None;
             }
             let exe = std::env::current_exe().ok()?;
-            location_problem(&exe, |b| RealFs.read_only_volume(b))
+            location_problem(&exe, read_only_volume)
         })
     }
     #[cfg(not(target_os = "macos"))]
@@ -448,10 +462,7 @@ fn apply_for(
     #[cfg(target_os = "macos")]
     if enabled
         && channel.kind == siple_core::config::channel::ChannelKind::Direct
-        && let Some(msg) = location_problem(&exe, |b| {
-            use siple_core::update::install::env::{Fs, RealFs};
-            RealFs.read_only_volume(b)
-        })
+        && let Some(msg) = location_problem(&exe, read_only_volume)
     {
         return Err(std::io::Error::other(msg));
     }
