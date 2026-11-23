@@ -117,13 +117,13 @@ impl AppOptions {
     }
 
     /// Lets the update check use the network (`[updates] check` still decides whether it runs):
-    /// GitHub for direct builds, Apple's lookup on the Mac App Store, Windows' Store service in
+    /// siple.app, then GitHub, for direct builds, Apple's lookup on the Mac App Store, Windows' Store service in
     /// the Microsoft Store edition. The `siple` and `siple-cli` binaries call this; nothing else
     /// does.
     pub fn use_network_updates(&mut self) {
         #[cfg(not(feature = "store"))]
         {
-            self.update_providers.github = Arc::new(crate::update::GithubFetcher);
+            self.update_providers.github = Arc::new(crate::update::FeedFetcher::network());
             self.update_providers.install =
                 crate::update::install::InstallProviders::native(crate::update::full_version());
         }
@@ -706,19 +706,22 @@ impl App {
         let cancel = CancellationToken::new();
         let updater = {
             let cell = config_cell.clone();
+            let source = opts.update_providers.source(&channel);
+            let interval = source.check_interval();
             let u = crate::update::Updater::new(crate::update::UpdaterOptions {
                 current: crate::update::current_version(),
                 current_text: crate::update::full_version().to_string(),
-                source: opts.update_providers.source(&channel),
+                source,
                 package_family: channel.package_family.map(str::to_string),
                 events: events.clone(),
                 settings: Arc::new(move || cell.load().updates.clone()),
                 clock: Arc::new(Utc::now),
                 state_dir: Some(config_dir.clone()),
                 initial_delay: crate::update::INITIAL_DELAY,
-                interval: crate::update::CHECK_INTERVAL,
+                interval,
                 min_manual_interval: crate::update::MIN_MANUAL_INTERVAL,
             });
+            u.enable_jitter();
             u.set_skipped(state.skipped_update());
             u
         };

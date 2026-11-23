@@ -49,6 +49,27 @@ Every asset URL is baked into the HTML from that version: `Siple-<version>-<suff
 and `SHA256SUMS` beside the assets. Production is built from a published release's tag and deployed only after
 every download link checks live; staging builds from `main` and may name a version that isn't released yet.
 
+### Update feed
+
+`npm run build` first runs `scripts/update-feed.mjs`, which writes `public/updates/v1/releases.json` (generated and ignored by git;
+served at `https://siple.app/updates/v1/releases.json`). The direct-download builds of the app read it about every hour
+(`crates/siple-core/src/update/site.rs`) and fall back to the GitHub releases API when it is missing or unreadable. It is the GitHub
+releases list cut down to what the app's parser reads: published releases with a `vX.Y.Z[-pre]` tag, newest first, at most 20,
+pre-releases included, each with `tag_name`, `name`, `draft`, `prerelease`, `published_at`, `html_url`, `body` and the uploaded
+`assets` (`name`, `size`, `state`, `browser_download_url`). It is unsigned and only a hint; the app installs from the minisign-signed
+`SHA256SUMS`.
+
+- The script reads the releases with `GITHUB_TOKEN` or `GH_TOKEN` when set (the workflow passes its own, no rate limit) and
+  anonymously otherwise (60 requests per hour per IP, enough for local builds). A failed fetch fails the build.
+- Release and tag builds (`SIPLE_EXPECT_VERSION` set by `www.yml`) also fail unless the newest stable release in the feed is the
+  newest CHANGELOG version, with its `SHA256SUMS` and `SHA256SUMS.minisig` uploaded, so the production deploy on
+  `release: published` always carries the release that was just published. Other builds (staging, pull requests) print a warning.
+- Offline local builds: `SIPLE_FEED=skip npm run build` writes no feed (refused in GitHub Actions). `SIPLE_RELEASES_JSON=<file>` reads
+  a saved releases list instead of calling GitHub.
+- `npm run feed` runs the script alone; `npm run feed:test` runs its self-checks (node's built-in test runner, also run in CI).
+- ZynoHosting has no per-path response-header setting that we know of, so `/updates/` gets the host's default caching. The app sends
+  `If-None-Match`, so a stale edge cache costs at most one interval.
+
 `src/scripts/download.ts` only detects the visitor's OS (and the CPU for Windows and Linux on ARM, from
 `navigator.userAgentData.getHighEntropyValues(['architecture'])` first, then the UA string), marks that row, points
 the hero button at the row's baked link and fills the note under it. Without JS, on a phone or tablet, or on an

@@ -21,24 +21,37 @@ use super::source::{DisabledReason, UpdateSource};
 use super::version::Version;
 #[cfg(not(feature = "store"))]
 use super::version::effective_channel;
-use super::{UpdateAction, UpdateStatus};
+use super::{FeedSource, UpdateAction, UpdateStatus};
 use crate::events::EventLog;
 use crate::state::StateStore;
 
 /// First check after start (unless one succeeded less than an interval ago).
 pub const INITIAL_DELAY: Duration = Duration::from_secs(30);
-/// Time between checks.
-pub const CHECK_INTERVAL: Duration = Duration::from_secs(24 * 3600);
+/// Time between checks of the direct-download source (siple.app, with GitHub as the fallback).
+/// A static feed has no rate limit and an unchanged answer is a 304, so this can be short. Each
+/// scheduled check is moved by up to [`JITTER_PERCENT`] so installs do not hit the site in lockstep.
+pub const CHECK_INTERVAL: Duration = Duration::from_secs(3600);
+/// Time between checks of the store sources (App Store lookup, Microsoft Store).
+pub const STORE_CHECK_INTERVAL: Duration = Duration::from_secs(24 * 3600);
+/// Scheduled checks happen this many percent early or late, at random.
+pub const JITTER_PERCENT: u32 = 10;
 /// A forced check within this time of the last attempt returns the last result.
 pub const MIN_MANUAL_INTERVAL: Duration = Duration::from_secs(60);
 /// The scheduler wakes at least this often to compare the wall clock with the due time: a
-/// monotonic sleep does not run while the machine sleeps.
-const MAX_SLEEP: Duration = Duration::from_secs(3600);
-/// Upper bound for any fetcher, whatever it does.
-const FETCH_LIMIT: Duration = Duration::from_secs(20);
-/// First retry after a failed check; doubles per failure up to [`CHECK_INTERVAL`].
+/// monotonic sleep does not run while the machine sleeps. Short against the hourly interval, so a
+/// machine that wakes up checks within minutes.
+const MAX_SLEEP: Duration = Duration::from_secs(15 * 60);
+/// Upper bound for any fetcher, whatever it does. A direct-build check can ask siple.app (up to
+/// `SITE_TIMEOUT`, 8 s) and then GitHub (up to `REQUEST_TIMEOUT`, 15 s), so this covers both
+/// requests plus a margin; the site's own shorter timeout is what keeps a hanging site from
+/// starving the GitHub request. The only user is the fetch in `Updater::check`.
+const FETCH_LIMIT: Duration = Duration::from_secs(30);
+/// First retry after a failed check of a source that is checked less often than hourly (the
+/// stores); doubles per failure up to the interval.
 const RETRY_BASE: Duration = Duration::from_secs(3600);
-/// Back-off when the source limits us without saying for how long.
+/// Same for an hourly source: a failed check retries after 5, 10, 20, 40 minutes, then hourly.
+const RETRY_BASE_FAST: Duration = Duration::from_secs(5 * 60);
+/// Back-off when the source limits us without saying for how long (at most one interval).
 const DEFAULT_BACKOFF: Duration = Duration::from_secs(3600);
 const MIN_BACKOFF: Duration = Duration::from_secs(60);
 
@@ -47,6 +60,20 @@ pub type Clock = Arc<dyn Fn() -> DateTime<Utc> + Send + Sync>;
 
 fn delta(d: Duration) -> chrono::TimeDelta {
     chrono::TimeDelta::from_std(d).unwrap_or(chrono::TimeDelta::MAX)
+}
+
+/// `interval` moved by up to [`JITTER_PERCENT`] either way; `unit` (any `u32`) picks the point in
+/// that range, `0` giving the earliest and `u32::MAX` the latest.
+pub(crate) fn jittered(interval: Duration, unit: u32) -> Duration {
+    let span = interval.as_millis() * u128::from(JITTER_PERCENT) * 2 / 100;
+    let offset = span * u128::from(unit) / u128::from(u32::MAX);
+    let low = interval.as_millis() - span / 2;
+    Duration::from_millis((low + offset).min(u128::from(u64::MAX)) as u64)
+}
+
+/// A random `u32` (the clock's nanoseconds if the system has no random source).
+fn random_u32() -> u32 {
+    getrandom::u32().unwrap_or_else(|_| Utc::now().timestamp_subsec_nanos())
 }
 
 /// What a fetch returned.
@@ -100,6 +127,12 @@ pub trait ReleaseFetcher: Send + Sync {
     /// Fetches the releases list, with `If-None-Match: etag` when given.
     async fn fetch(&self, etag: Option<&str>, user_agent: &str)
     -> Result<FetchOutcome, FetchError>;
+
+    /// Which host answered the last successful [`fetch`](Self::fetch), when the fetcher has
+    /// several (see [`super::FeedFetcher`]).
+    fn answered_by(&self) -> Option<FeedSource> {
+        None
+    }
 }
 
 /// The fetcher of an app whose host did not opt in to the network check (tests, embedders): it
@@ -182,7 +215,7 @@ impl SourceData {
 /// What one fetch returned, per source.
 enum Fetched {
     #[cfg(not(feature = "store"))]
-    Github(FetchOutcome),
+    Github(FetchOutcome, Option<FeedSource>),
     Listing(Option<StoreListing>),
     Updates(StoreUpdates),
 }
@@ -196,10 +229,10 @@ async fn fetch_source(
     let _ = &etag;
     match source {
         #[cfg(not(feature = "store"))]
-        UpdateSource::Github(f) => f
-            .fetch(etag.as_deref(), &user_agent)
-            .await
-            .map(Fetched::Github),
+        UpdateSource::Github(f) => {
+            let out = f.fetch(etag.as_deref(), &user_agent).await?;
+            Ok(Fetched::Github(out, f.answered_by()))
+        }
         UpdateSource::AppStore(l) => l.lookup(&user_agent).await.map(Fetched::Listing),
         UpdateSource::MsStore(q) => match package_family {
             Some(pfn) => q.updates(&pfn).await.map(Fetched::Updates),
@@ -224,6 +257,8 @@ fn describe(label: &str, e: &FetchError) -> String {
 struct State {
     data: SourceData,
     etag: Option<String>,
+    /// The host that answered the last successful check.
+    feed: Option<FeedSource>,
     /// Last successful check (wall clock).
     checked_at: Option<DateTime<Utc>>,
     error: Option<String>,
@@ -250,6 +285,8 @@ pub struct Updater {
     #[cfg(not(feature = "store"))]
     overlay: std::sync::OnceLock<StatusOverlay>,
     state: Mutex<State>,
+    /// Move scheduled checks by up to [`JITTER_PERCENT`] (see [`Updater::enable_jitter`]).
+    jitter: std::sync::atomic::AtomicBool,
     /// One check at a time.
     busy: tokio::sync::Mutex<()>,
     /// A check finished or the configuration changed: recompute the schedule.
@@ -279,9 +316,26 @@ impl Updater {
             #[cfg(not(feature = "store"))]
             overlay: std::sync::OnceLock::new(),
             state: Mutex::new(st),
+            jitter: std::sync::atomic::AtomicBool::new(false),
             busy: tokio::sync::Mutex::new(()),
             wake: Notify::new(),
         })
+    }
+
+    /// Spreads the scheduled checks: each is due the interval after the last, plus or minus up to
+    /// [`JITTER_PERCENT`]. Off by default so tests see exact times; the app turns it on.
+    pub fn enable_jitter(&self) {
+        self.jitter
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// The time to the next check after a success.
+    fn next_interval(&self) -> Duration {
+        if self.jitter.load(std::sync::atomic::Ordering::Relaxed) {
+            jittered(self.o.interval, random_u32())
+        } else {
+            self.o.interval
+        }
     }
 
     fn st(&self) -> std::sync::MutexGuard<'_, State> {
@@ -322,6 +376,7 @@ impl Updater {
             SourceData::Nothing => {}
             #[cfg(not(feature = "store"))]
             SourceData::Releases(list) => {
+                s.feed = st.feed;
                 if let Some(r) = pick(list, channel) {
                     s.latest = Some(r.name.clone());
                     s.available = r.version > self.o.current;
@@ -456,16 +511,18 @@ impl Updater {
             let mut st = self.st();
             match result {
                 #[cfg(not(feature = "store"))]
-                Ok(Fetched::Github(FetchOutcome::NotModified)) => {
+                Ok(Fetched::Github(FetchOutcome::NotModified, feed)) => {
+                    st.feed = feed.or(st.feed);
                     self.succeeded(&mut st, now);
                     persist = Some(());
                 }
                 #[cfg(not(feature = "store"))]
-                Ok(Fetched::Github(FetchOutcome::Body { etag, body })) => {
+                Ok(Fetched::Github(FetchOutcome::Body { etag, body }, feed)) => {
                     match parse_releases(&body) {
                         Ok(list) => {
                             st.data = SourceData::Releases(list);
                             st.etag = etag;
+                            st.feed = feed;
                             self.succeeded(&mut st, now);
                             persist = Some(());
                         }
@@ -519,13 +576,18 @@ impl Updater {
         st.error = None;
         st.failures = 0;
         st.backoff_until = None;
-        st.next_due = Some(now + delta(self.o.interval));
-        tracing::debug!("update check succeeded");
+        st.next_due = Some(now + delta(self.next_interval()));
+        tracing::debug!(feed = ?st.feed, "update check succeeded");
     }
 
     fn failed(&self, st: &mut State, now: DateTime<Utc>, why: &str) {
         st.failures = st.failures.saturating_add(1);
-        let retry = RETRY_BASE
+        let base = if self.o.interval <= RETRY_BASE {
+            RETRY_BASE_FAST
+        } else {
+            RETRY_BASE
+        };
+        let retry = base
             .saturating_mul(1u32 << (st.failures - 1).min(5))
             .min(self.o.interval);
         st.next_due = Some(now + delta(retry));
@@ -606,7 +668,14 @@ impl Updater {
                 // After the clock jumps backwards, nothing may stay due further away than one
                 // interval (or a "last check" lie in the future).
                 let mut st = self.st();
-                let cap = now + delta(self.o.interval);
+                // The latest a check can be due: one interval, plus [`JITTER_PERCENT`] when jitter is
+                // on (capping at exactly one interval would clip every late draw to the interval).
+                let longest = if self.jitter.load(std::sync::atomic::Ordering::Relaxed) {
+                    jittered(self.o.interval, u32::MAX)
+                } else {
+                    self.o.interval
+                };
+                let cap = now + delta(longest);
                 if st.next_due.is_some_and(|d| d > cap) {
                     st.next_due = Some(cap);
                 }
@@ -757,7 +826,7 @@ mod tests {
             }),
             state_dir,
             initial_delay: INITIAL_DELAY,
-            interval: CHECK_INTERVAL,
+            interval: STORE_CHECK_INTERVAL,
             min_manual_interval: MIN_MANUAL_INTERVAL,
         });
         Rig {
@@ -925,7 +994,7 @@ mod tests {
         }));
         r.u.check_now().await;
         let until = r.u.st().backoff_until.unwrap();
-        assert_eq!((until - r.u.now()).to_std().unwrap(), CHECK_INTERVAL);
+        assert_eq!((until - r.u.now()).to_std().unwrap(), STORE_CHECK_INTERVAL);
     }
 
     #[tokio::test(start_paused = true)]
@@ -1042,7 +1111,7 @@ mod tests {
             clock: Arc::new(Utc::now),
             state_dir: None,
             initial_delay: INITIAL_DELAY,
-            interval: CHECK_INTERVAL,
+            interval: STORE_CHECK_INTERVAL,
             min_manual_interval: MIN_MANUAL_INTERVAL,
         })
     }
@@ -1227,5 +1296,209 @@ mod tests {
         assert_eq!(r.fake.n(), 2, "checked when the back-off ended");
         cancel.cancel();
         h.await.unwrap();
+    }
+
+    // A retry comes sooner than the next scheduled check, a manual check sooner than a retry, and the
+    // scheduler wakes several times per interval.
+    const _: () = {
+        assert!(RETRY_BASE_FAST.as_secs() < CHECK_INTERVAL.as_secs());
+        assert!(DEFAULT_BACKOFF.as_secs() <= CHECK_INTERVAL.as_secs());
+        assert!(MAX_SLEEP.as_secs() < CHECK_INTERVAL.as_secs());
+        assert!(MIN_MANUAL_INTERVAL.as_secs() < RETRY_BASE_FAST.as_secs());
+        // One check may ask the site, then GitHub, one after the other.
+        assert!(
+            FETCH_LIMIT.as_secs()
+                >= crate::update::site::SITE_TIMEOUT.as_secs()
+                    + crate::update::http::REQUEST_TIMEOUT.as_secs()
+                    + 5
+        );
+    };
+
+    #[test]
+    fn the_intervals_are_hourly_for_direct_builds_and_daily_for_the_stores() {
+        assert_eq!(CHECK_INTERVAL, Duration::from_secs(3600));
+        assert_eq!(STORE_CHECK_INTERVAL, Duration::from_secs(24 * 3600));
+        assert_eq!(JITTER_PERCENT, 10);
+        let direct = UpdateSource::Github(Arc::new(Fake::default()));
+        assert_eq!(direct.check_interval(), CHECK_INTERVAL);
+        assert_eq!(
+            UpdateSource::None(DisabledReason::Sideloaded).check_interval(),
+            STORE_CHECK_INTERVAL
+        );
+    }
+
+    #[test]
+    fn jitter_stays_within_ten_percent() {
+        for interval in [CHECK_INTERVAL, STORE_CHECK_INTERVAL] {
+            let (lo, hi) = (interval.mul_f64(0.9), interval.mul_f64(1.1));
+            for unit in [0, 1, u32::MAX / 4, u32::MAX / 2, u32::MAX - 1, u32::MAX] {
+                let j = jittered(interval, unit);
+                assert!(
+                    j >= lo - Duration::from_millis(1) && j <= hi + Duration::from_millis(1),
+                    "{unit}: {j:?}"
+                );
+            }
+            let near = |a: Duration, b: Duration| a.abs_diff(b) < Duration::from_millis(2);
+            assert!(near(jittered(interval, 0), lo));
+            assert!(near(jittered(interval, u32::MAX), hi));
+        }
+        // The midpoint is the interval itself.
+        let mid = jittered(CHECK_INTERVAL, u32::MAX / 2).as_secs_f64();
+        assert!((mid - 3600.0).abs() < 1.0, "{mid}");
+        for _ in 0..100 {
+            let j = jittered(CHECK_INTERVAL, random_u32());
+            assert!((3240..=3960).contains(&j.as_secs()), "{j:?}");
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn jittered_schedule_is_within_bounds_and_off_by_default() {
+        let r = rig("0.1.0");
+        r.fake.push(Fake::body("\"e1\""));
+        r.fake.push(Fake::body("\"e2\""));
+        r.u.check_now().await;
+        assert_eq!(due_in(&r), STORE_CHECK_INTERVAL, "exact without jitter");
+        r.u.enable_jitter();
+        tokio::time::advance(MIN_MANUAL_INTERVAL).await;
+        r.u.check_now().await;
+        let d = due_in(&r).as_secs_f64();
+        let base = STORE_CHECK_INTERVAL.as_secs_f64();
+        assert!(d >= base * 0.9 - 1.0 && d <= base * 1.1 + 1.0, "{d}");
+    }
+
+    /// Records when each fetch happened (paused tokio time) and always answers with a list.
+    struct Stamps(Mutex<Vec<tokio::time::Instant>>);
+
+    #[async_trait]
+    impl ReleaseFetcher for Stamps {
+        async fn fetch(&self, _: Option<&str>, _: &str) -> Step {
+            self.0.lock().unwrap().push(tokio::time::Instant::now());
+            Fake::body("\"e\"")
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn the_scheduler_uses_the_whole_jitter_range_including_late_checks() {
+        let stamps = Arc::new(Stamps(Mutex::default()));
+        let u = with_interval(stamps.clone(), CHECK_INTERVAL);
+        u.enable_jitter();
+        let cancel = CancellationToken::new();
+        let h = spawn_updater(u, cancel.clone());
+        tokio::time::sleep(Duration::from_secs(60 * 3600)).await;
+        cancel.cancel();
+        h.await.unwrap();
+        let t = stamps.0.lock().unwrap().clone();
+        assert!(t.len() > 40, "{} checks", t.len());
+        let gaps: Vec<f64> = t.windows(2).map(|w| (w[1] - w[0]).as_secs_f64()).collect();
+        let base = CHECK_INTERVAL.as_secs_f64();
+        for g in &gaps {
+            assert!(
+                *g >= base * 0.9 - 2.0 && *g <= base * 1.1 + 2.0,
+                "gap {g} outside 0.9x..1.1x"
+            );
+        }
+        // Before the fix the scheduler capped every due time at one interval.
+        assert!(
+            gaps.iter().any(|g| *g > base + 60.0),
+            "no gap above the interval: {gaps:?}"
+        );
+        assert!(gaps.iter().any(|g| *g < base - 60.0), "no gap below it");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn an_hourly_source_retries_sooner_than_the_next_check() {
+        let r = rig("0.1.0");
+        let u = with_interval(r.fake.clone(), CHECK_INTERVAL);
+        for _ in 0..8 {
+            r.fake.push(Err(FetchError::Timeout));
+        }
+        let mut waits = Vec::new();
+        for _ in 0..7 {
+            u.check_now().await;
+            waits.push(
+                (u.st().next_due.unwrap() - u.now())
+                    .to_std()
+                    .unwrap()
+                    .as_secs(),
+            );
+            tokio::time::advance(Duration::from_secs(3601)).await;
+        }
+        assert_eq!(waits, [300, 600, 1200, 2400, 3600, 3600, 3600]);
+    }
+
+    fn with_interval(f: Arc<dyn ReleaseFetcher>, interval: Duration) -> Arc<Updater> {
+        let r = rig("0.1.0");
+        // Wall clock = a fixed start plus the (paused) tokio time.
+        let (t0, base) = (tokio::time::Instant::now(), Utc::now());
+        Updater::new(UpdaterOptions {
+            current: Version::parse("0.1.0").unwrap(),
+            current_text: "0.1.0".into(),
+            source: UpdateSource::Github(f),
+            package_family: None,
+            events: r.events.clone(),
+            settings: Arc::new(UpdatesConfig::default),
+            clock: Arc::new(move || base + chrono::TimeDelta::from_std(t0.elapsed()).unwrap()),
+            state_dir: None,
+            initial_delay: INITIAL_DELAY,
+            interval,
+            min_manual_interval: MIN_MANUAL_INTERVAL,
+        })
+    }
+
+    /// A fetcher that says which host answered, like [`crate::update::FeedFetcher`].
+    struct Via(Arc<Fake>, FeedSource);
+
+    #[async_trait]
+    impl ReleaseFetcher for Via {
+        async fn fetch(&self, etag: Option<&str>, ua: &str) -> Step {
+            self.0.fetch(etag, ua).await
+        }
+        fn answered_by(&self) -> Option<FeedSource> {
+            Some(self.1)
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn the_status_names_the_host_that_answered_and_keeps_the_source() {
+        for (feed, name) in [(FeedSource::Site, "site"), (FeedSource::Github, "github")] {
+            let fake = Arc::new(Fake::default());
+            fake.push(Fake::body("\"e1\""));
+            fake.push(Ok(FetchOutcome::NotModified));
+            let u = with_interval(Arc::new(Via(fake, feed)), CHECK_INTERVAL);
+            assert_eq!(u.status().feed, None, "nothing known before a check");
+            let s = u.check_now().await;
+            // `source` is the kind of source (direct downloads): the install toggle follows it.
+            assert_eq!(s.source, crate::update::SourceName::Github);
+            assert_eq!(s.feed, Some(feed));
+            assert_eq!(serde_json::to_value(&s).unwrap()["feed"], name);
+            tokio::time::advance(MIN_MANUAL_INTERVAL).await;
+            assert_eq!(u.check_now().await.feed, Some(feed), "also after a 304");
+        }
+        // A fetcher that does not say leaves the field out.
+        let r = rig("0.1.0");
+        r.fake.push(Fake::body("\"e1\""));
+        let s = r.u.check_now().await;
+        assert_eq!(s.feed, None);
+        assert!(serde_json::to_value(&s).unwrap().get("feed").is_none());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_feed_that_offers_the_current_or_an_older_version_offers_nothing() {
+        // The list tops out at 0.2.0 (stable) / 0.4.0 (prerelease channel).
+        for (current, channel, latest) in [
+            ("0.2.0", UpdateChannel::Stable, "0.2.0"),
+            ("0.3.0", UpdateChannel::Stable, "0.2.0"),
+            ("0.4.0", UpdateChannel::Prerelease, "0.4.0"),
+            ("1.0.0", UpdateChannel::Prerelease, "0.4.0"),
+        ] {
+            let r = rig(current);
+            r.cfg.lock().unwrap().channel = Some(channel);
+            r.fake.push(Fake::body("\"e1\""));
+            let s = r.u.check_now().await;
+            assert_eq!(s.latest.as_deref(), Some(latest), "{current}");
+            assert!(!s.available, "{current}: {s:?}");
+            assert_eq!(s.action, UpdateAction::None, "{current}");
+            assert!(announced(&r).is_empty(), "{current}");
+        }
     }
 }

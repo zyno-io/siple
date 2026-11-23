@@ -4,7 +4,7 @@ import SiteHeader from '../components/SiteHeader.astro';
 import SiteFooter from '../components/SiteFooter.astro';
 import { site, doc } from '../data/site';
 
-const updated = 'November 18, 2026';
+const updated = 'November 22, 2026';
 ---
 
 <BaseLayout
@@ -25,7 +25,7 @@ const updated = 'November 18, 2026';
         <ul>
           <li>Siple has no account with us, no telemetry, no analytics, no advertising and no tracking.</li>
           <li>Your settings, recordings and logs stay on your computer.</li>
-          <li>Siple talks only to the SIP servers you configure. The exceptions are an optional update check (about once a day) that you can turn off, and, in the direct downloads, the download of a new version when you choose to install it.</li>
+          <li>Siple talks only to the SIP servers you configure. The exceptions are an optional update check (about once an hour in the direct downloads, about once a day in the store editions) that you can turn off, and, in the direct downloads, the download of a new version when you choose to install it.</li>
           <li>We, {site.maker}, never receive your calls, contacts, credentials or usage data.</li>
         </ul>
       </section>
@@ -49,7 +49,7 @@ const updated = 'November 18, 2026';
         <h2>Network connections</h2>
         <ul>
           <li><strong>Your SIP provider.</strong> To register and place calls, Siple connects to the SIP servers, proxies and call peers you configure. Those providers process your calls under their own privacy policies.</li>
-          <li><strong>Update check.</strong> About once a day, and only if the check is on, Siple looks for a newer version. Where it looks depends on the edition. The direct downloads (from this site or GitHub) make one request to the GitHub Releases API; GitHub sees your IP address and the app version. The Mac App Store edition makes one request to Apple’s public lookup service for Siple’s own listing; Apple sees your IP address and the app version. In the Microsoft Store edition, Siple asks Windows’ Store service whether an update is waiting; Windows contacts Microsoft as it does for any Store app, and Siple sends nothing itself. These requests carry no account, install identifier or usage data. You can turn the check off in Settings or with <code>[updates] check = false</code>; then none of this happens.</li>
+          <li><strong>Update check.</strong> Only if the check is on, Siple looks for a newer version. Where it looks, and how often, depends on the edition. The direct downloads (from this site or GitHub) check about once an hour: one request to the update list on siple.app, which is run by {site.maker}. At most once a day the check also asks the GitHub Releases API as a second opinion, and it asks GitHub instead when siple.app does not answer. siple.app sees your IP address and the app version (in the User-Agent header), and its web server keeps standard server logs, so each check from a running install appears there as your IP address, the time and the app version; if GitHub is asked, it sees the same two things. The store editions check about once a day. The Mac App Store edition makes one request to Apple’s public lookup service for Siple’s own listing; Apple sees your IP address and the app version. In the Microsoft Store edition, Siple asks Windows’ Store service whether an update is waiting; Windows contacts Microsoft as it does for any Store app, and Siple sends nothing itself. These requests carry no account, install identifier or usage data. You can turn the check off in Settings or with <code>[updates] check = false</code>; then none of this happens.</li>
           <li><strong>Installing an update (direct downloads only).</strong> The check above only tells you that a new version exists. The direct downloads for macOS, Windows and Linux download the new version from GitHub, over HTTPS, when you, or a script or agent you run, choose to install it; GitHub sees your IP address and the app version, as for any download, and Siple sends nothing else. Before it replaces itself, Siple verifies the download with Siple’s release signature and your operating system’s publisher check. The Mac App Store and Microsoft Store editions never download or install anything themselves; their store does. You can turn in-app installing off in Settings or with <code>[updates] install = false</code>.</li>
           <li>Siple sends no crash reports and no usage statistics.</li>
         </ul>
