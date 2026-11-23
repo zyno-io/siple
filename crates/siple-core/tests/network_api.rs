@@ -4,19 +4,29 @@
 
 use std::net::{SocketAddr, UdpSocket};
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use serde_json::{Value, json};
 use siple_core::control::client::ControlClient;
 use siple_core::{App, AppOptions, LoggingMode};
 
-/// UDP registrar that answers every REGISTER with a 200 and counts them.
+/// UDP registrar that answers every REGISTER with a 200 and counts them. A retransmission (the
+/// same Call-ID and CSeq: the client did not see the 200 within T1, as happens on a loaded
+/// machine) is answered again but is not counted as another REGISTER.
 struct Registrar {
     addr: SocketAddr,
     count: Arc<AtomicUsize>,
+    /// `Call-ID | CSeq` of every REGISTER received, retransmissions included.
+    seen: Arc<Mutex<Vec<String>>>,
     stop: Arc<AtomicBool>,
+}
+
+impl Registrar {
+    fn seen(&self) -> Vec<String> {
+        self.seen.lock().unwrap().clone()
+    }
 }
 
 impl Drop for Registrar {
@@ -32,9 +42,10 @@ fn registrar() -> Registrar {
     let r = Registrar {
         addr: sock.local_addr().unwrap(),
         count: Arc::default(),
+        seen: Arc::default(),
         stop: Arc::default(),
     };
-    let (count, stop) = (r.count.clone(), r.stop.clone());
+    let (count, seen, stop) = (r.count.clone(), r.seen.clone(), r.stop.clone());
     std::thread::spawn(move || {
         let mut buf = vec![0u8; 65536];
         while !stop.load(Ordering::Relaxed) {
@@ -45,7 +56,21 @@ fn registrar() -> Registrar {
             if !req.starts_with("REGISTER ") {
                 continue;
             }
-            count.fetch_add(1, Ordering::SeqCst);
+            let key = req
+                .lines()
+                .filter(|l| {
+                    let low = l.to_ascii_lowercase();
+                    low.starts_with("call-id:") || low.starts_with("cseq:")
+                })
+                .collect::<Vec<_>>()
+                .join(" | ");
+            {
+                let mut seen = seen.lock().unwrap();
+                if !seen.contains(&key) {
+                    count.fetch_add(1, Ordering::SeqCst);
+                }
+                seen.push(key);
+            }
             let mut lines = vec!["SIP/2.0 200 OK".to_string()];
             for l in req.lines() {
                 let low = l.to_ascii_lowercase();
@@ -117,8 +142,9 @@ async fn wait_count(reg: &Registrar, n: usize) {
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
     panic!(
-        "expected {n} REGISTERs within 3 s, saw {}",
-        reg.count.load(Ordering::SeqCst)
+        "expected {n} REGISTERs within 3 s, saw {}: {:?}",
+        reg.count.load(Ordering::SeqCst),
+        reg.seen()
     );
 }
 
@@ -141,7 +167,7 @@ async fn network_refresh_and_account_reregister_send_a_register() {
     let (app, _) = start(&dir, &config(&reg, "watch = false\nprobe_secs = 0")).await;
     let mut c = client(&app).await;
     wait_registered(&mut c).await;
-    assert_eq!(reg.count.load(Ordering::SeqCst), 1);
+    assert_eq!(reg.count.load(Ordering::SeqCst), 1, "{:?}", reg.seen());
     let st = c.call("status", Value::Null).await.unwrap();
     assert_eq!(st["network"]["generation"], 0);
 
@@ -224,7 +250,8 @@ async fn network_section_reloads_hot_without_re_registering() {
     assert_eq!(
         reg.count.load(Ordering::SeqCst),
         1,
-        "no re-register for a [network] change"
+        "no re-register for a [network] change: {:?}",
+        reg.seen()
     );
 
     // An invalid range is rejected and the previous settings stay.

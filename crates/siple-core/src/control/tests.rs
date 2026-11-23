@@ -573,11 +573,23 @@ async fn non_reading_client_connection_is_released() {
     // Writes may stall once the server stops reading; that is fine.
     let _ = tokio::time::timeout(Duration::from_secs(1), s.write_all(req.as_bytes())).await;
     let _ = tokio::time::timeout(Duration::from_millis(200), s.write_all(b"garbage\n")).await;
-    tokio::time::sleep(Duration::from_secs(4)).await;
+    // Do not read before the server has given up on us (a queued reply not taken within
+    // SEND_TIMEOUT, 5 s; a stalled write after WRITE_TIMEOUT, 10 s): reading earlier unblocks it,
+    // and with the request stream cut mid-line by the timed-out writes it then rightly waits for
+    // the rest of that line. The close shows on this side as a failing write (EPIPE), without
+    // reading anything. Generous bound for a loaded machine.
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(60);
+    loop {
+        match tokio::time::timeout(Duration::from_millis(100), s.write_all(b" ")).await {
+            Ok(Err(_)) => break,
+            _ => assert!(
+                tokio::time::Instant::now() < deadline,
+                "server kept the socket of a non-reading client open"
+            ),
+        }
+    }
     // Drain whatever was queued; the server side must be closed (EOF), not hanging.
     let mut sink = Vec::new();
-    // The server gives up on a stalled writer after WRITE_TIMEOUT (10 s); allow that plus ample slack for a
-    // loaded machine instead of racing it.
     let r = tokio::time::timeout(Duration::from_secs(60), s.read_to_end(&mut sink)).await;
     assert!(
         r.is_ok(),

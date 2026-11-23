@@ -16,7 +16,9 @@ pub const WAIT_LIMIT: Duration = Duration::from_secs(30);
 const POLL: Duration = Duration::from_millis(50);
 
 /// Waits until process `pid` has exited, at most `timeout`. `true`: it has exited (or never
-/// existed, or is this process, or is not a valid pid). `false`: still running after `timeout`.
+/// existed, or is this process, or is not a valid pid). `false`: still running after `timeout`;
+/// on every platform at least `timeout` has then passed by [`std::time::Instant`] (unless the
+/// Windows wait itself fails, which also returns `false`).
 pub fn wait_for_exit(pid: u32, timeout: Duration) -> bool {
     if pid == 0 || pid == std::process::id() {
         return true;
@@ -47,11 +49,15 @@ fn wait_impl(pid: u32, timeout: Duration) -> bool {
 
 #[cfg(windows)]
 fn wait_impl(pid: u32, timeout: Duration) -> bool {
-    use windows_sys::Win32::Foundation::{CloseHandle, WAIT_OBJECT_0};
+    use windows_sys::Win32::Foundation::{CloseHandle, WAIT_OBJECT_0, WAIT_TIMEOUT};
     use windows_sys::Win32::System::Threading::{
         OpenProcess, PROCESS_SYNCHRONIZE, WaitForSingleObject,
     };
 
+    // A wait's timeout runs on the system timer tick (about 15.6 ms) and can expire up to a tick
+    // before `timeout` has passed by the monotonic clock (`Instant`), so the rest is waited again
+    // until the deadline has really passed, like the unix poll.
+    let deadline = std::time::Instant::now() + timeout;
     // SAFETY: plain Win32 calls; the handle is closed before returning.
     unsafe {
         let h = OpenProcess(PROCESS_SYNCHRONIZE, 0, pid);
@@ -59,8 +65,20 @@ fn wait_impl(pid: u32, timeout: Duration) -> bool {
             // Gone (or not ours to wait for).
             return true;
         }
-        let ms = u32::try_from(timeout.as_millis()).unwrap_or(u32::MAX - 1);
-        let done = WaitForSingleObject(h, ms) == WAIT_OBJECT_0;
+        let done = loop {
+            let left = deadline.saturating_duration_since(std::time::Instant::now());
+            // Rounded up, so a sub-millisecond rest is one short wait rather than a busy loop;
+            // below `INFINITE` (u32::MAX).
+            let ms = u32::try_from(left.as_nanos().div_ceil(1_000_000))
+                .unwrap_or(u32::MAX)
+                .min(u32::MAX - 1);
+            match WaitForSingleObject(h, ms) {
+                WAIT_OBJECT_0 => break true,
+                WAIT_TIMEOUT if std::time::Instant::now() < deadline => {}
+                // Timed out at the deadline (or the wait failed: treated as still running).
+                _ => break false,
+            }
+        };
         CloseHandle(h);
         done
     }
@@ -107,10 +125,11 @@ mod tests {
         let mut child = sleeper(10);
         let t = Instant::now();
         assert!(!wait_for_exit(child.id(), Duration::from_millis(300)));
-        // Not exactly 300 ms: on Windows the wait can return a few ms early (the timer ticks about
-        // every 15.6 ms), so the lower bound leaves room for that granularity.
-        assert!(t.elapsed() >= Duration::from_millis(250));
-        assert!(t.elapsed() < Duration::from_secs(5));
+        // The full timeout by `Instant` on every platform (on Windows the wait is repeated when
+        // the timer tick ends it early).
+        let waited = t.elapsed();
+        assert!(waited >= Duration::from_millis(300), "{waited:?}");
+        assert!(waited < Duration::from_secs(5), "{waited:?}");
         child.kill().unwrap();
         child.wait().unwrap();
     }
