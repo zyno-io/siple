@@ -58,6 +58,14 @@
     <screenshot><caption>Dark appearance</caption><image>https://raw.githubusercontent.com/zyno-io/siple/v0.1.2/crates/siple/tests/snapshots/idle_dark_wide.png</image></screenshot>
   </screenshots>
   <releases>
+    <release version="0.2.6" date="2026-11-23">
+      <url type="details">https://github.com/zyno-io/siple/releases/tag/v0.2.6</url>
+      <description><ul>
+        <li>A badge shows when an agent is listening to a call or a call is being recorded</li>
+        <li>Settings and the first-run wizard have a switch to start Siple when you log in</li>
+        <li>Settings: a switch's explanation sits right under it</li>
+      </ul></description>
+    </release>
     <release version="0.2.5" date="2026-11-23">
       <url type="details">https://github.com/zyno-io/siple/releases/tag/v0.2.5</url>
       <description><ul>
