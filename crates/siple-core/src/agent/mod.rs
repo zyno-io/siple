@@ -1,12 +1,14 @@
 //! Agent audio I/O: play inline audio into a call, listen to what the far end says, optional
 //! external speech hooks and a binary stream.
 //!
+//! * [`capture`]: which calls an agent is capturing audio from (the on-screen indicator);
 //! * [`hub`]: per-call RX hub (timeline, history, VAD jobs, subscribers);
 //! * [`wav`]: WAV / raw PCM / base64 decoding;
 //! * [`speech`]: TTS / STT commands from `[speech]`;
 //! * [`stream`]: `call.stream` upgrade session;
 //! * [`methods`]: the API methods built on those.
 
+pub mod capture;
 pub mod hub;
 pub mod methods;
 pub mod speech;
@@ -37,4 +39,6 @@ pub struct AgentState {
     pub streams: Mutex<HashMap<String, u64>>,
     /// Source of stream ids.
     pub next_stream_id: AtomicU64,
+    /// Calls an agent is capturing audio from (listen, rx_audio, stream RX, record).
+    pub capture: std::sync::Arc<capture::CaptureRegistry>,
 }

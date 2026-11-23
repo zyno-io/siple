@@ -923,6 +923,14 @@ impl App {
         &self.inner.stack
     }
 
+    /// Calls an agent is capturing audio from, as the UI shows them (see
+    /// [`agent::capture`](crate::agent::capture)).
+    pub fn agent_captures(
+        &self,
+    ) -> std::collections::HashMap<String, crate::agent::capture::AgentCapture> {
+        self.inner.agent.capture.visible(std::time::Instant::now())
+    }
+
     /// The media engine.
     pub fn media(&self) -> &Arc<MediaEngine> {
         &self.inner.media
@@ -1381,6 +1389,11 @@ async fn bridge_sip_events(
                 .tones
                 .on_call(call, inner.call_media.device_bound(&call.id));
         }
+        if let SipEvent::CallState { call } = &ev
+            && call.state == siple_sip::CallState::Ended
+        {
+            inner.agent.capture.clear_call(&call.id);
+        }
         // The call is confirmed: media clips may now be transmitted (never reset).
         if let SipEvent::CallState { call } = &ev
             && matches!(
@@ -1462,6 +1475,11 @@ async fn bridge_media_events(
     mut rx: tokio::sync::mpsc::UnboundedReceiver<MediaEvent>,
 ) {
     while let Some(ev) = rx.recv().await {
+        if let MediaEventKind::RecordFinished { .. } = &ev.kind
+            && !ev.call_id.is_empty()
+        {
+            inner.agent.capture.set_recording(&ev.call_id, false);
+        }
         if let Some((kind, call, data)) = media_event_to_wire(&ev) {
             let account = call_account(&inner, call.as_deref());
             inner

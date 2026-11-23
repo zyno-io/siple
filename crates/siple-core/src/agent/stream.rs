@@ -289,6 +289,8 @@ struct Reg {
     fmt: Value,
     /// `release` ran: the slot is free and `closed` was emitted.
     released: bool,
+    /// Marks the call as captured by an agent while an RX stream is open.
+    capture: Option<super::capture::CaptureGuard>,
 }
 
 impl Reg {
@@ -301,6 +303,7 @@ impl Reg {
             return;
         }
         self.released = true;
+        self.capture = None;
         if self.attached {
             self.attached = false;
             self.handle.detach_tx_stream();
@@ -432,6 +435,7 @@ pub(crate) async fn open_stream(
         "rx_ms": handle.rx_ms(),
         "event_seq": event_seq,
     });
+    let call_id = p.call_id.clone();
     let fmt = json!({"rx": rx, "tx": tx, "sample_rate": rate, "encoding": enc.as_str()});
     let mut open = fmt.clone();
     open["stream_id"] = stream_id.into();
@@ -442,13 +446,19 @@ pub(crate) async fn open_stream(
     let reg = Reg {
         inner: inner.clone(),
         handle,
-        call_id: p.call_id,
+        call_id: call_id.clone(),
         account: info.account,
         stream_id,
         attached: false,
         reason: "connection_lost",
         fmt,
         released: false,
+        capture: rx.then(|| {
+            inner
+                .agent
+                .capture
+                .begin(&call_id, &[super::capture::CaptureKind::Stream])
+        }),
     };
     let session = CallStream {
         reg,

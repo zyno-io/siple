@@ -2697,6 +2697,41 @@ fn mute_stays_enabled_on_a_muted_held_line() {
     assert!(!is_disabled(&h, "Unmute"));
 }
 
+/// An agent capturing the call's audio shows a badge on the call card, inside the window at
+/// every width, and nothing when the capture is over.
+#[test]
+fn agent_capture_badge_shows_inside_the_window() {
+    use siple_core::agent::capture::{AgentCapture, CaptureKind};
+    for (kinds, label) in [
+        (vec![CaptureKind::Listen], "Agent listening"),
+        (
+            vec![CaptureKind::Listen, CaptureKind::Transcribe],
+            "Agent transcribing",
+        ),
+        (vec![CaptureKind::Record], "Agent recording"),
+    ] {
+        for size in [WIDE, MEDIUM, NARROW] {
+            let mut snap = two_calls();
+            snap.agent_capture
+                .insert("c1".into(), AgentCapture::of(&kinds));
+            let mut h = harness(snap, size);
+            h.run();
+            let badge = h
+                .query_by_label(label)
+                .unwrap_or_else(|| panic!("{size:?}: no {label:?} badge"));
+            let r = badge.rect();
+            assert!(
+                r.min.x >= 0.0 && r.max.x <= size.x + 0.5 && r.max.y <= size.y,
+                "{size:?}: {label:?} badge outside the window ({r:?})"
+            );
+            // The capture ended: the badge goes.
+            h.state_mut().snap.agent_capture.clear();
+            h.run();
+            assert!(h.query_by_label(label).is_none(), "{size:?}: badge stayed");
+        }
+    }
+}
+
 // ---- settings and wizard --------------------------------------------------------------------
 
 use crate::ui::rpc::{self, RpcError, RpcReply, RpcRequest, RpcTag};

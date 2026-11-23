@@ -36,8 +36,8 @@ see [CONFIG.md](CONFIG.md#location)); neither is published yet. Since 0.2.0 the 
   `crates/siple-config/src/migrate.rs` into an import: automatic on first MSIX start (`%APPDATA%\Siple`, and the legacy
   `ZynoPhone` dir), user-assisted in the Mac App Store edition (open panel), and `siple-cli config import --from DIR`.
   Keychain passwords do not move across signing identities, so imported keyring accounts need the password again.
-- **Recording / "agent listening" indicator** visible during a call and reported by `call.get` (App Review guideline
-  2.5.14; useful everywhere).
+- ~~**Recording / "agent listening" indicator**~~ done: a badge on the call and in the tray menu, `agent_capture` in
+  `call.get` (App Review guideline 2.5.14; useful everywhere).
 - **Review account.** A durable public test PBX with echo and callback extensions and a demo SIP account for the review
   notes: both stores need a working account to test calls.
 - **Screenshots** at store sizes (Mac App Store 2880×1800), rendered from the visual-test scenes in

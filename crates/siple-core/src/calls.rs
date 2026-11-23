@@ -761,14 +761,26 @@ impl AppBackend {
             .iter()
             .filter(|c| p.account.as_deref().is_none_or(|a| c.account == a))
             .filter(|c| !(p.active_only.unwrap_or(false) && c.state == CallState::Ended))
-            .map(to_json)
+            .map(|c| self.call_json(c))
             .collect();
         Ok(json!({ "calls": calls, "event_seq": self.event_seq() }))
     }
 
+    /// `CallInfo` plus `agent_capture`: what an agent is capturing of the call's audio right now.
+    fn call_json(&self, info: &siple_sip::CallInfo) -> Value {
+        let mut v = to_json(info);
+        let names = if info.state == CallState::Ended {
+            Vec::new()
+        } else {
+            self.inner.agent.capture.active(&info.id).names()
+        };
+        v["agent_capture"] = json!(names);
+        v
+    }
+
     fn call_get(&self, p: CallParam) -> Result<Value, ApiError> {
         let info = self.call_info(&p.call_id)?;
-        let mut v = to_json(&info);
+        let mut v = self.call_json(&info);
         let entry = self.inner.call_media.get(&p.call_id);
         v["media"] = entry
             .as_ref()
@@ -903,6 +915,7 @@ impl AppBackend {
         entry
             .handle
             .record_start(path.clone(), p.stereo.unwrap_or(false));
+        self.inner.agent.capture.set_recording(&p.call_id, true);
         Ok(json!({
             "ok": true, "call_id": p.call_id, "path": path.display().to_string(), "event_seq": seq
         }))
@@ -912,6 +925,7 @@ impl AppBackend {
         let entry = self.media_entry(&p.call_id)?;
         let seq = self.event_seq();
         entry.handle.record_stop();
+        self.inner.agent.capture.set_recording(&p.call_id, false);
         let filter = EventFilter {
             kinds: Some(vec!["call.record_finished".into()]),
             account: None,
@@ -1255,7 +1269,7 @@ pub fn call_methods() -> Vec<MethodInfo> {
         ),
         MethodInfo::new(
             "call.list",
-            "All calls of this run (the last 64 ended ones included), oldest first: id, account, direction, state, remote party, SIP Call-ID, timestamps, end {code, reason, by, problem (absent for a normal end)}, negotiated codec / SRTP suite.",
+            "All calls of this run (the last 64 ended ones included), oldest first: id, account, direction, state, remote party, SIP Call-ID, timestamps, end {code, reason, by, problem (absent for a normal end)}, negotiated codec / SRTP suite, `agent_capture` (what an agent is capturing of the call's audio right now: a list of listen|transcribe|stream|record, empty when nothing; the app shows an \"Agent listening\" badge meanwhile).",
             obj(
                 json!({"account":{"type":"string","description":"Only calls of this account."},
                 "active_only":{"type":"boolean","description":"Leave out ended calls."}}),

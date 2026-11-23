@@ -43,6 +43,8 @@ pub struct TrayCall {
     pub who: String,
     /// What it offers.
     pub kind: TrayCallKind,
+    /// An agent is capturing the call's audio ("Agent listening", ...).
+    pub agent: Option<&'static str>,
 }
 
 /// The tray's state.
@@ -85,6 +87,11 @@ impl TrayModel {
             .map(|c| TrayCall {
                 id: c.id.clone(),
                 who: who(c),
+                agent: snap
+                    .agent_capture
+                    .get(&c.id)
+                    .filter(|a| a.is_active())
+                    .map(|a| a.label()),
                 kind: match (c.direction, c.state) {
                     (CallDirection::Inbound, CallState::Ringing | CallState::Early) => {
                         TrayCallKind::Ringing
@@ -296,6 +303,9 @@ impl TrayModel {
                             c.who,
                             if *held { " (on hold)" } else { "" }
                         )));
+                        if let Some(a) = c.agent {
+                            m.push(MenuEntry::Label(a.into()));
+                        }
                         m.push(MenuEntry::Item(
                             if *muted { "Unmute" } else { "Mute" }.into(),
                             TrayCmd::Mute(c.id.clone(), !muted),
@@ -520,6 +530,38 @@ mod tests {
             "Resume".into(),
             TrayCmd::Hold("c1".into(), false)
         )));
+    }
+
+    #[test]
+    fn agent_capture_is_labelled_in_the_menu() {
+        use siple_core::agent::capture::{AgentCapture, CaptureKind};
+        let m = model(|s| {
+            s.calls = vec![call(
+                "c1",
+                CallDirection::Outbound,
+                CallState::Active,
+                ("Bob", "sip:1@x"),
+            )];
+            s.agent_capture
+                .insert("c1".into(), AgentCapture::of(&[CaptureKind::Listen]));
+        });
+        assert!(
+            m.menu()
+                .contains(&MenuEntry::Label("Agent listening".into()))
+        );
+        let m = model(|s| {
+            s.calls = vec![call(
+                "c1",
+                CallDirection::Outbound,
+                CallState::Active,
+                ("Bob", "sip:1@x"),
+            )];
+        });
+        assert!(
+            !m.menu()
+                .iter()
+                .any(|e| matches!(e, MenuEntry::Label(l) if l.starts_with("Agent")))
+        );
     }
 
     #[test]

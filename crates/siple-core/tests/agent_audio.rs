@@ -1527,3 +1527,101 @@ mod speech {
         assert_eq!(t["transcript"], "second");
     }
 }
+
+// ---- agent capture indicator ---------------------------------------------------------------
+
+/// `agent_capture` of a call as `call.get` reports it.
+async fn capture_of(c: &mut ControlClient, call: &str) -> Value {
+    c.call("call.get", json!({"call_id": call})).await.unwrap()["agent_capture"].clone()
+}
+
+/// Polls (bounded) until the call reports `want`; the requests under test run for seconds, so
+/// the state is held long enough to be seen.
+async fn wait_capture(c: &mut ControlClient, call: &str, want: Value) {
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+    loop {
+        let got = capture_of(c, call).await;
+        if got == want {
+            return;
+        }
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "agent_capture stayed {got}, wanted {want}"
+        );
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+}
+
+/// While a listen runs the call reports `agent_capture: ["listen"]` (also in `call.list`); it
+/// is empty before and after, on the success path, after a failed request and when the call
+/// ends under the listen.
+#[tokio::test(flavor = "multi_thread")]
+async fn agent_capture_is_set_during_a_listen_and_cleared_after() {
+    let mut r = rig_with("").await;
+    let (a, b) = establish_silent(&mut r).await;
+    assert_eq!(capture_of(&mut r.b, &a).await, json!([]));
+
+    // Nobody speaks: the listen ends with no_speech after its start timeout.
+    let listen = r.a.call(
+        "call.listen",
+        json!({"call_id":a,"start_timeout_ms":1500,"audio":"none"}),
+    );
+    let watch = async {
+        wait_capture(&mut r.b, &a, json!(["listen"])).await;
+        let list = r.b.call("call.list", json!({})).await.unwrap();
+        let c = list["calls"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|c| c["id"] == a)
+            .expect("the call in call.list");
+        assert_eq!(c["agent_capture"], json!(["listen"]), "{c}");
+    };
+    let (res, ()) = tokio::join!(listen, watch);
+    assert_eq!(res.unwrap()["reason"], "no_speech");
+    assert_eq!(capture_of(&mut r.b, &a).await, json!([]));
+
+    // A failing request does not leave it set.
+    let e =
+        r.a.call(
+            "call.listen",
+            json!({"call_id":a,"transcribe":true,"audio":"bogus"}),
+        )
+        .await
+        .unwrap_err();
+    let _ = kind(&e);
+    assert_eq!(capture_of(&mut r.b, &a).await, json!([]));
+
+    // The far end hangs up under a running listen: it ends and the flag is gone.
+    let listen = r.a.call(
+        "call.listen",
+        json!({"call_id":a,"start_timeout_ms":8000,"audio":"none"}),
+    );
+    let hangup = async {
+        wait_capture(&mut r.b, &a, json!(["listen"])).await;
+        r.b.call("call.hangup", json!({"call_id":b})).await.unwrap();
+    };
+    let (res, ()) = tokio::join!(listen, hangup);
+    // Ok(call_ended) or an error: either way the request is over.
+    drop(res);
+    assert_eq!(capture_of(&mut r.a, &a).await, json!([]));
+}
+
+/// A recording counts until `call.record_stop`.
+#[tokio::test(flavor = "multi_thread")]
+async fn agent_capture_covers_a_recording() {
+    let mut r = rig_with("").await;
+    let (a, _b) = establish_silent(&mut r).await;
+    let path = r.dir.path().join("rec.wav");
+    r.a.call(
+        "call.record_start",
+        json!({"call_id":a,"path":path.display().to_string()}),
+    )
+    .await
+    .unwrap();
+    assert_eq!(capture_of(&mut r.a, &a).await, json!(["record"]));
+    r.a.call("call.record_stop", json!({"call_id":a}))
+        .await
+        .unwrap();
+    assert_eq!(capture_of(&mut r.a, &a).await, json!([]));
+}

@@ -1,6 +1,12 @@
 <!-- siple-rename: keep (this file documents the legacy ZynoPhone names on purpose) -->
 # Changelog
 
+## Unreleased
+
+### New
+
+- A badge on the call shows when an agent is listening to it: "Agent listening", "Agent transcribing" or "Agent recording" appears on the call (and in the tray menu) while an AI agent connected through the control API, MCP or `siple-cli` captures the call's audio with `call.listen`, `call.rx_audio`, `call.stream` or `call.record_start`. `call.get` and `call.list` report it as `agent_capture`.
+
 ## 0.2.5 (2026-11-23)
 
 ### New

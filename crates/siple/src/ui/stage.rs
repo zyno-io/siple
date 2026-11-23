@@ -452,7 +452,16 @@ fn line_card_body(
 
 fn media_chips(ui: &mut egui::Ui, cx: &Cx, c: &CallInfo, ended: bool) {
     let p = cx.p;
-    let has_chips = c.negotiated.is_some() || (c.muted && !ended) || (ended && c.end.is_some());
+    let agent = cx
+        .vm
+        .snap
+        .agent_capture
+        .get(&c.id)
+        .filter(|a| !ended && a.is_active());
+    let has_chips = c.negotiated.is_some()
+        || (c.muted && !ended)
+        || (ended && c.end.is_some())
+        || agent.is_some();
     if !has_chips {
         return;
     }
@@ -489,6 +498,16 @@ fn media_chips(ui: &mut egui::Ui, cx: &Cx, c: &CallInfo, ended: bool) {
                     .on_hover_text("Media is not encrypted");
                 }
             }
+        }
+        if let Some(a) = agent {
+            chip(
+                ui,
+                p,
+                Some(ic::MICROPHONE),
+                strong(a.label(), FS_MICRO + 0.5),
+                Some(p.warn),
+            )
+            .on_hover_text("An agent connected to Siple is capturing this call's audio");
         }
         if c.muted && !ended {
             chip(
