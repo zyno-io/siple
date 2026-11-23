@@ -754,7 +754,7 @@ pub(in crate::ui) fn sec_toggle_pub(
 /// schemes at install time.
 pub(in crate::ui) fn links_automatic_note(ui: &mut egui::Ui, p: &Palette) {
     ui.label(
-        egui::RichText::new("Links open in Siple automatically in this edition.")
+        egui::RichText::new("This edition registers sip:, sips:, tel:, callto: and siple: links when it's installed. If another app opens them, make Siple the default.")
             .size(FS_SMALL)
             .color(p.faint),
     );

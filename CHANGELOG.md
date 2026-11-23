@@ -10,7 +10,7 @@
 
 ### Fixed
 
-- Mac App Store, Microsoft Store and Flatpak editions: the link-handling switch is gone from Settings and the first-run wizard, where it did nothing. Links open in Siple automatically in these editions.
+- Mac App Store, Microsoft Store and Flatpak editions: the link-handling switch is gone from Settings and the first-run wizard, where it did nothing. These editions register the links when they are installed; if another app opens them, make Siple the default (see the links guide).
 - Mac App Store edition: the MCP snippet in Settings > Developer shows the full path of the bundled `siple-cli`, which is not on `PATH`.
 
 ## 0.2.5 (2026-11-23)

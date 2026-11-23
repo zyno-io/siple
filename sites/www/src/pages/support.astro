@@ -46,7 +46,12 @@ const updated = 'November 22, 2026';
         <p>Settings &gt; Advanced has an <strong>Open config</strong> button. Details are in the <a href={doc.configLocation}>configuration reference</a>.</p>
 
         <h3>Phone links don't open in Siple.</h3>
-        <p>In the direct downloads, check that <strong>Open sip:, sips:, tel:, callto: and siple: setup links</strong> is on in Settings, then make Siple the default app for those links in your operating system. <a href={doc.links}>The links guide</a> has the steps. In the Mac App Store and Microsoft Store editions there is no such setting: the app declares the links when it is installed. If another app still opens them, choose Siple as the default app for that link type in the system settings.</p>
+        <p>Your operating system decides which app opens a link, and the steps differ. <a href={doc.links}>The links guide</a> has them in full.</p>
+        <ul>
+          <li><strong>Windows:</strong> choose Siple in Settings &gt; Default apps. In the direct download, the Siple setting <strong>Open sip:, sips:, tel:, callto: and siple: setup links</strong> must be on. The Microsoft Store edition has no such setting.</li>
+          <li><strong>macOS:</strong> there is no system setting for this. Change the default in the other app that handles the link (FaceTime for <code>tel:</code>, for example). Siple registers its link types when you install it.</li>
+          <li><strong>Linux and Flatpak:</strong> run <code>xdg-mime default io.zyno.siple.desktop x-scheme-handler/sip</code>, and again for <code>sips</code>, <code>tel</code>, <code>callto</code> and <code>siple</code>.</li>
+        </ul>
 
         <h3>Does uninstalling the Microsoft Store version delete my settings?</h3>
         <p>Yes. Windows removes the app's data folder with the app, so your configuration, accounts and logs go too. Copy <code>config.toml</code> out of the folder above first if you want to keep it. Updates keep your data.</p>

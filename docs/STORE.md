@@ -65,11 +65,11 @@ Open:
 Done:
 
 - Launch at login uses `SMAppService.mainAppService` register / unregister (`shell/autostart.rs`, `objc2-service-management`).
-  It shows up in System Settings > General > Login Items; if the user switches it off there, the next toggle in Siple
-  registers it again. Not exercised in the sandbox yet (open item 1).
+  It shows up in System Settings > General > Login Items. The System Settings switch wins: if the user switched it off
+  there, Siple logs it and does not register again. A non-default `--config` profile leaves it alone. Not exercised in the sandbox yet (open item 1).
 - The Settings > Developer MCP snippet shows the bundled CLI's absolute path, derived from the running bundle.
 - `handle_links` is hidden in Settings and the first-run wizard in every packaged edition (`Channel::can_register_links`);
-  a faint note says links open in Siple automatically. Info.plist declares the schemes at install time.
+  a faint note says the edition registers the links at install time and to make Siple the default if another app opens them. Info.plist declares the schemes.
 
 Findings from the App Sandbox spike (macOS 27, Developer ID signature with the sandbox and app-group entitlements):
 

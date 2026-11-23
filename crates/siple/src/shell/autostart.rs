@@ -306,37 +306,87 @@ fn uses_service_management(c: &siple_core::config::channel::Channel) -> bool {
     c.kind == siple_core::config::channel::ChannelKind::MacAppStore
 }
 
+/// What `SMAppService` is asked to do.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+#[derive(Debug, PartialEq, Eq)]
+enum LoginItemPlan {
+    /// Nothing to change.
+    Nothing,
+    /// The user switched it off in System Settings; that switch wins.
+    UserSwitchedOff,
+    Register,
+    Unregister,
+}
+
+/// The `SMAppService` action for the Mac App Store edition. `non_default_profile`: the main app
+/// service can only start the default profile, so another profile never touches it.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn login_item_plan(
+    enabled: bool,
+    non_default_profile: bool,
+    registered: bool,
+    needs_approval: bool,
+) -> LoginItemPlan {
+    if non_default_profile {
+        LoginItemPlan::Nothing
+    } else if enabled {
+        if needs_approval {
+            LoginItemPlan::UserSwitchedOff
+        } else if registered {
+            LoginItemPlan::Nothing
+        } else {
+            LoginItemPlan::Register
+        }
+    } else if registered || needs_approval {
+        LoginItemPlan::Unregister
+    } else {
+        LoginItemPlan::Nothing
+    }
+}
+
+/// `kSMErrorAlreadyRegistered` of `SMAppService.register`.
+#[cfg(target_os = "macos")]
+const SM_ERROR_ALREADY_REGISTERED: isize = 1;
+
 /// Registers (`enabled`) or unregisters the main app as a login item with `SMAppService`.
 #[cfg(target_os = "macos")]
 fn service_management(enabled: bool, config: Option<&Path>) -> std::io::Result<()> {
     use objc2_service_management::{SMAppService, SMAppServiceStatus};
     if config.is_some() {
-        tracing::warn!("the Mac App Store login item always starts the default profile");
+        tracing::info!(
+            "the Mac App Store login item starts the default profile only; leaving it alone"
+        );
+        return Ok(());
     }
     // SAFETY: plain Objective-C calls on the shared main-app service object.
     let svc = unsafe { SMAppService::mainAppService() };
     let status = unsafe { svc.status() };
+    let plan = login_item_plan(
+        enabled,
+        false,
+        status == SMAppServiceStatus::Enabled,
+        status == SMAppServiceStatus::RequiresApproval,
+    );
     let fail = |what: &str, e: objc2::rc::Retained<objc2_foundation::NSError>| {
         let msg = e.localizedDescription().to_string();
         tracing::warn!(error = %msg, "SMAppService {what} failed");
         std::io::Error::other(format!("login item {what} failed: {msg}"))
     };
-    if enabled {
-        if status == SMAppServiceStatus::Enabled {
-            return Ok(());
-        }
-        unsafe { svc.registerAndReturnError() }.map_err(|e| fail("register", e))?;
-        if unsafe { svc.status() } == SMAppServiceStatus::RequiresApproval {
-            tracing::warn!(
-                "the login item needs approval in System Settings > General > Login Items"
+    match plan {
+        LoginItemPlan::Nothing => Ok(()),
+        LoginItemPlan::UserSwitchedOff => {
+            tracing::info!(
+                "the login item is switched off in System Settings > General > Login Items; turn it on there"
             );
+            Ok(())
         }
-        Ok(())
-    } else if status == SMAppServiceStatus::NotRegistered || status == SMAppServiceStatus::NotFound
-    {
-        Ok(())
-    } else {
-        unsafe { svc.unregisterAndReturnError() }.map_err(|e| fail("unregister", e))
+        LoginItemPlan::Register => match unsafe { svc.registerAndReturnError() } {
+            Err(e) if e.code() == SM_ERROR_ALREADY_REGISTERED => Ok(()),
+            r => r.map_err(|e| fail("register", e)),
+        },
+        LoginItemPlan::Unregister => {
+            unsafe { svc.unregisterAndReturnError() }.map_err(|e| fail("unregister", e))
+        }
     }
 }
 
@@ -442,6 +492,26 @@ mod tests {
         assert!(!uses_service_management(&Channel::DIRECT));
         assert!(!uses_service_management(&Channel::FLATPAK));
         assert!(!uses_service_management(&Channel::msix("a_b", None)));
+    }
+
+    #[test]
+    fn the_login_item_plan() {
+        use LoginItemPlan::*;
+        // enabled, non_default_profile, registered, needs_approval
+        assert_eq!(login_item_plan(true, false, false, false), Register);
+        assert_eq!(login_item_plan(true, false, true, false), Nothing);
+        assert_eq!(login_item_plan(true, false, false, true), UserSwitchedOff);
+        assert_eq!(login_item_plan(false, false, true, false), Unregister);
+        assert_eq!(login_item_plan(false, false, false, true), Unregister);
+        assert_eq!(login_item_plan(false, false, false, false), Nothing);
+        // Another profile never touches the default profile's item.
+        for (e, r, n) in [
+            (true, false, false),
+            (false, true, false),
+            (false, false, true),
+        ] {
+            assert_eq!(login_item_plan(e, true, r, n), Nothing);
+        }
     }
 
     #[test]
