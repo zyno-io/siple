@@ -157,6 +157,17 @@ body {
 .vp-doc th {
   font-weight: 600;
 }
+/* Code in cells wraps, and the last column keeps a readable width, so a long value such as
+   `disabled|supported|required` cannot squeeze the description to a few characters. */
+.vp-doc td code,
+.vp-doc th code {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.vp-doc td:last-child:not(:first-child),
+.vp-doc th:last-child:not(:first-child) {
+  min-width: 15rem;
+}
 
 /* "For the config file" and other <details> blocks read as a quiet aside. */
 .vp-doc .details.custom-block {

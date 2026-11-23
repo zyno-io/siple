@@ -81,7 +81,7 @@ that entry.
    target** for queue codes.
 
 The pickup method **Replaces** (SIP Replaces) is experimental and not interop-verified, so prefer **Feature code**. Full
-rules: [Directed pickup](/reference/configuration#directed-pickup).
+rules: [Directed pickup rules](#directed-pickup-rules).
 
 ::: details In config.toml
 Set `pickup = "prefix"` with `pickup_prefix` (for example `**`, giving `**1004`), or use `pickup_target` for queue codes.
@@ -94,8 +94,48 @@ pickup_prefix = "**"
 ```
 :::
 
-## If the lamps look out of date
+## Directed pickup rules
 
-If keys look stale, check the subscription state: [BLF subscription health](/reference/configuration#blf-subscription-health).
+Pickup is offered only while the extension is ringing, its lamp is up to date and a pickup method other than `off` applies
+to it (the entry's own setting, else the account's). Otherwise `call.pickup` fails with `invalid_state`. A pickup is an
+ordinary call, so auto-hold applies. If the PBX refuses it (404, 480, 486 and so on), the call ends with that code.
+
+- **`prefix`** dials `pickup_target` if the entry has one, else `<pickup_prefix><extension>`. The extension is the user part of
+  `uri` (`sip:1004@pbx` and `1004` both give `1004`), so the default gives `**1004`.
+- **`replaces`** (experimental, not verified with other systems) sends an INVITE with `Replaces`, built from the ringing
+  dialog. It goes to the caller by default. `pickup_replaces_target = "monitored"` sends it to the monitored phone instead,
+  for B2BUA setups where the PBX created the callee leg. If the PBX does not send what is needed, the pickup fails with
+  `invalid_state`. Use `prefix` there.
+- **Routing.** Every pickup goes through the account's outbound proxy or registrar, whatever host the target names. A
+  hostile NOTIFY cannot steer the call or your digest credential to another host.
+
+```toml
+[[account]]
+pickup = "prefix"       # off | prefix | replaces
+pickup_prefix = "**"
+
+[[account.blf]]
+uri = "1004"
+label = "Support queue"
+group = "Support"
+pickup = "replaces"     # optional per-key override
+pickup_target = ""      # optional: dial this instead of <prefix><ext>
+```
+
+## BLF subscription health
+
+Each watched extension is its own SUBSCRIBE dialog. `blf.list` and `status` report, per entry, a `subscription` object and a
+`stale` flag.
+
+- `phase`: `pending`, `active`, `retrying` (next attempt at `retry_at`) or `failed` (the PBX refused for good; `last_code` is
+  the SIP status).
+- `last_problem`: plain-language `{kind, title, hint}` of the last failure. Absent while healthy.
+- `subscribed_at`: when the current subscription was first confirmed. Refreshes keep it; a failure, termination or new dialog
+  resets it.
+- `last_refreshed_at`: the last successful refresh. Both times are `null` until confirmed and after a failure.
+- `stale` is true while retrying, and when neither a NOTIFY nor a refresh arrived within 30 seconds after `expires_at`. The
+  last known state stays on the lamp.
+
+With many entries, raise `blf_expires` so there are fewer refreshes.
 
 Next: [Keyboard shortcuts](/guide/shortcuts).

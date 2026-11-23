@@ -135,6 +135,27 @@ When you choose **Install and restart**, Siple does this:
 3. It replaces the app as late as possible and restarts, never during a call. The new version opens its window if it was open
    when it restarted, even with `start_hidden`; if Siple was hidden in the tray it starts hidden again.
 
+### What is checked before an install replaces anything
+
+All of this must hold, or nothing changes and the pill offers the release page:
+
+1. `SHA256SUMS` has a valid [minisign](https://jedisct1.github.io/minisign/) signature from Siple's release key (built into
+   the app), and its signed comment names this release, so an old list cannot be replayed. A release without
+   `SHA256SUMS.minisig` is never installed in place.
+2. The archive's SHA-256 and size match the signed list.
+3. The system accepts the publisher: on macOS the Developer ID signature of the app and `siple-cli` plus notarization; on
+   Windows Authenticode from Signal24 LLC. On Linux the signed list is the check, plus a test run of the new `siple` and
+   `siple-cli` (`--version`).
+4. The archive holds exactly what a release contains (no extra files, no paths outside the install folder, no links).
+
+The running copy must pass the same publisher check, so a development build never replaces itself. Downloads come from
+`https://github.com/zyno-io/siple/releases/download/v<version>/<file>`, built from the version and file names in the release
+list, never taken from it. GitHub may redirect (at most three times, HTTPS only, GitHub hosts only).
+
+Siple restarts only when no call, transfer or echo test is active and it has been quiet for 5 seconds. The files are replaced
+just before the restart. Replaced files stay (`*.old-<number>` on Windows and Linux, a hidden temporary folder on macOS)
+until the new version has run for a minute, so a version that fails to start leaves the previous copy in place.
+
 ## Details
 
 ::: details In config.toml

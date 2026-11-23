@@ -174,7 +174,7 @@ redact_srtp_keys = true     # SRTP master keys
 ```
 
 A per-account `sip_trace = false` switches that account's wire trace off. See
-[Logs and secrets](/reference/configuration#logs-and-secrets).
+[Share a log safely](#share-a-log-safely).
 :::
 
 If nothing here helps, open an issue on [GitHub](https://github.com/zyno-io/siple/issues) with a redacted trace.

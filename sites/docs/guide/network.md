@@ -37,6 +37,19 @@ amber, see [Troubleshooting](/guide/troubleshooting).
 - **`transport = "auto"`** may pick a different transport after a re-probe, but never while the account has calls.
 :::
 
+::: details Picking the transport automatically
+With `transport = "auto"`, Siple looks up DNS SRV records for the next hop (the outbound proxy, else the registrar, else the
+domain). The first of `_sips._tcp` (TLS), `_sip._tcp` (TCP) and `_sip._udp` (UDP) that has a record wins, with that record's
+hosts and ports. With no SRV record it uses UDP on port 5060. There is no NAPTR lookup. An IP address or an explicit
+`host:port` skips SRV and uses UDP.
+
+- `status` and `account.get` show `transport: "auto"` plus `transport_effective` (`udp`, `tcp` or `tls`). The window shows
+  "TLS (auto)".
+- The choice is made when the transport is built and again after each network re-probe. A changed answer rebuilds the
+  transport and re-registers. While the account has calls, the transport is kept.
+- With `auto`, `tls_verify`, `tls_ca_file` and `tls_fingerprint` apply only if TLS is picked.
+:::
+
 ::: details In config.toml
 Tune this under `[network]`: `watch`, `probe_secs`, `debounce_ms` and `move_calls`. Set `move_calls = false` to end
 established calls with `network_lost` right away. All of these are hot, which means they apply without a restart. See
