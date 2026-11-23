@@ -1,6 +1,15 @@
 <!-- siple-rename: keep (this file documents the legacy ZynoPhone names on purpose) -->
 # Changelog
 
+## 0.2.4 (2026-11-22)
+
+### Fixed
+
+- Auto-hold in a call between two of your own accounts holds the leg that dialled. It could hold the receiving leg instead,
+  depending on which leg was registered first.
+- Windows: the restart after an in-place update waits the full time for the old process to exit (a wait could end a moment
+  early).
+
 ## 0.2.3 (2026-11-22)
 
 ### Fixed
