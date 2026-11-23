@@ -629,6 +629,11 @@ impl CallMediaHandle {
         self.inner.shared.answered.store(true, Ordering::Release);
     }
 
+    /// A recording of the call is running (`call.record_start`, or a `record:` sink).
+    pub fn is_recording(&self) -> bool {
+        self.inner.shared.recording.load(Ordering::Acquire)
+    }
+
     /// Whether [`mark_answered`](Self::mark_answered) ran.
     pub fn is_answered(&self) -> bool {
         self.inner.shared.answered.load(Ordering::Acquire)
@@ -681,7 +686,25 @@ impl CallMediaHandle {
         self.cmd(CallCmd::RecordStart {
             path: path.into(),
             stereo,
+            ack: None,
         });
+    }
+
+    /// Like [`record_start`](Self::record_start); the receiver resolves once the media thread
+    /// has created the file (or failed to) and [`is_recording`](Self::is_recording) is
+    /// up to date. It is dropped unresolved when the call is already gone.
+    pub fn record_start_acked(
+        &self,
+        path: impl Into<PathBuf>,
+        stereo: bool,
+    ) -> oneshot::Receiver<()> {
+        let (tx, rx) = oneshot::channel();
+        self.cmd(CallCmd::RecordStart {
+            path: path.into(),
+            stereo,
+            ack: Some(tx),
+        });
+        rx
     }
 
     /// Finish the recording ([`MediaEventKind::RecordFinished`](super::MediaEventKind::RecordFinished) follows).

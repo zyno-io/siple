@@ -70,6 +70,8 @@ pub(crate) enum CallCmd {
     RecordStart {
         path: PathBuf,
         stereo: bool,
+        /// Sent once the file was created (or creating it failed) and the recording flag is set.
+        ack: Option<oneshot::Sender<()>>,
     },
     RecordStop,
     Detect {
@@ -353,7 +355,12 @@ impl MediaThread {
                                 barge_in_rx_ms,
                             } => c.stop_play(id, clear_queue, reason, barge_in_rx_ms),
                             CallCmd::AttachTxStream(s) => c.attach_tx_stream(s),
-                            CallCmd::RecordStart { path, stereo } => c.record_start(path, stereo),
+                            CallCmd::RecordStart { path, stereo, ack } => {
+                                c.record_start(path, stereo);
+                                if let Some(ack) = ack {
+                                    let _ = ack.send(());
+                                }
+                            }
                             CallCmd::RecordStop => c.record_stop(),
                             CallCmd::Detect {
                                 freq_hz,

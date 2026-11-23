@@ -923,6 +923,20 @@ impl App {
         &self.inner.stack
     }
 
+    /// Calls an agent is capturing audio from, as the UI shows them (see
+    /// [`agent::capture`](crate::agent::capture)).
+    pub fn agent_captures(
+        &self,
+    ) -> std::collections::HashMap<String, crate::agent::capture::AgentCapture> {
+        use crate::agent::capture::CaptureKind;
+        let mut v = self.inner.agent.capture.visible(std::time::Instant::now());
+        for id in self.inner.call_media.recording_calls() {
+            let a = v.get(&id).copied().unwrap_or_default();
+            v.insert(id, a.with(CaptureKind::Record));
+        }
+        v
+    }
+
     /// The media engine.
     pub fn media(&self) -> &Arc<MediaEngine> {
         &self.inner.media
@@ -1381,6 +1395,11 @@ async fn bridge_sip_events(
                 .tones
                 .on_call(call, inner.call_media.device_bound(&call.id));
         }
+        if let SipEvent::CallState { call } = &ev
+            && call.state == siple_sip::CallState::Ended
+        {
+            inner.agent.capture.clear_call(&call.id);
+        }
         // The call is confirmed: media clips may now be transmitted (never reset).
         if let SipEvent::CallState { call } = &ev
             && matches!(
@@ -1462,6 +1481,12 @@ async fn bridge_media_events(
     mut rx: tokio::sync::mpsc::UnboundedReceiver<MediaEvent>,
 ) {
     while let Some(ev) = rx.recv().await {
+        if let MediaEventKind::RecordFinished { .. } = &ev.kind
+            && !ev.call_id.is_empty()
+        {
+            // Only the UI linger: the live flag belongs to the media thread.
+            inner.agent.capture.recording_finished(&ev.call_id);
+        }
         if let Some((kind, call, data)) = media_event_to_wire(&ev) {
             let account = call_account(&inner, call.as_deref());
             inner

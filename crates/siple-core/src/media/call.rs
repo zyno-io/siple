@@ -103,6 +103,9 @@ pub(crate) struct CallShared {
     /// Id of the clip currently playing (0 = none), published on each clip transition. The RX
     /// hub counts a barge-in watcher only while its clip is the current one.
     pub current_clip: Arc<AtomicU64>,
+    /// A recording is running (`record_start` or a `record:` sink): the on-screen recording
+    /// indicator. Only the media thread writes it, and only together with `Call::record`.
+    pub recording: std::sync::atomic::AtomicBool,
 }
 
 /// Where a clip's samples come from.
@@ -1336,6 +1339,7 @@ impl CallState {
         }
         if let Some(msg) = failed {
             self.record = None;
+            self.shared.recording.store(false, Ordering::Release);
             self.error(msg);
         }
     }
@@ -1361,7 +1365,8 @@ impl CallState {
     }
 
     pub fn record_start(&mut self, path: PathBuf, stereo: bool) {
-        self.record_stop();
+        // The flag stays on across a rotation (old file finished, new one started).
+        self.finish_recording();
         let spec = hound::WavSpec {
             channels: if stereo { 2 } else { 1 },
             sample_rate: ENGINE_RATE,
@@ -1376,12 +1381,23 @@ impl CallState {
                     path,
                     stereo,
                 });
+                self.shared.recording.store(true, Ordering::Release);
             }
-            Err(e) => self.error(format!("cannot create {}: {e}", path.display())),
+            Err(e) => {
+                self.shared.recording.store(false, Ordering::Release);
+                self.error(format!("cannot create {}: {e}", path.display()));
+            }
         }
     }
 
     pub fn record_stop(&mut self) {
+        // Flag first: whoever sees `RecordFinished` must not still see the recording running.
+        self.shared.recording.store(false, Ordering::Release);
+        self.finish_recording();
+    }
+
+    /// Closes the running recording's file (event `RecordFinished`) without touching the flag.
+    fn finish_recording(&mut self) {
         if let Some(rec) = self.record.take() {
             let path = rec.path;
             match rec.writer.finalize() {

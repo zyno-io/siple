@@ -33,6 +33,9 @@ pub struct Snapshot {
     /// BLF state of every monitored extension, per account in config order.
     pub blf: Vec<siple_sip::BlfStatus>,
     pub calls: Vec<CallInfo>,
+    /// Calls an agent (control API / MCP) is capturing audio from, by call id: the "Agent
+    /// listening" badge (App Review guideline 2.5.14).
+    pub agent_capture: std::collections::HashMap<String, siple_core::agent::capture::AgentCapture>,
     /// Transfer sessions: the last finished ones, then the live ones (the transfer panel).
     pub transfers: Vec<siple_sip::TransferSession>,
     /// Id of the un-held device-bound call that owns the microphone and speaker.
@@ -337,6 +340,7 @@ pub fn capture(app: &App, devices: DeviceList, with_logs: bool) -> Snapshot {
         accounts: stack.accounts_status(),
         blf: stack.blf_status(None),
         calls: stack.calls(),
+        agent_capture: app.agent_captures(),
         transfers: stack.transfers(),
         active_line: stack.active_line(),
         devices,
@@ -387,6 +391,7 @@ fn change_key(snap: &Snapshot) -> String {
         accounts,
         blf,
         calls,
+        agent_capture,
         transfers,
         active_line,
         devices,
@@ -404,8 +409,13 @@ fn change_key(snap: &Snapshot) -> String {
         update_skipped,
     } = snap;
     format!(
-        "{accounts:?}{blf:?}{calls:?}{transfers:?}{active_line:?}{devices:?}{effective:?}{audio:?}\
+        "{accounts:?}{blf:?}{calls:?}{:?}{transfers:?}{active_line:?}{devices:?}{effective:?}{audio:?}\
          {mic:?}{config_error:?}{ui:?}{:p}{config_hash}{config_unparsable}{logs:?}{update:?}{update_skipped:?}",
+        // Sorted: a HashMap's order is not stable between calls.
+        agent_capture
+            .iter()
+            .map(|(id, c)| (id, c.names()))
+            .collect::<std::collections::BTreeMap<_, _>>(),
         Arc::as_ptr(cfg)
     )
 }

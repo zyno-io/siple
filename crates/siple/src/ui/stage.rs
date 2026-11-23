@@ -23,6 +23,13 @@ use crate::widgets::{
     strong,
 };
 
+/// Hover text of the "agent is capturing" badges.
+pub(super) const AGENT_HOVER: &str = "An agent connected to Siple is capturing this call's audio";
+/// Hover text of the recording badge.
+pub(super) const RECORDING_HOVER: &str = "This call's audio is being recorded to a file";
+/// Hover text of the banner row when both apply.
+const BOTH_HOVER: &str = "An agent connected to Siple is capturing this call's audio, and it is being recorded to a file";
+
 /// Banners shown at once; the rest collapse into "+N more".
 const MAX_BANNERS: usize = 3;
 
@@ -172,6 +179,67 @@ pub(super) fn current_line<'a>(
 
 pub(super) fn is_waiting(c: &CallInfo) -> bool {
     c.direction == CallDirection::Inbound && c.state == CallState::Ringing
+}
+
+/// A bar under the header on every screen (every layout, the extensions tab, Settings, the
+/// wizard) while anything captures a call's audio: App Review guideline 2.5.14.
+pub(super) fn capture_banner(ui: &mut egui::Ui, cx: &Cx, st: &UiState) {
+    let p = cx.p;
+    let rows: Vec<(String, &'static str)> = cx
+        .lines(st)
+        .into_iter()
+        .filter(|(_, c)| c.state != CallState::Ended)
+        .filter_map(|(slot, c)| {
+            let a = cx.capture(&c.id)?;
+            let what = [a.agent_label(), a.recording_label()]
+                .into_iter()
+                .flatten()
+                .collect::<Vec<_>>()
+                .join(" and ");
+            let hover = match (a.agent_label(), a.recording_label()) {
+                (Some(_), Some(_)) => BOTH_HOVER,
+                (None, Some(_)) => RECORDING_HOVER,
+                _ => AGENT_HOVER,
+            };
+            let line = if slot == usize::MAX {
+                String::new()
+            } else {
+                format!("L{slot} ")
+            };
+            Some((
+                format!("{what} \u{b7} {line}{}", super::display_name(c)),
+                hover,
+            ))
+        })
+        .collect();
+    if rows.is_empty() {
+        return;
+    }
+    egui::Panel::top("capture_banner")
+        .frame(
+            egui::Frame::new()
+                .fill(p.warn.soft)
+                .inner_margin(Margin::symmetric(16, 6)),
+        )
+        .show_separator_line(true)
+        .show(ui, |ui| {
+            ui.spacing_mut().item_spacing.y = 2.0;
+            for (r, hover) in rows.iter().take(MAX_BANNERS) {
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = 6.0;
+                    ui.label(icon_fill(ic::MICROPHONE, FS_SMALL + 1.0).color(p.warn.ink));
+                    ui.add(egui::Label::new(strong(r, FS_SMALL).color(p.warn.ink)).truncate())
+                        .on_hover_text(*hover);
+                });
+            }
+            if rows.len() > MAX_BANNERS {
+                ui.label(
+                    RichText::new(format!("+{} more", rows.len() - MAX_BANNERS))
+                        .size(FS_SMALL)
+                        .color(p.warn.ink),
+                );
+            }
+        });
 }
 
 /// Incoming calls that do not have the stage: pinned banners, newest first.
@@ -452,7 +520,11 @@ fn line_card_body(
 
 fn media_chips(ui: &mut egui::Ui, cx: &Cx, c: &CallInfo, ended: bool) {
     let p = cx.p;
-    let has_chips = c.negotiated.is_some() || (c.muted && !ended) || (ended && c.end.is_some());
+    let agent = cx.capture(&c.id).filter(|_| !ended);
+    let has_chips = c.negotiated.is_some()
+        || (c.muted && !ended)
+        || (ended && c.end.is_some())
+        || agent.is_some();
     if !has_chips {
         return;
     }
@@ -489,6 +561,26 @@ fn media_chips(ui: &mut egui::Ui, cx: &Cx, c: &CallInfo, ended: bool) {
                     .on_hover_text("Media is not encrypted");
                 }
             }
+        }
+        if let Some(label) = agent.and_then(|a| a.agent_label()) {
+            chip(
+                ui,
+                p,
+                Some(ic::MICROPHONE),
+                strong(label, FS_MICRO + 0.5),
+                Some(p.warn),
+            )
+            .on_hover_text(AGENT_HOVER);
+        }
+        if let Some(label) = agent.and_then(|a| a.recording_label()) {
+            chip(
+                ui,
+                p,
+                Some(ic::MICROPHONE),
+                strong(label, FS_MICRO + 0.5),
+                Some(p.warn),
+            )
+            .on_hover_text(RECORDING_HOVER);
         }
         if c.muted && !ended {
             chip(

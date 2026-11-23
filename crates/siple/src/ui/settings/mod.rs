@@ -517,10 +517,12 @@ pub(in crate::ui) fn route(
     }
     st.wizard.decide(cx.vm.snap, out);
     if wizard::active(st) {
+        super::stage::capture_banner(ui, cx, st);
         wizard::show(ui, cx, st, out);
         return true;
     }
     if st.settings.open {
+        super::stage::capture_banner(ui, cx, st);
         show(ui, cx, st, out);
         return true;
     }

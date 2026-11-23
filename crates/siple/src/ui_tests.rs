@@ -2736,6 +2736,104 @@ fn mute_stays_enabled_on_a_muted_held_line() {
     assert!(!is_disabled(&h, "Unmute"));
 }
 
+/// An agent capturing the call's audio shows a badge on the call card, inside the window at
+/// every width, and nothing when the capture is over.
+#[test]
+fn agent_capture_badge_shows_inside_the_window() {
+    use siple_core::agent::capture::{AgentCapture, CaptureKind};
+    for (kinds, label) in [
+        (vec![CaptureKind::Listen], "Agent listening"),
+        (
+            vec![CaptureKind::Listen, CaptureKind::Transcribe],
+            "Agent transcribing",
+        ),
+        (vec![CaptureKind::Record], "Recording"),
+    ] {
+        for size in [WIDE, MEDIUM, NARROW] {
+            let mut snap = two_calls();
+            snap.agent_capture
+                .insert("c1".into(), AgentCapture::of(&kinds));
+            let mut h = harness(snap, size);
+            h.run();
+            let badge = h
+                .query_by_label(label)
+                .unwrap_or_else(|| panic!("{size:?}: no {label:?} badge"));
+            let r = badge.rect();
+            assert!(
+                r.min.x >= 0.0 && r.max.x <= size.x + 0.5 && r.max.y <= size.y,
+                "{size:?}: {label:?} badge outside the window ({r:?})"
+            );
+            // The capture ended: the badge goes.
+            h.state_mut().snap.agent_capture.clear();
+            h.run();
+            assert!(h.query_by_label(label).is_none(), "{size:?}: badge stayed");
+            assert!(
+                h.query_by_label_contains(label).is_none(),
+                "{size:?}: banner stayed"
+            );
+        }
+    }
+}
+
+/// The banner shows for a capture on a line that is not selected, and with the Extensions tab
+/// open in the narrow layout (where no line card is on screen); the rail marks the line.
+#[test]
+fn agent_capture_is_visible_off_the_selected_line_and_on_the_extensions_tab() {
+    use siple_core::agent::capture::{AgentCapture, CaptureKind};
+    for size in [WIDE, MEDIUM, NARROW] {
+        let mut snap = two_calls();
+        // c1 is selected by default; c2 (held, "+4930123456") is the captured one.
+        snap.agent_capture
+            .insert("c2".into(), AgentCapture::of(&[CaptureKind::Listen]));
+        let mut h = harness(snap, size);
+        h.run();
+        let banner = h
+            .query_by_label_contains("Agent listening \u{b7} L2")
+            .unwrap_or_else(|| panic!("{size:?}: no banner"));
+        let r = banner.rect();
+        assert!(
+            r.min.x >= 0.0 && r.max.x <= size.x + 0.5 && r.max.y <= size.y,
+            "{size:?}: banner outside the window ({r:?})"
+        );
+        if size != NARROW {
+            // The rail row (or badge) of line 2 says so too.
+            assert!(
+                h.query_by_label_contains("agent listening").is_some(),
+                "{size:?}: rail does not mark line 2"
+            );
+        }
+    }
+    let mut snap = two_calls();
+    snap.agent_capture
+        .insert("c1".into(), AgentCapture::of(&[CaptureKind::Transcribe]));
+    let mut h = harness(snap, NARROW);
+    h.run();
+    h.get_by_label_contains("Extensions").click_accesskit();
+    h.run();
+    assert!(h.query_by_label("EXTENSIONS").is_some());
+    assert!(
+        h.query_by_label_contains("Agent transcribing \u{b7} L1")
+            .is_some(),
+        "no banner on the Extensions tab"
+    );
+}
+
+/// Settings replaces the whole window and keeps the banner.
+#[test]
+fn agent_capture_banner_stays_in_settings() {
+    use siple_core::agent::capture::{AgentCapture, CaptureKind};
+    let mut snap = two_calls();
+    snap.agent_capture
+        .insert("c1".into(), AgentCapture::of(&[CaptureKind::Listen]));
+    let mut h = harness(snap, MEDIUM);
+    h.state_mut().ui.settings.open = true;
+    h.run();
+    assert!(
+        h.query_by_label_contains("Agent listening \u{b7} L1")
+            .is_some()
+    );
+}
+
 // ---- settings and wizard --------------------------------------------------------------------
 
 use crate::ui::rpc::{self, RpcError, RpcReply, RpcRequest, RpcTag};

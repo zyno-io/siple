@@ -265,6 +265,17 @@ impl AppBackend {
         speech::check_supported(&self.inner.channel).map_err(ApiError::from)
     }
 
+    /// Marks the call as captured by an agent (listening, plus transcribing) until dropped.
+    fn capture_guard(&self, call_id: &str, transcribe: bool) -> super::capture::CaptureGuard {
+        use super::capture::CaptureKind;
+        let kinds: &[CaptureKind] = if transcribe {
+            &[CaptureKind::Listen, CaptureKind::Transcribe]
+        } else {
+            &[CaptureKind::Listen]
+        };
+        self.inner.agent.capture.begin(call_id, kinds)
+    }
+
     fn speech_snapshot(&self) -> SpeechConfig {
         self.inner.config.load().speech.clone()
     }
@@ -749,6 +760,8 @@ impl AppBackend {
             ));
         }
         let hub = self.media_entry(&p.call_id)?.handle.hub().clone();
+        // Shown on the call until this request ends, however it ends.
+        let _capture = self.capture_guard(&p.call_id, transcribe);
         if let Some(since) = p.since_rx_ms
             && since > hub.rx_ms() + 10_000
         {
@@ -909,6 +922,7 @@ impl AppBackend {
             ));
         }
         let hub = self.media_entry(&p.call_id)?.handle.hub().clone();
+        let _capture = self.capture_guard(&p.call_id, transcribe);
         let seq = self.event_seq();
         let snap = hub.snapshot(range).await.map_err(hub_err)?;
         if matches!(out, AudioOut::Base64) && snap.samples16.len() as u64 > MAX_INLINE_RX_MS * 16 {

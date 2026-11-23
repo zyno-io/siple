@@ -169,6 +169,7 @@ pub(crate) fn base_snapshot() -> Snapshot {
         accounts: accounts(),
         blf: blf_list(),
         calls: Vec::new(),
+        agent_capture: Default::default(),
         transfers: Vec::new(),
         active_line: None,
         devices: DeviceList {

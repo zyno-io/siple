@@ -43,6 +43,8 @@ pub struct TrayCall {
     pub who: String,
     /// What it offers.
     pub kind: TrayCallKind,
+    /// What captures the call's audio ("Agent listening", "Recording", ...).
+    pub agent: Vec<&'static str>,
 }
 
 /// The tray's state.
@@ -85,6 +87,16 @@ impl TrayModel {
             .map(|c| TrayCall {
                 id: c.id.clone(),
                 who: who(c),
+                agent: snap
+                    .agent_capture
+                    .get(&c.id)
+                    .map(|a| {
+                        [a.agent_label(), a.recording_label()]
+                            .into_iter()
+                            .flatten()
+                            .collect()
+                    })
+                    .unwrap_or_default(),
                 kind: match (c.direction, c.state) {
                     (CallDirection::Inbound, CallState::Ringing | CallState::Early) => {
                         TrayCallKind::Ringing
@@ -123,7 +135,15 @@ impl TrayModel {
             .iter()
             .map(|a| (a.id.clone(), reg_label(a)))
             .collect();
-        let tooltip = tooltip(icon, &calls, &accounts, snap);
+        let mut tooltip = tooltip(icon, &calls, &accounts, snap);
+        // The audio of a call is captured: the tooltip says so whatever the icon shows. First,
+        // because the Windows tray cuts a tooltip at 128 UTF-16 units.
+        let mut captures: Vec<&str> = calls.iter().flat_map(|c| c.agent.iter().copied()).collect();
+        captures.sort_unstable();
+        captures.dedup();
+        if !captures.is_empty() {
+            tooltip = format!("{}. {tooltip}", captures.join(", "));
+        }
         Self {
             icon,
             tooltip,
@@ -133,6 +153,13 @@ impl TrayModel {
             has_accounts: !enabled.is_empty(),
             window_visible,
         }
+    }
+}
+
+/// One label per thing capturing the call's audio.
+fn capture_labels(m: &mut Vec<MenuEntry>, c: &TrayCall) {
+    for a in &c.agent {
+        m.push(MenuEntry::Label((*a).into()));
     }
 }
 
@@ -281,6 +308,7 @@ impl TrayModel {
                 match &c.kind {
                     TrayCallKind::Ringing => {
                         m.push(MenuEntry::Label(format!("{} is calling", c.who)));
+                        capture_labels(&mut m, c);
                         m.push(MenuEntry::Item(
                             "Answer".into(),
                             TrayCmd::Answer(c.id.clone()),
@@ -296,6 +324,7 @@ impl TrayModel {
                             c.who,
                             if *held { " (on hold)" } else { "" }
                         )));
+                        capture_labels(&mut m, c);
                         m.push(MenuEntry::Item(
                             if *muted { "Unmute" } else { "Mute" }.into(),
                             TrayCmd::Mute(c.id.clone(), !muted),
@@ -311,6 +340,7 @@ impl TrayModel {
                     }
                     TrayCallKind::Dialing => {
                         m.push(MenuEntry::Label(format!("Calling {}", c.who)));
+                        capture_labels(&mut m, c);
                         m.push(MenuEntry::Item(
                             "Hang up".into(),
                             TrayCmd::Hangup(c.id.clone()),
@@ -520,6 +550,39 @@ mod tests {
             "Resume".into(),
             TrayCmd::Hold("c1".into(), false)
         )));
+    }
+
+    #[test]
+    fn agent_capture_is_labelled_in_the_menu() {
+        use siple_core::agent::capture::{AgentCapture, CaptureKind};
+        let m = model(|s| {
+            s.calls = vec![call(
+                "c1",
+                CallDirection::Outbound,
+                CallState::Active,
+                ("Bob", "sip:1@x"),
+            )];
+            s.agent_capture
+                .insert("c1".into(), AgentCapture::of(&[CaptureKind::Listen]));
+        });
+        assert!(
+            m.menu()
+                .contains(&MenuEntry::Label("Agent listening".into()))
+        );
+        assert!(m.tooltip.contains("Agent listening"), "{}", m.tooltip);
+        let m = model(|s| {
+            s.calls = vec![call(
+                "c1",
+                CallDirection::Outbound,
+                CallState::Active,
+                ("Bob", "sip:1@x"),
+            )];
+        });
+        assert!(
+            !m.menu()
+                .iter()
+                .any(|e| matches!(e, MenuEntry::Label(l) if l.starts_with("Agent")))
+        );
     }
 
     #[test]
