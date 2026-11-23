@@ -668,9 +668,14 @@ impl Updater {
                 // After the clock jumps backwards, nothing may stay due further away than one
                 // interval (or a "last check" lie in the future).
                 let mut st = self.st();
-                // The latest a jittered check can be due is `interval` + [`JITTER_PERCENT`]: capping
-                // at exactly one interval would clip every late draw to the interval.
-                let cap = now + delta(jittered(self.o.interval, u32::MAX));
+                // The latest a check can be due: one interval, plus [`JITTER_PERCENT`] when jitter is
+                // on (capping at exactly one interval would clip every late draw to the interval).
+                let longest = if self.jitter.load(std::sync::atomic::Ordering::Relaxed) {
+                    jittered(self.o.interval, u32::MAX)
+                } else {
+                    self.o.interval
+                };
+                let cap = now + delta(longest);
                 if st.next_due.is_some_and(|d| d > cap) {
                     st.next_due = Some(cap);
                 }
