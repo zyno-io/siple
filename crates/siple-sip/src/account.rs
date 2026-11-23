@@ -154,7 +154,7 @@ enum NetKind {
     Signal,
     /// `account.reregister` / `register_now`: the user asked; `Retry-After` is overridden.
     Manual,
-    /// A flow proven dead (keep-alive threshold, unreachable send error): it may be redialled
+    /// A flow proven dead (keep-alive threshold, unreachable send error): it may be redialed
     /// even with live calls, since their signaling over it is already broken.
     Dead,
 }

@@ -195,7 +195,7 @@ async fn semi_attended_uses_dialled_target() {
     };
     assert!(
         refer_to.contains(&dialled),
-        "Refer-To {refer_to} != dialled {dialled}"
+        "Refer-To {refer_to} != dialed {dialled}"
     );
     assert!(!refer_to.contains("2001"), "{refer_to}");
     r.stack.shutdown().await;

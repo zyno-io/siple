@@ -18,7 +18,7 @@
     "colorMeta": {
       "bg": {
         "role": "neutral",
-        "displayName": "Desk Gray",
+        "displayName": "Desk Grey",
         "canonical": "#f6f7f9",
         "oklch": "oklch(97.6% 0.003 264.5)",
         "tonalRamp": [
@@ -50,7 +50,7 @@
       },
       "surface-2": {
         "role": "neutral",
-        "displayName": "Inset Gray",
+        "displayName": "Inset Grey",
         "canonical": "#f3f4f6",
         "oklch": "oklch(96.7% 0.003 264.5)",
         "tonalRamp": [
@@ -162,7 +162,7 @@
       },
       "text-3": {
         "role": "neutral",
-        "displayName": "Meta Gray",
+        "displayName": "Meta Grey",
         "canonical": "#646a78",
         "oklch": "oklch(52.4% 0.023 267.1)",
         "tonalRamp": [
@@ -178,7 +178,7 @@
       },
       "placeholder": {
         "role": "neutral",
-        "displayName": "Placeholder Gray",
+        "displayName": "Placeholder Grey",
         "canonical": "#6f7583",
         "oklch": "oklch(56.2% 0.023 267.1)",
         "tonalRamp": [
@@ -487,7 +487,7 @@
       },
       "neutral": {
         "role": "secondary",
-        "displayName": "Draft Gray",
+        "displayName": "Draft Grey",
         "canonical": "#545b69",
         "oklch": "oklch(47.0% 0.024 264.3)",
         "tonalRamp": [
@@ -503,7 +503,7 @@
       },
       "neutral-soft": {
         "role": "secondary",
-        "displayName": "Draft Gray Fill",
+        "displayName": "Draft Grey Fill",
         "canonical": "#f1f2f5",
         "oklch": "oklch(96.1% 0.004 271.4)",
         "tonalRamp": [
@@ -519,7 +519,7 @@
       },
       "neutral-border": {
         "role": "secondary",
-        "displayName": "Draft Gray Border",
+        "displayName": "Draft Grey Border",
         "canonical": "#dcdfe5",
         "oklch": "oklch(90.3% 0.009 264.5)",
         "tonalRamp": [
@@ -583,7 +583,7 @@
       },
       "lamp-idle": {
         "role": "tertiary",
-        "displayName": "Lamp Gray",
+        "displayName": "Lamp Grey",
         "canonical": "#a3adb9",
         "oklch": "oklch(74.4% 0.021 252.9)",
         "tonalRamp": [
@@ -599,7 +599,7 @@
       },
       "bg-dark": {
         "role": "neutral",
-        "displayName": "Desk Gray (dark)",
+        "displayName": "Desk Grey (dark)",
         "canonical": "#0c0d10",
         "oklch": "oklch(15.9% 0.007 271.0)",
         "tonalRamp": [
@@ -631,7 +631,7 @@
       },
       "surface-2-dark": {
         "role": "neutral",
-        "displayName": "Inset Gray (dark)",
+        "displayName": "Inset Grey (dark)",
         "canonical": "#191b20",
         "oklch": "oklch(22.2% 0.010 268.2)",
         "tonalRamp": [
@@ -743,7 +743,7 @@
       },
       "text-3-dark": {
         "role": "neutral",
-        "displayName": "Meta Gray (dark)",
+        "displayName": "Meta Grey (dark)",
         "canonical": "#8b909c",
         "oklch": "oklch(65.3% 0.019 267.7)",
         "tonalRamp": [
@@ -759,7 +759,7 @@
       },
       "placeholder-dark": {
         "role": "neutral",
-        "displayName": "Placeholder Gray (dark)",
+        "displayName": "Placeholder Grey (dark)",
         "canonical": "#7a7f8c",
         "oklch": "oklch(59.7% 0.021 268.9)",
         "tonalRamp": [
@@ -980,7 +980,7 @@
       },
       "neutral-dark": {
         "role": "secondary",
-        "displayName": "Draft Gray (dark)",
+        "displayName": "Draft Grey (dark)",
         "canonical": "#b3b8c3",
         "oklch": "oklch(78.2% 0.017 266.3)",
         "tonalRamp": [
@@ -996,12 +996,12 @@
       },
       "neutral-soft-dark": {
         "role": "secondary",
-        "displayName": "Draft Gray Fill (dark)",
+        "displayName": "Draft Grey Fill (dark)",
         "canonical": "rgba(148, 155, 170, 0.1)"
       },
       "neutral-border-dark": {
         "role": "secondary",
-        "displayName": "Draft Gray Border (dark)",
+        "displayName": "Draft Grey Border (dark)",
         "canonical": "rgba(148, 155, 170, 0.24)"
       },
       "lamp-ok-dark": {
@@ -1054,7 +1054,7 @@
       },
       "lamp-idle-dark": {
         "role": "tertiary",
-        "displayName": "Lamp Gray (dark)",
+        "displayName": "Lamp Grey (dark)",
         "canonical": "#5e6a77",
         "oklch": "oklch(51.9% 0.025 250.4)",
         "tonalRamp": [
@@ -1100,7 +1100,7 @@
       },
       "caption": {
         "displayName": "Caption",
-        "purpose": "Dates, file names, captions, file-bar labels; Meta Gray."
+        "purpose": "Dates, file names, captions, file-bar labels; Meta Grey."
       },
       "control": {
         "displayName": "Control",
