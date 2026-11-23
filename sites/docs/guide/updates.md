@@ -59,7 +59,7 @@ Open **Settings › Advanced**. Under **About** you see the **Version** you run.
 ## Turn update checks off
 
 Open **Settings › Advanced** and turn off **Check for updates**. This works on every edition. Siple then makes no request to
-GitHub or Apple and asks the Store nothing.
+siple.app, GitHub or Apple and asks the Store nothing.
 
 To stop only the in-app install on a direct download, turn off **Install updates in the app**. The pill then opens the
 release page.
@@ -72,9 +72,19 @@ count. If you run a release candidate (`0.2.0-rc.1`), release candidates count t
 
 ## What is checked, and what is sent
 
-About 30 seconds after Siple starts, and then every 24 hours, Siple makes one check. Where it looks depends on the edition.
+About 30 seconds after Siple starts, and then about every hour (direct downloads) or every 24 hours (the store editions), Siple makes one check. Where it looks depends on the edition.
 
-**Direct download**: one HTTPS request to GitHub (the check; the files described below are downloaded only when you install).
+**Direct download**: one HTTPS request to siple.app (the check; the files described below are downloaded only when you install).
+
+```
+GET https://siple.app/updates/v1/releases.json
+User-Agent: Siple/<your version>
+Accept: application/json
+```
+
+The answer is a static list of the latest releases. When it has not changed since the last check, the server answers "not modified"
+(Siple sends the ETag it got before), so the request costs almost nothing. If siple.app does not answer, answers with an error or
+sends a list Siple cannot read, the same check asks GitHub instead:
 
 ```
 GET https://api.github.com/repos/zyno-io/siple/releases?per_page=20
@@ -82,8 +92,8 @@ User-Agent: Siple/<your version>
 Accept: application/vnd.github+json
 ```
 
-When the list has not changed since the last check, GitHub answers "not modified" (Siple sends the ETag it got before), so the
-request costs almost nothing. If GitHub limits requests (HTTP 429 or 403), Siple waits as long as GitHub asks before trying again.
+If GitHub limits requests (HTTP 429 or 403), Siple waits as long as GitHub asks before trying again. The list only says which
+version exists; an install still downloads from the project's GitHub release and is checked against its signed checksum list (see below).
 
 **Mac App Store**: one HTTPS request to Apple's public lookup of Siple's own listing.
 
@@ -100,7 +110,7 @@ request.
 does for the Store's own updates; Siple sends no request of its own. A copy that was not installed from the Store (a sideloaded
 package) does not check.
 
-In every case there is no identifier, no account or call information, no install ID and no cookie. The server (GitHub or Apple)
+In every case there is no identifier, no account or call information, no install ID and no cookie. The server (siple.app, GitHub or Apple)
 sees your IP address, as any web server does. A failed check (offline, a firewall) is logged and shown in Settings; it never opens
 a dialog.
 

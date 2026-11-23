@@ -283,15 +283,21 @@ all of it off, on every edition.
 
 | Option | Type | Default | Description |
 |---|---|---|---|
-| `check` | bool | `true` | Look for a newer release about 30 seconds after start (not when a check found nothing newer less than 24 hours ago), then every 24 hours of wall-clock time, so time spent asleep counts (and on `app.check_updates` or "Check now"; a manual check restarts the 24 hours). |
+| `check` | bool | `true` | Look for a newer release about 30 seconds after start (not when a check found nothing newer less than one interval ago), then every interval of wall-clock time, so time spent asleep counts (and on `app.check_updates` or "Check now"; a manual check restarts the interval). The interval is about 1 hour for direct downloads and 24 hours for the store editions; each scheduled check is moved by up to 10% either way at random, so installs do not all ask at the same moment. A failed direct-download check retries after 5 minutes, then 10, 20 and 40, then hourly. |
 | `install` | bool | `true` | Direct downloads only. Allow the in-place install: the offer then downloads, verifies and installs the new version when you choose it (the pill, or `app.install_update`). `false`: the offer opens the release page. Hot: turning it off stops an install that has not replaced any file yet. Ignored by the store editions, which have no installer. `check = false` also stops installs. |
 | `channel` | `stable\|prerelease` | unset | GitHub (direct) builds only; the stores always follow their single published track. `stable` offers final releases only; `prerelease` also offers release candidates (`-rc.N`). Unset = automatic: `prerelease` while the running build is itself a release candidate, otherwise `stable`. `reset_section updates channel` returns to automatic. |
 
 What is sent, by edition:
 
-- **Direct download** (zip, dmg, tarball, AppImage, package manager): one anonymous HTTPS `GET https://api.github.com/repos/zyno-io/siple/releases?per_page=20`
-  with the headers `User-Agent: Siple/<version>` and `Accept: application/vnd.github+json` (plus `If-None-Match` with the ETag of the
-  previous answer, so an unchanged list costs almost nothing). GitHub sees your IP address, as any web server does.
+- **Direct download** (zip, dmg, tarball, AppImage, package manager): about every hour, one anonymous HTTPS
+  `GET https://siple.app/updates/v1/releases.json` (a static list of the latest releases, in the shape of the GitHub releases API)
+  with the headers `User-Agent: Siple/<version>` and `Accept: application/json` (plus `If-None-Match` with the ETag of the previous
+  answer, so an unchanged list costs almost nothing). If siple.app does not answer, answers with an error or sends a list Siple cannot
+  read, the same check asks GitHub instead: `GET https://api.github.com/repos/zyno-io/siple/releases?per_page=20` with
+  `User-Agent: Siple/<version>` and `Accept: application/vnd.github+json`. Each host sees your IP address, as any web server does,
+  and the app version. The list is unsigned and only says which version exists: an install downloads from the project's GitHub
+  release and trusts only the minisign-signed `SHA256SUMS` of that exact version. `app.update_status` reports `source: github`
+  (direct downloads) and `feed: site|github`, the host that answered the last check.
 - **Mac App Store**: one anonymous HTTPS `GET https://itunes.apple.com/lookup?id=6836164262` (Apple's public lookup of Siple's own
   listing), about once a day, with only the header `User-Agent: Siple/<version>`. Apple sees your IP address. The answer is used only
   when it is Siple's listing (id and bundle id match) and its minimum macOS is at most yours; links in it are never followed. A

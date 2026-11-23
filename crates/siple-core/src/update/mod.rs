@@ -4,20 +4,22 @@
 //!
 //! Which source answers is decided at run time from the distribution channel ([`source::select`]):
 //!
-//! - direct builds: one anonymous HTTPS GET of the GitHub releases list of this project (see
-//!   [`http`]);
+//! - direct builds: one anonymous HTTPS GET of the release feed of siple.app
+//!   (`https://siple.app/updates/v1/releases.json`, see [`site`]), or, when the site gives no
+//!   usable answer, of the GitHub releases list of this project (see [`http`]);
 //! - Mac App Store: one anonymous HTTPS GET of Apple's lookup of Siple's listing;
 //! - Microsoft Store: a question to Windows' Store service about this package (Siple sends
 //!   nothing itself);
 //! - Flatpak: no check (Flatpak updates the app from Flathub).
 //!
-//! Each runs about every 24 hours, with `Siple/<version>` as the only identifying header of the two
-//! HTTPS ones. The checker ([`Updater`]) is an async task owned by the app; its status is served by
+//! Direct builds check about every hour (a static feed has no rate limit, and an ETag makes an
+//! unchanged answer a 304); the store sources about every 24 hours. `Siple/<version>` is the only
+//! identifying header of the HTTPS ones. The checker ([`Updater`]) is an async task owned by the app; its status is served by
 //! `app.update_status` / `app.check_updates`, summarised in `status`, and a newly found version is
 //! announced once as the event `app.update_available`.
 //!
 //! The cargo feature `store` (Mac App Store, Microsoft Store and Flatpak builds) only removes code: the
-//! GitHub source, its releases parser, the downloader and the installer. The store sources are compiled in every build so they
+//! site and GitHub sources, its releases parser, the downloader and the installer. The store sources are compiled in every build so they
 //! can be tested everywhere; only the Windows Store call itself needs `windows` and `store`.
 
 mod version;
@@ -42,13 +44,15 @@ pub mod links;
 pub mod msstore;
 #[cfg(not(feature = "store"))]
 mod releases;
+#[cfg(not(feature = "store"))]
+mod site;
 pub mod source;
 #[cfg(not(feature = "store"))]
 pub mod sums;
 
 pub use checker::{
-    CHECK_INTERVAL, Clock, FetchError, FetchOutcome, INITIAL_DELAY, MIN_MANUAL_INTERVAL, Updater,
-    UpdaterOptions, spawn_updater,
+    CHECK_INTERVAL, Clock, FetchError, FetchOutcome, INITIAL_DELAY, MIN_MANUAL_INTERVAL,
+    STORE_CHECK_INTERVAL, Updater, UpdaterOptions, spawn_updater,
 };
 #[cfg(not(feature = "store"))]
 pub use checker::{OfflineFetcher, ReleaseFetcher};
@@ -58,6 +62,8 @@ pub use github::GithubFetcher;
 pub use install::Installer;
 #[cfg(not(feature = "store"))]
 pub use releases::{Asset, Release, parse_releases, pick};
+#[cfg(not(feature = "store"))]
+pub use site::{FeedFetcher, SiteFetcher};
 
 use serde::Serialize;
 
@@ -77,6 +83,17 @@ pub enum UpdateAction {
     None,
 }
 
+/// Which host answered the last direct-build check. `status.source` stays `github` (the kind of
+/// source: direct downloads, which can install); this says where the list came from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FeedSource {
+    /// The release feed of siple.app.
+    Site,
+    /// The GitHub releases API (the site did not answer usably).
+    Github,
+}
+
 /// The result of the update check, as `app.update_status` returns it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct UpdateStatus {
@@ -92,8 +109,13 @@ pub struct UpdateStatus {
     pub latest: Option<String>,
     /// `latest` is newer than `current` (Microsoft Store: an update is waiting).
     pub available: bool,
-    /// Where the check looks: `github`, `app_store`, `microsoft_store` or `none`.
+    /// Where the check looks: `github` (direct downloads), `app_store`, `microsoft_store` or
+    /// `none`.
     pub source: SourceName,
+    /// Direct downloads: the host that answered the last successful check, `site` (siple.app) or
+    /// `github` (fallback). Absent before the first success and for the stores.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub feed: Option<FeedSource>,
     /// What opening the offer does; `none` while nothing is available.
     pub action: UpdateAction,
     /// The release page of `latest` (GitHub source).
@@ -193,6 +215,7 @@ impl UpdateStatus {
             latest: None,
             available: false,
             source: SourceName::None,
+            feed: None,
             action: UpdateAction::None,
             release_url: None,
             store_url: None,

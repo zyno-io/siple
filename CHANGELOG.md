@@ -1,6 +1,12 @@
 <!-- siple-rename: keep (this file documents the legacy ZynoPhone names on purpose) -->
 # Changelog
 
+## Unreleased
+
+### New
+
+- Direct downloads check for updates about every hour, from siple.app (GitHub as a fallback), instead of once a day. The store editions still check once a day.
+
 ## 0.2.4 (2026-11-22)
 
 ### Fixed

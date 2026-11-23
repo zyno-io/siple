@@ -152,6 +152,7 @@ fn update_status(latest: &str, available: bool) -> siple_core::update::UpdateSta
         latest: Some(latest.into()),
         available,
         source: SourceName::Github,
+        feed: None,
         action: if available {
             UpdateAction::OpenReleasePage
         } else {
@@ -206,6 +207,7 @@ fn update_pill_opens_the_release_and_skip_hides_that_version() {
 fn app_store_status(latest: &str) -> siple_core::update::UpdateStatus {
     siple_core::update::UpdateStatus {
         source: SourceName::AppStore,
+        feed: None,
         action: UpdateAction::OpenStore,
         release_url: None,
         store_url: Some(siple_core::update::links::MAS_STORE_URL.into()),
@@ -217,6 +219,7 @@ fn app_store_status(latest: &str) -> siple_core::update::UpdateStatus {
 fn ms_store_status(mandatory: bool) -> siple_core::update::UpdateStatus {
     siple_core::update::UpdateStatus {
         source: SourceName::MicrosoftStore,
+        feed: None,
         action: UpdateAction::OpenStore,
         latest: None,
         release_url: None,
@@ -316,6 +319,7 @@ fn settings_without_a_source_say_so() {
     let mut snap = base_snapshot();
     snap.update = siple_core::update::UpdateStatus {
         source: SourceName::None,
+        feed: None,
         disabled_reason: Some(siple_core::update::DisabledReason::Sideloaded),
         enabled: false,
         ..update_status("", false)
@@ -336,6 +340,7 @@ fn settings_of_the_flatpak_edition_say_flatpak_updates_it() {
     let mut snap = base_snapshot();
     snap.update = siple_core::update::UpdateStatus {
         source: SourceName::None,
+        feed: None,
         disabled_reason: Some(siple_core::update::DisabledReason::ManagedByFlatpak),
         enabled: false,
         ..update_status("", false)

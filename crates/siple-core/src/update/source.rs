@@ -114,6 +114,15 @@ impl UpdateSource {
         }
     }
 
+    /// Time between checks of this source: direct downloads hourly, the stores daily.
+    pub fn check_interval(&self) -> std::time::Duration {
+        #[cfg(not(feature = "store"))]
+        if matches!(self, Self::Github(_)) {
+            return super::checker::CHECK_INTERVAL;
+        }
+        super::checker::STORE_CHECK_INTERVAL
+    }
+
     /// The source as the user knows it, for messages ("rate limited by GitHub").
     pub fn label(&self) -> &'static str {
         match self {
