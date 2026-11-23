@@ -111,7 +111,7 @@ to a plaintext password.
 
 ::: details In config.toml
 This is `password_store = "keyring"`. With the keychain, `password` in the file is empty. Details:
-[Passwords in the system keyring](/reference/configuration#passwords-in-the-system-keyring).
+[Passwords in the system keyring](/guide/configuration#passwords-in-the-system-keyring).
 :::
 
 ## Change your accounts later

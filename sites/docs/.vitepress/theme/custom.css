@@ -157,7 +157,6 @@ body {
 .vp-doc th {
   font-weight: 600;
 }
-
 /* "For the config file" and other <details> blocks read as a quiet aside. */
 .vp-doc .details.custom-block {
   border: 1px solid var(--vp-c-divider);
@@ -166,6 +165,22 @@ body {
 .vp-doc .details.custom-block summary {
   font-weight: 600;
   color: var(--vp-c-text-2);
+}
+/* Raw <details> in the included repo docs (docs/CONFIG.md) gets the same quiet look. */
+.vp-doc details:not(.custom-block) {
+  margin: 16px 0;
+  padding: 8px 16px;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 8px;
+  background: var(--vp-c-bg-alt);
+}
+.vp-doc details:not(.custom-block) > summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--vp-c-text-2);
+}
+.vp-doc details:not(.custom-block)[open] > summary {
+  margin-bottom: 8px;
 }
 
 /* ---- chrome ------------------------------------------------------------------------------- */

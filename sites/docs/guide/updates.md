@@ -25,8 +25,7 @@ To hide an update you do not want yet:
 1. Select the **Update** pill in the header.
 2. Choose **Install and restart**. During a call the button reads **Install, restart after the call**.
 3. Siple downloads the new version, checks it, replaces itself and restarts. Your accounts, settings and passwords are not
-   touched. The AppImage replaces its own file and keeps its name; the previous one stays next to it as `<name>.old-<number>`
-   until the new version has run for a minute.
+   touched. The AppImage replaces its own file and keeps its name; the previous one stays next to it as `<name>.old-<number>`.
 
 Nothing is downloaded until you choose **Install and restart** (or a script or agent you run calls `app.install_update`). Siple never restarts during a call. With a call going on, the pill reads
 **Install, restart after the call** and then **Restart to update**. Otherwise Siple waits for five quiet seconds first. The app
@@ -123,17 +122,33 @@ a dialog.
 
 This is the only network activity Siple starts on its own. Siple has no telemetry.
 
-### What an in-place install downloads
+### What an in-place install does
 
-When you choose **Install and restart**, Siple does this:
+When you choose **Install and restart**, Siple downloads `SHA256SUMS`, `SHA256SUMS.minisig` and the archive for your system
+from `https://github.com/zyno-io/siple/releases/download/v<version>/<file>` (HTTPS, only `User-Agent: Siple/<version>` is
+sent). The URL is built from the version and file names in the release list, never taken from it. GitHub may redirect (at most
+three times, HTTPS only, GitHub hosts only).
 
-1. It downloads `SHA256SUMS`, `SHA256SUMS.minisig` and the archive for your system from the project's GitHub release (HTTPS, only
-   `User-Agent: Siple/<version>` is sent).
-2. It checks the minisign signature of Siple's release key on the checksum list, the archive's SHA-256, and your system's check of
-   the publisher: on macOS the Developer ID signature and Apple's notarization; on Windows the Authenticode signature of Signal24 LLC.
-   On Linux the signed list is the check. If anything is wrong, nothing is changed and the pill offers the release page.
-3. It replaces the app as late as possible and restarts, never during a call. The new version opens its window if it was open
-   when it restarted, even with `start_hidden`; if Siple was hidden in the tray it starts hidden again.
+Before anything is replaced, all of this must hold, or nothing changes and the pill offers the release page:
+
+1. `SHA256SUMS` has a valid [minisign](https://jedisct1.github.io/minisign/) signature from Siple's release key (built into
+   the app, also `packaging/minisign.pub`), and its signed comment names this release, so an old list cannot be replayed. A
+   release without `SHA256SUMS.minisig` is never installed in place.
+2. The archive's SHA-256 matches the signed list. Its size matches the release list.
+3. The system accepts the publisher: on macOS the Developer ID signature of the app and `siple-cli` plus notarization; on
+   Windows Authenticode from Signal24 LLC. On Linux the signed list is the check, plus a test run of the new `siple` and
+   `siple-cli` (`--version`), which must print the expected version.
+4. The archive holds exactly what a release contains (no extra files, no paths outside the install folder, no links). An
+   AppImage download must be a type 2 AppImage built for the running CPU (x86-64 or aarch64).
+
+The running copy must pass the same publisher check, so a development build never replaces itself. Turning `install` off stops
+an install that has not replaced any file yet.
+
+The files are replaced just before the restart, so the running copy is never changed during a call. The new version opens its
+window if it was open when it restarted, even with `start_hidden`; if Siple was hidden in the tray it starts hidden again.
+Replaced files stay until the new version has run for a minute (a hidden temporary folder on macOS, `*.old-<number>` files on
+Windows and Linux). If the new version does not start, the previous copy is still there. Linux keeps the folder name
+`siple-<old version>`.
 
 ## Details
 

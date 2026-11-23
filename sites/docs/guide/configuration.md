@@ -34,13 +34,42 @@ You do not need to restart. Siple watches the folder, and a change applies after
 - **A mistake never breaks Siple.** An invalid file never replaces the last good config. The window shows a **Config not
   applied** banner and Siple keeps using your previous settings. See [Troubleshooting](/guide/troubleshooting#your-changes-to-configtoml-dont-take-effect).
 - **Typos are caught.** Unknown keys are rejected.
-- **Accounts are matched by `id`.** A new id starts an account. A removed id, or `enabled = false`, unregisters it.
+- **Accounts are matched by `id`** (case-insensitive). A new id starts an account. A removed id, or `enabled = false`, unregisters it.
 - **Some changes wait.** Changes that rebuild a transport wait until the account has no calls.
 
-::: tip Edits from the window keep your file tidy
-Settings changes only the keys involved and preserves your comments, order and quoting. Writes are atomic and validated
-before the file is replaced.
-:::
+## Passwords in the system keyring
+
+`password_store = "keyring"` keeps an account's password in your operating system's credential store instead of `config.toml`.
+It is off by default.
+
+- **Where:** macOS Keychain, Windows Credential Manager, or the Linux Secret Service (GNOME Keyring, KWallet). The entry is
+  service `io.zyno.siple`, user `account:<id>`.
+- **Setting it:** leave `password` empty in the file (a non-empty value is an error). Set the password in Settings, or with the
+  `account.set_password` API method. Siple then reloads and registers with it.
+- **When it is read:** once per reload, never on each REGISTER (a Keychain read can prompt). Disabled accounts are not read.
+- **No credential store, or no entry** (headless Linux, Docker): that account is switched off and the error appears in
+  `status.config.last_error`, the log and the `config.error` event. Siple never falls back to a plaintext password. Other
+  accounts keep working.
+- **Edits stay in step:** switching `password_store` moves the password between the file and the entry. Renaming an account
+  moves the entry, and removing the account deletes it.
+- **macOS:** Keychain access is tied to the code signature. Unsigned development builds ask again after every rebuild.
+
+Passwords never appear in logs, API results or error messages.
+
+## Editing the file from the window or the API
+
+The Settings window and the `config.edit` API method change `config.toml` through one writer. Each write:
+
+1. Fails with a conflict if the file changed since you read it (when you pass the `base_hash` from `config.view`).
+2. Refuses if the file does not parse. A file that parses but is invalid can still be edited, so you can fix it.
+3. Changes only the named keys, keeping comments, blank lines, key order and quoting.
+4. Re-validates and reports problems with the path of the key.
+5. Replaces the file atomically (temp file, fsync, rename), reloads and returns what changed.
+
+A key you did not set, and whose new value equals its default, is not added. New accounts and sections are appended with only
+the keys that differ from the default. Saving a key pins it, even a value a vendor profile supplied. `config.view` shows where each
+value comes from (`file`, `profile` or `default`) but never a password or the control token. An older build rejects a file
+with keys it does not know. The full edit schema is in the [API reference](/agents/api-reference).
 
 ## Details
 
@@ -63,9 +92,5 @@ srtp = "optional"
 ```
 :::
 
-::: details Editing from the API
-`config.edit` changes exactly the keys involved, the same way Settings does. It preserves your comments, order and quoting,
-and validates before the file is replaced.
-:::
 
 The complete list of keys, defaults and reload classes is the [Configuration reference](/reference/configuration).
