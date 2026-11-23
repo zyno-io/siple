@@ -107,7 +107,7 @@ ordinary call, so auto-hold applies. If the PBX refuses it (404, 480, 486 and so
   for B2BUA setups where the PBX created the callee leg. If the PBX does not send what is needed, the pickup fails with
   `invalid_state`. Use `prefix` there.
 - **Routing.** Every pickup goes through the account's outbound proxy or registrar, whatever host the target names. A
-  hostile NOTIFY cannot steer the call or your digest credential to another host.
+  hostile NOTIFY cannot steer the call or your digest credential to another host. A target taken from a NOTIFY is cut down to `sip[s]:user@host[:port]`; URI parameters and `?headers` are dropped.
 
 ```toml
 [[account]]

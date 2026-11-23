@@ -30,6 +30,12 @@ function rewriteRepoLinks(md: any) {
       for (const t of block.children) {
         if (t.type !== 'link_open') continue
         const href: string | null = t.attrGet('href')
+        // Absolute links to this site (used in repo docs so they also work on GitHub and in the release
+        // archives) become site-relative here, so they are dead-link checked and open in the same tab.
+        if (href && href.startsWith(SITE_URL)) {
+          t.attrSet('href', '/' + href.slice(SITE_URL.length))
+          continue
+        }
         if (!href || /^([a-z][a-z0-9+.-]*:|#|\/)/i.test(href)) continue
         const [path, hash = ''] = href.split('#')
         const clean = path.replace(/^(\.\.?\/)+/, '')

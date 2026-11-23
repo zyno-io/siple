@@ -35,7 +35,7 @@ To use another file, pass `--config PATH` (any binary or subcommand) or set `SIP
 Relative paths in the config (TLS files, `file:` and `record:` audio, `log_dir`) are relative to that folder.
 
 <details>
-<summary>Store edition notes</summary>
+<summary>Notes per edition</summary>
 
 - **Mac App Store:** the control socket is `control.sock` in the config folder, or `s.sock` in the group container if that path
   is too long. Set `[control] tcp_listen` if even that is too long.
@@ -53,7 +53,7 @@ Siple watches the config folder and applies edits after a short pause. To force 
 
 - A bad file never replaces the last good config. Siple logs the error, shows a banner and keeps the old settings.
 - Runtime overrides (`account.set_dnd`, `account.set_sip_trace`) last until that account's same field changes in the file.
-- Accounts are matched by `id`. A new id starts an account. A removed id, or `enabled = false`, unregisters it and hangs up its
+- Accounts are matched by `id` (case-insensitive). A new id starts an account. A removed id, or `enabled = false`, unregisters it and hangs up its
   calls. Changing an `id` is a remove plus an add.
 
 ### Reload classes
@@ -71,11 +71,11 @@ Siple watches the config folder and applies edits after a short pause. To force 
 
 Settings and the `config.edit` API method change the file through one writer. A write fails on a stale `base_hash`, refuses
 a file that does not parse, changes only the named keys (comments, order and quoting stay), re-validates, replaces the file
-atomically and reloads. A key you did not set, whose new value equals its default, is not added. Passwords and the control
-token are never returned.
+atomically and reloads. A key you did not set, whose new value equals its default, is not added. Saving from Settings writes a value the vendor profile
+supplied, which pins it. Passwords and the control token are never returned.
 
-File-only keys: `log_dir`, `log_retention_days` and `reconfig_force` in `[general]`, all of `[control]`, `[media]`, `[speech]`
-and `[updates]`, and account keys the window has no field for (such as `bind_address`, `tls_ca_file` and `extra_headers`).
+File-only keys: `log_dir`, `log_retention_days` and `reconfig_force` in `[general]`, all of `[control]`, `[media]` and `[speech]`,
+and account keys the window has no field for (such as `bind_address`, `tls_ca_file` and `extra_headers`).
 Details: [user guide](https://zyno-io.github.io/siple/guide/configuration#editing-the-file-from-the-window-or-the-api) and
 [API reference](API.md#configedit). An older Siple rejects a file with keys it does not know.
 
@@ -137,8 +137,8 @@ Shared by all accounts. Changes apply to the **next call** (DTMF keys also to ca
 
 | Key | Default | What it does |
 |---|---|---|
-| `rtp_port_range` | `[16384, 32767]` | RTP/RTCP ports. Start is even and at least 1024. Open it in your firewall. |
-| `codecs` | `["opus","g722","pcmu","pcma"]` | Codecs in preference order. At least one, no duplicates. |
+| `rtp_port_range` | `[16384, 32767]` | RTP/RTCP ports. Start is even and at least 1024; end is above start. Open it in your firewall. |
+| `codecs` | `["opus", "g722", "pcmu", "pcma"]` | Codecs in preference order. At least one, no duplicates. |
 | `codec_answer_order` | `"offer"` | `offer`: caller's order. `local`: our order. |
 | `jitter_min_ms` | `40` | Jitter buffer minimum. Not above the maximum. |
 | `jitter_max_ms` | `200` | Jitter buffer maximum. 1 to 1000. |
@@ -166,8 +166,9 @@ default until it returns. Settings and `audio.set_devices` write this section.
 
 `none` suits servers and containers (`silence`, `tone:` and `file:` audio still work). `--no-audio` forces it. On macOS and
 Windows `auto` is `always`. On Linux, `auto` checks once at startup and turns audio off, with an INFO line
-(`status.audio.disabled_reason`), unless it finds a sound device or server. A headset plugged in later is not seen: set
-`always`.
+(`status.audio.disabled_reason`), unless it finds a sound device or server. A headset plugged in later, or PulseAudio configured only through `client.conf`, is not seen: set
+`always`. The device list hides ALSA pseudo-devices (`null`, `dmix`, `dsnoop`, `surround*`, `iec958`, `front`, plugins). alsa-lib's
+messages go to the log at DEBUG (target `alsa`).
 
 ## `[calls]`
 
@@ -202,7 +203,7 @@ Desktop window settings. All keys are hot. Settings writes this table. Guides:
 | `blf_click_in_call` | `"menu"` | Click an extension during a call: `menu`, `consult` or `blind`. |
 | `blf_click_ringing` | `"pickup"` | Click a ringing extension: `pickup` or `call`. |
 | `transfer_enter` | `"consult"` | Enter in the transfer box: `consult` or `blind`. |
-| `developer_tools` | `false` | Show the Log pane, Open logs and Open config, and registration times. |
+| `developer_tools` | `false` | Show the Log pane, Open logs and Open config, and registration times. The API and MCP stay on either way. |
 
 ### Tray, window and startup
 
@@ -236,7 +237,7 @@ app. `launch_at_login` is also in Settings > Notifications > Tray and window and
     `--config` profile leaves it alone.
   - *Microsoft Store:* no effect (logged at info), and Settings shows a note. Use Windows Settings > Apps > Startup.
   - *Flatpak:* goes through the desktop's Background portal, which may ask once. One entry serves the app, so the last profile
-    to enable it wins.
+    to enable it wins. `false` removes the entry only if this profile registered it.
 - **`handle_links`** changes things at runtime only on Windows: Siple registers for `sip`, `sips`, `tel` and `callto` (pick it in
   Settings > Default apps) and for `siple`, and `false` removes both. Other platforms and all packaged editions register links at
   install time, so the key does nothing there.
@@ -270,7 +271,8 @@ A chord is modifiers and one key joined by `+`, case-insensitive: `Mod+Shift+A`,
 - **Modifiers:** `Mod`, `Ctrl`, `Alt` (Option), `Shift`, `Cmd` (the Command key itself; it never fires off macOS).
 - **Keys:** a letter or digit, one of `` , . / ; ' [ ] \ - = ` ``, `Plus`, `Enter`, `Tab`, `Space`, `Escape`, `Backspace`, `Delete`,
   `Insert`, `Home`, `End`, `PageUp`, `PageDown`, `Up`, `Down`, `Left`, `Right` or `F1` to `F12`.
-- Shift and Alt must match exactly, except on punctuation keys such as `/`, where Shift is ignored unless named.
+- Shift and Alt must match exactly, except on punctuation keys such as `/`, where Shift is ignored unless named. Digit and bracket
+  chords also match the physical key.
 - **Errors:** `Escape` as the key, a digit with no Mod, Ctrl, Cmd or Alt, `Mod+C`, `Mod+V`, `Mod+X`, and two actions with the same
   effective chord.
 - Remove a bad entry with `config.edit` `reset_section ui shortcuts.<name>`. Settings > Shortcuts lists problems.
@@ -282,8 +284,8 @@ Digits, `*` and `#` send DTMF while a line is active and no text field has focus
 ## `[speech]`
 
 Optional external text-to-speech and speech-to-text programs, used by `call.say`, `call.listen{transcribe}` and `speech.*`. Off by
-default, nothing is bundled. The Mac App Store and Flatpak editions cannot run external commands: the methods fail with
-`unsupported`.
+default, nothing is bundled. The Mac App Store and Flatpak editions cannot run external commands: the section is accepted with a
+log warning, the methods fail with `unsupported`, and Settings says "not available in this edition".
 
 | Key | Default | What it does |
 |---|---|---|
@@ -307,7 +309,7 @@ open their store page. All keys are hot. Guide: [Updates](https://zyno-io.github
 | Key | Default | What it does |
 |---|---|---|
 | `check` | `true` | Check for updates. `false` turns off all update network activity and installs. |
-| `install` | `true` | Direct downloads: allow the in-place install. `false` opens the release page. |
+| `install` | `true` | Direct downloads: allow the in-place install. `false` opens the release page and stops an install that has not replaced files yet. |
 | `channel` | unset | Direct downloads: `stable` or `prerelease`. Unset follows the build you run. |
 
 A check runs about 30 seconds after start, then hourly (direct) or daily (stores). Unset `channel` offers release candidates only
@@ -315,13 +317,14 @@ while you run one. `reset_section updates channel` returns to unset.
 
 ### What an update check sends
 
-Only a `User-Agent: Siple/<version>` header. No identifier, account, usage data or cookies. Each host sees your IP address.
+Each request carries `User-Agent: Siple/<version>` and an `Accept` header, plus `If-None-Match` (the previous ETag) to siple.app.
+No identifier, account, usage data or cookies. Each host sees your IP address.
 
 | Edition | Request |
 |---|---|
-| Direct download | `https://siple.app/updates/v1/releases.json` about hourly. GitHub's releases API is the fallback, and a daily cross-check. |
+| Direct download | `https://siple.app/updates/v1/releases.json` about hourly. GitHub's releases API is the fallback when siple.app fails, or a cross-check when it answers. GitHub is asked at most once per 24 hours in total. |
 | Mac App Store | `https://itunes.apple.com/lookup?id=6836164262` about daily. TestFlight sends nothing. |
-| Microsoft Store | Siple asks Windows' Store service. It sends no request itself. |
+| Microsoft Store | No request from Siple. Windows' Store service is asked whether an update is waiting. |
 | Flatpak | Nothing. Flathub updates the app. |
 
 ### In-place install (direct downloads)
@@ -331,7 +334,7 @@ project's GitHub release, verifies the signature, checksum, layout and publisher
 config, accounts, logs and keychain entries are never touched. If any check fails, nothing changes and the pill opens the release
 page. It is also unavailable for package-manager installs, unwritable folders, containers, headless runs and development builds.
 The stores' editions answer `app.install_update` with `unsupported`. Full steps:
-[user guide](https://zyno-io.github.io/siple/guide/updates#what-is-checked-before-an-install-replaces-anything).
+[user guide](https://zyno-io.github.io/siple/guide/updates#what-an-in-place-install-does).
 
 API: `app.update_status`, `app.check_updates`, `app.install_update`, `app.cancel_update`, and the events `app.update_available`,
 `app.update_progress` and `app.updated`.
@@ -339,8 +342,8 @@ API: `app.update_status`, `app.check_updates`, `app.install_update`, `app.cancel
 ## `[[account]]`
 
 Repeat the table for each account. You need only `id`, `username` and `domain`. The shipped example has `enabled = false`, so a
-fresh install never tries to register. Keys apply at once unless marked (see [Reload classes](#reload-classes)): † re-register,
-‡ rebuild, § next call.
+fresh install never tries to register. Keys apply at once unless the description says
+"(re-registers)", "(rebuilds)" or "(next call)" (see [Reload classes](#reload-classes)).
 
 ### Identity and registration
 
@@ -350,14 +353,14 @@ fresh install never tries to register. Keys apply at once unless marked (see [Re
 | `enabled` | `true` | `false` unregisters and hangs up at once. Turning on rebuilds. |
 | `profile` | `"generic"` | Vendor preset. See [Vendor profiles](#vendor-profiles). |
 | `display_name` | `""` | Name in the From header. |
-| `username` † | required | User part of your address. No spaces or `@`. |
-| `auth_username` † | `""` | Login name if different. `""` is `username`. |
-| `password` † | `""` | Login password. Hidden in `config.get` and logs. |
-| `password_store` † | `"file"` | `file` or `keyring` ([below](#passwords-in-the-system-keyring)). |
-| `domain` † | required | Domain of your address. A bare host. |
-| `registrar` ‡ | `""` | Server to send requests to, `host[:port]`. `""` is `domain`. |
-| `register` † | `true` | `false` is peer mode: no REGISTER, calls still work. |
-| `expires` † | `300` | Registration lifetime in seconds. 10 to 86400. |
+| `username` | required | User part of your address. No spaces or `@` (re-registers) |
+| `auth_username` | `""` | Login name if different. `""` is `username` (re-registers) |
+| `password` | `""` | Login password. Hidden in `config.get` and logs (re-registers) |
+| `password_store` | `"file"` | `file` or `keyring` ([below](#passwords-in-the-system-keyring)) (re-registers) |
+| `domain` | required | Domain of your address. A bare host (re-registers) |
+| `registrar` | `""` | Server to send requests to, `host[:port]`. `""` is `domain` (rebuilds) |
+| `register` | `true` | `false` is peer mode: no REGISTER, calls still work (re-registers) |
+| `expires` | `300` | Registration lifetime in seconds. 10 to 86400 (re-registers) |
 | `user_agent` | `""` | Overrides `[general].user_agent`. |
 | `extra_headers` | `{}` | Headers added to requests, such as `{ "X-Test" = "1" }`. |
 
@@ -368,27 +371,27 @@ is a rebuild. Reserved header names for `extra_headers`: `Via`, `From`, `To`, `C
 
 | Key | Default | What it does |
 |---|---|---|
-| `transport` ‡ | `"udp"` | `udp`, `tcp`, `tls` or `auto`. |
-| `local_port` ‡ | `0` | Local SIP port. `0` is any free port. |
-| `bind_address` ‡ | `""` | Local IP to bind and advertise. `""` is automatic. |
-| `public_address` ‡ | `""` | IP or host to advertise (static NAT). |
-| `rewrite_contact` † | `true` | Learn your public address from the server and re-register with it. |
-| `outbound_proxy` ‡ | `""` | Send every request through this `host[:port]`. |
-| `outbound_proxy_route` ‡ | `false` | Also add a `Route` header for the proxy. |
-| `use_sips_uri` ‡ | `false` | On TLS, use a `sips:` Contact. |
+| `transport` | `"udp"` | `udp`, `tcp`, `tls` or `auto` (rebuilds) |
+| `local_port` | `0` | Local SIP port. `0` is any free port (rebuilds) |
+| `bind_address` | `""` | Local IP to bind and advertise. `""` is automatic (rebuilds) |
+| `public_address` | `""` | IP or host to advertise (static NAT) (rebuilds) |
+| `rewrite_contact` | `true` | Learn your public address from the server and re-register with it (re-registers) |
+| `outbound_proxy` | `""` | Send every request through this `host[:port]` (rebuilds) |
+| `outbound_proxy_route` | `false` | Also add a `Route` header for the proxy (rebuilds) |
+| `use_sips_uri` | `false` | On TLS, use a `sips:` Contact (rebuilds) |
 | `keepalive_secs` | `30` | NAT keep-alive interval. `0` is off; otherwise 5 to 3600. |
 | `keepalive_method` | `"crlf"` | `crlf` or `options`. |
 | `keepalive_fail_threshold` | `2` | Unanswered `options` keep-alives that mark the connection dead. `0` is never; max 20. |
 
-- `auto` looks up DNS SRV records for the next hop: `_sips._tcp` (TLS), then `_sip._tcp`, then `_sip._udp`. No SRV record, an IP
-  address or an explicit port means UDP on 5060. [Details](https://zyno-io.github.io/siple/guide/network).
+- `auto` looks up DNS SRV records for the next hop: `_sips._tcp` (TLS), then `_sip._tcp`, then `_sip._udp`. With no SRV record, Siple uses UDP on port 5060. An IP
+  address or an explicit `host:port` skips SRV and uses UDP on that port. [Details](https://zyno-io.github.io/siple/guide/network).
 - Two enabled accounts cannot share a non-zero `local_port`. `bind_address` must be an IP.
 - An explicit `public_address` turns off Contact rewriting.
 - `options` also detects dead connections: any SIP response counts as alive.
 
 ### TLS
 
-Used when the transport is TLS (with `auto`, only if TLS is picked). All keys ‡ rebuild.
+Used when the transport is TLS (with `auto`, only if TLS is picked). Changes rebuild the transport.
 
 | Key | Default | What it does |
 |---|---|---|
@@ -404,12 +407,12 @@ whatever its chain, expiry or name, and `tls_verify` and `tls_ca_file` are ignor
 
 ### Media and SRTP
 
-All keys apply § next call.
+Changes apply to the next call.
 
 | Key | Default | What it does |
 |---|---|---|
 | `srtp` | `"optional"` | `off`, `optional` or `mandatory`. |
-| `srtp_suites` | `["AES_CM_128_HMAC_SHA1_80","AES_CM_128_HMAC_SHA1_32"]` | Accepted SRTP suites, in order. |
+| `srtp_suites` | `["AES_CM_128_HMAC_SHA1_80", "AES_CM_128_HMAC_SHA1_32"]` | Accepted SRTP suites, in order. |
 | `codecs` | `[]` | Codec order. `[]` inherits `[media].codecs`. |
 | `dtmf_mode` | `""` | `rfc4733`, `info`, `inband` or `auto`. `""` inherits `[media]`. |
 | `audio_source` | `"device"` | Audio sent: `device`, `silence`, `tone:<hz>` or `file:<path.wav>` (looped). |
@@ -456,7 +459,8 @@ calls there offer plain RTP first. If that is refused, they retry once with SRTP
 
 - `hold_style = "sendonly"` becomes `inactive` if the other side already holds you.
 - `auth_foreign = false` answers a challenge only when the request went to your provider (`outbound_proxy`, `registrar` or
-  `domain`, or what they resolve to). Otherwise it fails with `auth_foreign_refused` and sends no credentials. Set `true` only
+  `domain`, or what they resolve to; with a separate `registrar`, the `domain` itself is not resolved). The request-URI, Contact and
+  Record-Route are never trusted. Otherwise it fails with `auth_foreign_refused` and sends no credentials. Set `true` only
   if your provider uses other servers. A rogue host could then collect a crackable digest of your password.
 - `prack`: `supported` sends reliable 180s only if the caller sends `Require: 100rel`. `required` does it whenever the caller
   lists `100rel`. `disabled` never does. The 200 then waits for PRACK, and the call is rejected with 504 if it never comes.
@@ -467,9 +471,9 @@ calls there offer plain RTP first. If that is refused, they retry once with SRTP
 
 | Key | Default | What it does |
 |---|---|---|
-| `mwi` | `"subscribe"` | Message-waiting light: `subscribe`, `unsolicited` or `off`. |
-| `mwi_uri` | `""` | URI to subscribe on. `""` is your own address. |
-| `blf_expires` | `600` | Extension subscription lifetime, in seconds. 10 to 86400. |
+| `mwi` | `"subscribe"` | Message-waiting light: `subscribe`, `unsolicited` or `off`. Resubscribes on change. |
+| `mwi_uri` | `""` | URI to subscribe on. `""` is your own address. Resubscribes on change. |
+| `blf_expires` | `600` | Extension subscription lifetime, in seconds. 10 to 86400. Resubscribes on change. |
 | `pickup` | `"off"` | Directed pickup: `off`, `prefix` or `replaces` (experimental). |
 | `pickup_prefix` | `"**"` | Feature code dialed before the extension with `prefix`. No spaces. |
 | `pickup_replaces_target` | `"caller"` | With `replaces`: send to the `caller` or the `monitored` phone. |
@@ -496,7 +500,8 @@ The watch list of extensions (busy lamps). Put each table right after its accoun
 
 Pickup is offered only while the extension is ringing, its lamp is current and its method is not `off`. `prefix` dials
 `pickup_target`, else `<pickup_prefix><extension>` (such as `**1004`). `replaces` is experimental. Every pickup goes through your
-outbound proxy or registrar. Full rules: [user guide](https://zyno-io.github.io/siple/guide/extensions#directed-pickup-rules).
+outbound proxy or registrar, and a target taken from a NOTIFY is cut down to `sip[s]:user@host[:port]` (parameters and headers
+dropped). Full rules: [user guide](https://zyno-io.github.io/siple/guide/extensions#directed-pickup-rules).
 
 ```toml
 [[account]]
@@ -530,7 +535,7 @@ set. `config.get` shows the resolved values. The bundles approximate factory beh
 |---|---|---|---|---|---|
 | `user_agent` | `[general]` value | `Yealink SIP-T54W 96.86.0.70` | `PolycomVVX-VVX_450-UA/6.4.4.5239` | `Cisco-CP-8845-3PCC/12.0.1` | `Grandstream GXP2170 1.0.11.74` |
 | `hold_style` | `sendonly` | `sendonly` | `sendonly` | `inactive` | `sendonly` |
-| `dtmf_mode` | `auto` | `rfc4733` | `rfc4733` | `rfc4733` | `rfc4733` |
+| `dtmf_mode` | inherits `[media]` (`auto`) | `rfc4733` | `rfc4733` | `rfc4733` | `rfc4733` |
 | `dnd_reject_code` | `486` | `480` | `486` | `480` | `486` |
 | `attended_refer_target` | `aor` | `aor` | `contact` | `contact` | `aor` |
 | `prack` | `supported` | `disabled` | `supported` | `supported` | `disabled` |
