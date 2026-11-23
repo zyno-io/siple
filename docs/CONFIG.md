@@ -353,14 +353,14 @@ fresh install never tries to register. Keys apply at once unless the description
 | `enabled` | `true` | `false` unregisters and hangs up at once. Turning on rebuilds. |
 | `profile` | `"generic"` | Vendor preset. See [Vendor profiles](#vendor-profiles). |
 | `display_name` | `""` | Name in the From header. |
-| `username` | required | User part of your address. No spaces or `@` (re-registers) |
-| `auth_username` | `""` | Login name if different. `""` is `username` (re-registers) |
-| `password` | `""` | Login password. Hidden in `config.get` and logs (re-registers) |
-| `password_store` | `"file"` | `file` or `keyring` ([below](#passwords-in-the-system-keyring)) (re-registers) |
-| `domain` | required | Domain of your address. A bare host (re-registers) |
-| `registrar` | `""` | Server to send requests to, `host[:port]`. `""` is `domain` (rebuilds) |
-| `register` | `true` | `false` is peer mode: no REGISTER, calls still work (re-registers) |
-| `expires` | `300` | Registration lifetime in seconds. 10 to 86400 (re-registers) |
+| `username` | required | User part of your address. No spaces or `@` (re-registers). |
+| `auth_username` | `""` | Login name if different. `""` is `username` (re-registers). |
+| `password` | `""` | Login password. Hidden in `config.get` and logs (re-registers). |
+| `password_store` | `"file"` | `file` or `keyring` ([below](#passwords-in-the-system-keyring)) (re-registers). |
+| `domain` | required | Domain of your address. A bare host (re-registers). |
+| `registrar` | `""` | Server to send requests to, `host[:port]`. `""` is `domain` (rebuilds). |
+| `register` | `true` | `false` is peer mode: no REGISTER, calls still work (re-registers). |
+| `expires` | `300` | Registration lifetime in seconds. 10 to 86400 (re-registers). |
 | `user_agent` | `""` | Overrides `[general].user_agent`. |
 | `extra_headers` | `{}` | Headers added to requests, such as `{ "X-Test" = "1" }`. |
 
@@ -371,14 +371,14 @@ is a rebuild. Reserved header names for `extra_headers`: `Via`, `From`, `To`, `C
 
 | Key | Default | What it does |
 |---|---|---|
-| `transport` | `"udp"` | `udp`, `tcp`, `tls` or `auto` (rebuilds) |
-| `local_port` | `0` | Local SIP port. `0` is any free port (rebuilds) |
-| `bind_address` | `""` | Local IP to bind and advertise. `""` is automatic (rebuilds) |
-| `public_address` | `""` | IP or host to advertise (static NAT) (rebuilds) |
-| `rewrite_contact` | `true` | Learn your public address from the server and re-register with it (re-registers) |
-| `outbound_proxy` | `""` | Send every request through this `host[:port]` (rebuilds) |
-| `outbound_proxy_route` | `false` | Also add a `Route` header for the proxy (rebuilds) |
-| `use_sips_uri` | `false` | On TLS, use a `sips:` Contact (rebuilds) |
+| `transport` | `"udp"` | `udp`, `tcp`, `tls` or `auto` (rebuilds). |
+| `local_port` | `0` | Local SIP port. `0` is any free port (rebuilds). |
+| `bind_address` | `""` | Local IP to bind and advertise. `""` is automatic (rebuilds). |
+| `public_address` | `""` | IP or host to advertise (static NAT) (rebuilds). |
+| `rewrite_contact` | `true` | Learn your public address from the server and re-register with it (re-registers). |
+| `outbound_proxy` | `""` | Send every request through this `host[:port]` (rebuilds). |
+| `outbound_proxy_route` | `false` | Also add a `Route` header for the proxy (rebuilds). |
+| `use_sips_uri` | `false` | On TLS, use a `sips:` Contact (rebuilds). |
 | `keepalive_secs` | `30` | NAT keep-alive interval. `0` is off; otherwise 5 to 3600. |
 | `keepalive_method` | `"crlf"` | `crlf` or `options`. |
 | `keepalive_fail_threshold` | `2` | Unanswered `options` keep-alives that mark the connection dead. `0` is never; max 20. |
