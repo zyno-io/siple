@@ -15,7 +15,7 @@ mod audio_page;
 mod extensions;
 pub(crate) mod pages;
 
-pub(super) use pages::sec_toggle_pub;
+pub(super) use pages::{launch_at_login_row, links_automatic_note, sec_toggle_pub};
 
 use std::collections::BTreeMap;
 

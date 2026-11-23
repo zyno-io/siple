@@ -8,7 +8,8 @@ const docs = 'https://zyno-io.github.io/siple';
 export const site = {
   name: 'Siple',
   tagline: 'The scriptable SIP softphone',
-  maker: 'Signal24 LLC dba Zyno Consulting',
+  maker: 'Zyno Consulting',
+  legalName: 'Signal24 LLC dba Zyno Consulting',
   contact: 'oss@zyno.io',
   repo,
   releases: `${repo}/releases`,
@@ -16,6 +17,7 @@ export const site = {
   verify: `${repo}/blob/main/docs/RELEASING.md#verify-a-download`,
   docs: `${docs}/`,
   privacy: '/privacy/',
+  support: '/support/',
   terms: 'https://zyno.consulting/terms/',
   zynotalk: 'https://zyno.talk',
 } as const;
@@ -40,6 +42,10 @@ export const doc = {
   jsonRpc: `${docs}/agents/json-rpc`,
   api: `${docs}/agents/api-reference`,
   configRef: `${docs}/reference/configuration`,
+  configLocation: `${docs}/reference/configuration#location`,
+  faq: `${docs}/guide/faq`,
+  troubleshooting: `${docs}/guide/troubleshooting`,
+  logs: `${docs}/guide/troubleshooting#share-a-log-safely`,
   licence: `${docs}/project/licence`,
   changelog: `${docs}/project/changelog`,
   security: `${docs}/project/security`,

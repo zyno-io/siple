@@ -43,7 +43,7 @@ see [CONFIG.md](CONFIG.md#location)); neither is published yet. Since 0.2.0 the 
   notes: both stores need a working account to test calls.
 - **Screenshots** at store sizes (Mac App Store 2880×1800), rendered from the visual-test scenes in
   `crates/siple/src/visual_tests.rs`.
-- **Support URL** for both listings (the privacy policy exists).
+- **Support URL** for both listings: <https://siple.app/support/> (`sites/www/src/pages/support.astro`; the privacy policy is at `/privacy/`).
 - **User guide.** When an edition ships: install page, "Where are my settings stored?" in the FAQ, and the MSIX uninstall
   note below.
 
@@ -56,16 +56,22 @@ Open:
    (`build.channel = "mas"`). Use a separate macOS user: containers, keychain and privacy grants are per user.
    `MAS_LOCAL_TEST=1 scripts/sign-macos-mas.sh` signs a copy for local runs.
 2. The store and direct builds share the bundle id `io.zyno.siple`. Test a TestFlight install over the direct app
-   (LaunchServices, "already installed", keychain prompts) and document "quit the direct build first".
-3. Settings > Developer shows an MCP snippet with a bare `siple-cli`, which is not on `PATH` in this edition: show the
-   bundled CLI's absolute path (`/Applications/Siple.app/Contents/MacOS/siple-cli`).
-4. Homebrew: a cask for the direct build and a `siple-cli` formula, the outside CLI for Mac App Store users.
-5. Submission automation: `MAS_VALIDATE` already runs `altool --validate-app`; upload, "What's New" from `CHANGELOG.md`
+   (LaunchServices, "already installed", keychain prompts). The "quit the direct build first" advice is on the support
+   page.
+3. Homebrew: a cask for the direct build and a `siple-cli` formula, the outside CLI for Mac App Store users.
+4. Submission automation: `MAS_VALIDATE` already runs `altool --validate-app`; upload, "What's New" from `CHANGELOG.md`
    and submission are manual (Transporter, App Store Connect). Automating them needs an App Manager API key.
-6. Optional: allow `/usr/bin/say` in `[speech]` (see findings). Today the edition runs no external program.
-7. `launch_at_login` is a no-op in this edition (`shell/autostart.rs`), and Settings still shows it and `handle_links`.
-   Register a login item with `SMAppService.mainApp` (macOS 13+, which this edition already requires) and hide
-   `handle_links`.
+5. Optional: allow `/usr/bin/say` in `[speech]` (see findings). Today the edition runs no external program.
+
+Done:
+
+- Settings and the first-run wizard have a launch-at-login switch (`Channel::launch_at_login_in_app`: every edition but the Microsoft Store, where a note points to Windows Settings > Apps > Startup).
+- Launch at login uses `SMAppService.mainAppService` register / unregister (`shell/autostart.rs`, `objc2-service-management`).
+  It shows up in System Settings > General > Login Items. The System Settings switch wins: if the user switched it off
+  there, Siple logs it and does not register again while the setting stays on; switching it off and on again in Siple calls `register` once more. A non-default `--config` profile leaves it alone. Not exercised in the sandbox yet (open item 1).
+- The Settings > Developer MCP snippet shows the bundled CLI's absolute path, derived from the running bundle.
+- `handle_links` is hidden in Settings and the first-run wizard in every packaged edition (`Channel::can_register_links`);
+  a faint note says the edition registers the links at install time and to make Siple the default if another app opens them. Info.plist declares the schemes.
 
 Findings from the App Sandbox spike (macOS 27, Developer ID signature with the sandbox and app-group entitlements):
 
@@ -104,15 +110,14 @@ Open:
    `%LOCALAPPDATA%\Packages\<package family name>\LocalState\Siple\runtime.json` for a compiled-in list of known package
    family names (the Store and sideload identities differ). No glob: a planted `runtime.json` could capture
    `account.set_password`.
-3. Settings shows the `handle_links` toggle, which does nothing when packaged (the manifest declares the protocols; same
-   in the Mac App Store edition): hide it or explain it in both store editions.
-4. Uninstall deletes `LocalState` (config, accounts, logs). Say so in the user guide and add a config export.
-5. Certification notes: a `runFullTrust` justification (raw UDP/TCP SIP and RTP, audio devices, the local control API, the
+3. Uninstall deletes `LocalState` (config, accounts, logs). The support page says so; the user guide still needs it, and a
+   config export is not built.
+4. Certification notes: a `runFullTrust` justification (raw UDP/TCP SIP and RTP, audio devices, the local control API, the
    console CLI alias), the firewall extension, the optional WACK "Blocked executables" findings (`CreateProcessW`, and
    `cmd` / PowerShell strings in the binaries, one of them notify-rust's default app id, unused when packaged), a demo
    account, the IARC rating, privacy URL and screenshots. Only one submission can be pending at a time.
-6. Submission automation: `msstore publish` on final tags (an Entra app with the Manager role). Not wired.
-7. Direct Windows channels: a winget manifest for the portable zip from CI; later a sideload MSIX signed with Artifact
+5. Submission automation: `msstore publish` on final tags (an Entra app with the Manager role). Not wired.
+6. Direct Windows channels: a winget manifest for the portable zip from CI; later a sideload MSIX signed with Artifact
    Signing plus an `.appinstaller` (its `Publisher` must equal the certificate subject).
 
 Findings from the MSIX spike (Windows 11 x64, WACK from SDK 10.0.26100):
@@ -126,6 +131,7 @@ Findings from the MSIX spike (Windows 11 x64, WACK from SDK 10.0.26100):
   The GUI starts from Start, a link or the startup task.
 - Firewall rules need one `desktop2:Extension` per executable (two `FirewallRules` in one extension fail the schema). The
   rules follow the versioned install path on update.
+- `handle_links` is hidden in Settings and the wizard (the manifest declares the protocols).
 - `current_exe()` is a versioned `WindowsApps` path: never persist it. HKCU link registration and the `Run` key are skipped
   when packaged.
 - Named pipes cross the package boundary (full trust, no AppContainer); the pipe ACL needs no change.

@@ -6,6 +6,14 @@
 ### New
 
 - A badge on the call shows when an agent is listening to it: "Agent listening" or "Agent transcribing" appears on the call, on its line in the rail, in a banner under the header (also in Settings) and in the tray menu and tooltip while an AI agent connected through the control API, MCP or `siple-cli` captures the call's audio with `call.listen`, `call.rx_audio` or `call.stream`. A call whose audio is recorded to a file (`call.record_start`, a `record:` sink, or an account's `audio_sink = "record:..."`) shows "Recording" the same way. `call.get` and `call.list` report it as `agent_capture`.
+- Settings and the first-run wizard have a **Start Siple when you log in** switch (it was config-file only). The Microsoft Store edition shows a note instead, because only you can turn its startup task on, in Windows Settings > Apps > Startup.
+- Mac App Store edition: launch at login works (a login item you can also switch off in System Settings > General > Login Items).
+- Support page on siple.app, linked from the footer.
+
+### Fixed
+
+- Mac App Store, Microsoft Store and Flatpak editions: the link-handling switch is gone from Settings and the first-run wizard, where it did nothing. These editions register the links when they are installed; if another app opens them, make Siple the default (see the links guide).
+- Mac App Store edition: the MCP snippet in Settings > Developer shows the full path of the bundled `siple-cli`, which is not on `PATH`.
 
 ## 0.2.5 (2026-11-23)
 

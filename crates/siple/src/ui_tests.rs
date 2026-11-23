@@ -675,6 +675,45 @@ fn settings_toggle_hints_stay_inside_the_window() {
             "{size:?}: hint ends at {} past the window ({r:?})",
             r.max.x
         );
+        // The hint sits right under its own row (the switch and its label text share the
+        // label), not a full row gap away.
+        let row_bottom = h
+            .query_all_by_label("Install updates in the app")
+            .map(|n| n.rect().max.y)
+            .fold(f32::NEG_INFINITY, f32::max);
+        let gap = r.min.y - row_bottom;
+        assert!(
+            (0.0..=8.0).contains(&gap),
+            "{size:?}: hint is {gap} px below its toggle row (ends at {row_bottom}; hint {r:?})"
+        );
+    }
+}
+
+/// Launch at login is a switch in the tray and window group; it emits the config edit.
+#[test]
+fn launch_at_login_toggle_emits_the_config_edit() {
+    for size in [WIDE, NARROW] {
+        let mut h = settings_harness(base_snapshot(), Section::Notifications, size);
+        click_switch(&mut h, "Start Siple when you log in");
+        let req = only_edit(take(&mut h));
+        assert_eq!(
+            rpc::edits_of(&req),
+            [ConfigEdit::SetSection {
+                section: "ui".into(),
+                key: "launch_at_login".into(),
+                value: EditValue::Bool(true)
+            }]
+        );
+        // The hint wraps inside the window.
+        let hint = h
+            .query_all_by_label_contains("Combine with Start hidden")
+            .next()
+            .expect("the launch-at-login hint");
+        assert!(
+            hint.rect().max.x <= size.x + 0.5,
+            "{size:?}: hint past the window ({:?})",
+            hint.rect()
+        );
     }
 }
 

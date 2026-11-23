@@ -4,7 +4,7 @@ import type { APIRoute } from 'astro';
  * sitemap.xml. Every indexable page is listed here by hand (the site is one
  * page; a plugin isn't worth it). Add new pages to the list.
  */
-const pages = ['/', '/privacy/'];
+const pages = ['/', '/privacy/', '/support/'];
 
 export const GET: APIRoute = ({ site }) => {
   const base = site ?? new URL('https://siple.app');

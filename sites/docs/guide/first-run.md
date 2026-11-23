@@ -84,6 +84,7 @@ On macOS this step shows **Allow microphone access** if Siple does not have it y
 On the last step, turn on or off:
 
 - **Open phone and setup links with Siple**
+- **Start Siple when you log in**
 - **Show in the tray / menu bar**
 - **Desktop notifications**
 

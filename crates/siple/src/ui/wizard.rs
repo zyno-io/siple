@@ -14,7 +14,7 @@ use siple_core::provision::SetupLink;
 use super::draft::{self, DraftForm};
 use super::form::{group, message_box, primary_button, small_button, test_result_box};
 use super::rpc::{self, RpcReply, RpcRequest, RpcTag, TestRun};
-use super::settings::sec_toggle_pub;
+use super::settings::{launch_at_login_row, links_automatic_note, sec_toggle_pub};
 use super::{Cx, UiAction, UiState, audio, setup_link};
 use crate::snapshot::Snapshot;
 use crate::theme::{FS_BODY, FS_SMALL, FS_TITLE, SP_L, SP_S};
@@ -567,15 +567,20 @@ fn done_step(ui: &mut egui::Ui, cx: &Cx, out: &mut Vec<UiAction>, st: &mut UiSta
     let v = serde_json::to_value(&cx.vm.snap.cfg.ui).unwrap_or_default();
     ui.label(strong("You're ready to make calls", FS_BODY + 1.0).color(p.text));
     group(ui, p, "", |ui| {
-        sec_toggle_pub(
-            ui,
-            p,
-            out,
-            "ui",
-            "handle_links",
-            "Open phone and setup links with Siple",
-            &v,
-        );
+        if siple_core::config::channel::current().can_register_links() {
+            sec_toggle_pub(
+                ui,
+                p,
+                out,
+                "ui",
+                "handle_links",
+                "Open phone and setup links with Siple",
+                &v,
+            );
+        } else {
+            links_automatic_note(ui, p);
+        }
+        launch_at_login_row(ui, p, out, cx, &v, false);
         sec_toggle_pub(ui, p, out, "ui", "tray", "Show in the tray / menu bar", &v);
         sec_toggle_pub(
             ui,

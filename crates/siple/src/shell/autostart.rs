@@ -4,6 +4,9 @@
 //! [`apply`] writes or removes the real entry for the current OS:
 //! - macOS: LaunchAgent plist `~/Library/LaunchAgents/io.zyno.siple.plist` (works unsigned and
 //!   on macOS 12; `SMAppService` needs macOS 13 and a signed bundle);
+//! - Mac App Store: `SMAppService.mainAppService` register / unregister (macOS 13+, which that
+//!   edition requires); a LaunchAgent cannot work in the app sandbox. The login item appears in
+//!   System Settings > General > Login Items, where the user can also switch it off;
 //! - Windows: `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`;
 //! - Linux: `~/.config/autostart/io.zyno.siple.desktop` (XDG autostart);
 //! - Flatpak: the Background portal (`portal_background`), which writes that entry on the host.
@@ -253,9 +256,10 @@ fn remove_if_present(path: &Path) -> std::io::Result<()> {
 /// [`entry_name`]) which starts it, and disabling removes exactly that entry, wherever the
 /// executable was when it was written.
 ///
-/// A no-op in packaged editions: a LaunchAgent cannot work in the Mac App Store sandbox, and an
-/// MSIX run key would persist the versioned `WindowsApps` path (MSIX users enable the declared
-/// startup task in Windows Settings instead).
+/// The Mac App Store edition registers the main app with `SMAppService` (`config` is ignored: the
+/// service always starts the default profile). Otherwise a no-op in packaged editions: an MSIX run
+/// key would persist the versioned `WindowsApps` path (MSIX users enable the declared startup task
+/// in Windows Settings instead).
 ///
 /// The Flatpak edition asks the Background portal instead (`config_dir` holds its marker, `rt`
 /// drives the D-Bus call; both are unused elsewhere).
@@ -266,6 +270,10 @@ pub fn apply(
     rt: &tokio::runtime::Handle,
 ) -> std::io::Result<()> {
     let ch = siple_core::config::channel::current();
+    #[cfg(target_os = "macos")]
+    if uses_service_management(ch) {
+        return service_management(enabled, config);
+    }
     let portal = || {
         #[cfg(target_os = "linux")]
         return super::portal_background::sync(enabled, config, config_dir, rt);
@@ -292,6 +300,150 @@ fn uses_portal(c: &siple_core::config::channel::Channel) -> bool {
     c.kind == siple_core::config::channel::ChannelKind::Flatpak
 }
 
+/// Whether the login item goes through `SMAppService` (the Mac App Store edition).
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn uses_service_management(c: &siple_core::config::channel::Channel) -> bool {
+    c.kind == siple_core::config::channel::ChannelKind::MacAppStore
+}
+
+/// What `SMAppService` is asked to do.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+#[derive(Debug, PartialEq, Eq)]
+enum LoginItemPlan {
+    /// Nothing to change.
+    Nothing,
+    /// The user switched it off in System Settings; that switch wins.
+    UserSwitchedOff,
+    Register,
+    Unregister,
+}
+
+/// The `SMAppService` action for the Mac App Store edition. `non_default_profile`: the main app
+/// service can only start the default profile, so another profile never touches it.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn login_item_plan(
+    enabled: bool,
+    non_default_profile: bool,
+    registered: bool,
+    needs_approval: bool,
+) -> LoginItemPlan {
+    if non_default_profile {
+        LoginItemPlan::Nothing
+    } else if enabled {
+        if needs_approval {
+            LoginItemPlan::UserSwitchedOff
+        } else if registered {
+            LoginItemPlan::Nothing
+        } else {
+            LoginItemPlan::Register
+        }
+    } else if registered || needs_approval {
+        LoginItemPlan::Unregister
+    } else {
+        LoginItemPlan::Nothing
+    }
+}
+
+/// Registers (`enabled`) or unregisters the main app as a login item with `SMAppService`.
+#[cfg(target_os = "macos")]
+fn service_management(enabled: bool, config: Option<&Path>) -> std::io::Result<()> {
+    use objc2_service_management::{SMAppService, SMAppServiceStatus};
+    if config.is_some() {
+        tracing::info!(
+            "the Mac App Store login item starts the default profile only; leaving it alone"
+        );
+    }
+    // SAFETY: plain Objective-C calls on the shared main-app service object.
+    let svc = unsafe { SMAppService::mainAppService() };
+    let status = unsafe { svc.status() };
+    let plan = login_item_plan(
+        enabled,
+        config.is_some(),
+        status == SMAppServiceStatus::Enabled,
+        status == SMAppServiceStatus::RequiresApproval,
+    );
+    let fail = |what: &str, e: objc2::rc::Retained<objc2_foundation::NSError>| {
+        let msg = e.localizedDescription().to_string();
+        tracing::warn!(error = %msg, "SMAppService {what} failed");
+        std::io::Error::other(format!("login item {what} failed: {msg}"))
+    };
+    let switched_off = || {
+        tracing::info!(
+            "the login item is switched off in System Settings > General > Login Items; turn it on there"
+        );
+    };
+    match plan {
+        LoginItemPlan::Nothing => Ok(()),
+        LoginItemPlan::UserSwitchedOff => {
+            switched_off();
+            Ok(())
+        }
+        LoginItemPlan::Register => {
+            let result = unsafe { svc.registerAndReturnError() };
+            // The status after the call decides, not the error code: an already registered item
+            // errors, and a registered one the user has switched off needs approval.
+            let after = unsafe { svc.status() };
+            if after == SMAppServiceStatus::RequiresApproval {
+                switched_off();
+                Ok(())
+            } else if after == SMAppServiceStatus::Enabled {
+                Ok(())
+            } else {
+                result.map_err(|e| fail("register", e))
+            }
+        }
+        LoginItemPlan::Unregister => {
+            unsafe { svc.unregisterAndReturnError() }.map_err(|e| fail("unregister", e))
+        }
+    }
+}
+
+/// Why a macOS login item for the app at `exe` could never work: macOS runs it from a randomized
+/// quarantine path (App Translocation) or it sits on a read-only volume (a mounted disk image).
+/// `None` outside an app bundle (a development build) and when the location is fine. The same
+/// checks as the updater's (`update/install/macos.rs`). `read_only` answers for a bundle path.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+pub fn location_problem(exe: &Path, read_only: impl Fn(&Path) -> bool) -> Option<&'static str> {
+    let s = exe.to_string_lossy();
+    let bundle = Path::new(&s[..s.find(".app/Contents/MacOS/")? + 4]);
+    (s.contains("/AppTranslocation/") || read_only(bundle))
+        .then_some("Move Siple to Applications first, then turn this on.")
+}
+
+/// Whether `p` is on a read-only volume (`statvfs`; the updater's check, which the store build
+/// does not compile).
+#[cfg(target_os = "macos")]
+#[allow(clippy::unnecessary_cast)] // the flag types differ per OS
+fn read_only_volume(p: &Path) -> bool {
+    use std::os::unix::ffi::OsStrExt;
+    let Ok(c) = std::ffi::CString::new(p.as_os_str().as_bytes()) else {
+        return false;
+    };
+    // SAFETY: `c` is a valid NUL-terminated path and `st` a valid out-pointer.
+    let mut st: libc::statvfs = unsafe { std::mem::zeroed() };
+    unsafe {
+        libc::statvfs(c.as_ptr(), &mut st) == 0 && (st.f_flag as u64 & libc::ST_RDONLY as u64) != 0
+    }
+}
+
+/// [`location_problem`] for the running macOS direct build, looked up once.
+pub fn running_location_problem() -> Option<&'static str> {
+    #[cfg(target_os = "macos")]
+    {
+        static P: std::sync::OnceLock<Option<&'static str>> = std::sync::OnceLock::new();
+        *P.get_or_init(|| {
+            let ch = siple_core::config::channel::current();
+            if ch.kind != siple_core::config::channel::ChannelKind::Direct {
+                return None;
+            }
+            let exe = std::env::current_exe().ok()?;
+            location_problem(&exe, read_only_volume)
+        })
+    }
+    #[cfg(not(target_os = "macos"))]
+    None
+}
+
 fn apply_for(
     channel: &siple_core::config::channel::Channel,
     enabled: bool,
@@ -307,6 +459,14 @@ fn apply_for(
     }
     // The AppImage edition starts its file, never the temporary mount the process runs from.
     let exe = channel.launch_target()?;
+    // A LaunchAgent for a translocated or disk-image copy can never start Siple.
+    #[cfg(target_os = "macos")]
+    if enabled
+        && channel.kind == siple_core::config::channel::ChannelKind::Direct
+        && let Some(msg) = location_problem(&exe, read_only_volume)
+    {
+        return Err(std::io::Error::other(msg));
+    }
     // A runtime option (`--appimage-extract-and-run`) must be the first argument.
     let mut extra: Vec<String> = channel
         .launch_args_prefix()
@@ -385,6 +545,52 @@ mod tests {
         }
         #[cfg(not(target_os = "windows"))]
         assert_eq!(entry.as_ref().map(|p| p.exists()), before);
+    }
+
+    #[test]
+    fn only_the_mac_app_store_uses_service_management() {
+        use siple_core::config::channel::Channel;
+        assert!(uses_service_management(&Channel::MAC_APP_STORE));
+        assert!(!uses_service_management(&Channel::DIRECT));
+        assert!(!uses_service_management(&Channel::FLATPAK));
+        assert!(!uses_service_management(&Channel::msix("a_b", None)));
+    }
+
+    #[test]
+    fn a_translocated_or_disk_image_copy_has_a_location_problem() {
+        let never = |_: &Path| false;
+        let tr = Path::new(
+            "/private/var/folders/x/AppTranslocation/ABC/d/Siple.app/Contents/MacOS/siple",
+        );
+        assert!(location_problem(tr, never).is_some());
+        let app = Path::new("/Applications/Siple.app/Contents/MacOS/siple");
+        assert!(location_problem(app, never).is_none());
+        let dmg = Path::new("/Volumes/Siple/Siple.app/Contents/MacOS/siple");
+        assert!(location_problem(dmg, |b| b.starts_with("/Volumes/Siple")).is_some());
+        // The volume check gets the bundle, not the executable.
+        assert!(location_problem(dmg, |b| b == Path::new("/Volumes/Siple/Siple.app")).is_some());
+        // Not a bundle (a development build).
+        assert!(location_problem(Path::new("/x/target/debug/siple"), |_| true).is_none());
+    }
+
+    #[test]
+    fn the_login_item_plan() {
+        use LoginItemPlan::*;
+        // enabled, non_default_profile, registered, needs_approval
+        assert_eq!(login_item_plan(true, false, false, false), Register);
+        assert_eq!(login_item_plan(true, false, true, false), Nothing);
+        assert_eq!(login_item_plan(true, false, false, true), UserSwitchedOff);
+        assert_eq!(login_item_plan(false, false, true, false), Unregister);
+        assert_eq!(login_item_plan(false, false, false, true), Unregister);
+        assert_eq!(login_item_plan(false, false, false, false), Nothing);
+        // Another profile never touches the default profile's item.
+        for (e, r, n) in [
+            (true, false, false),
+            (false, true, false),
+            (false, false, true),
+        ] {
+            assert_eq!(login_item_plan(e, true, r, n), Nothing);
+        }
     }
 
     #[test]
