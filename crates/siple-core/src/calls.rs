@@ -1223,7 +1223,7 @@ pub fn call_methods() -> Vec<MethodInfo> {
         ),
         MethodInfo::new(
             "call.consult_link",
-            "Pair two existing calls of the same account into a transfer session: `call_id` is the original (established), `consult_call_id` the consult call (dialing, early or established). Nothing is held or dialled. Returns {ok, session_id, consult_call_id, session, event_seq}. Errors: not_found, invalid_state (not established, already in a session), invalid_params (same call / different accounts: \"both calls must belong to the same account\").",
+            "Pair two existing calls of the same account into a transfer session: `call_id` is the original (established), `consult_call_id` the consult call (dialing, early or established). Nothing is held or dialed. Returns {ok, session_id, consult_call_id, session, event_seq}. Errors: not_found, invalid_state (not established, already in a session), invalid_params (same call / different accounts: \"both calls must belong to the same account\").",
             obj(
                 json!({"call_id":call_id.clone(),
                 "consult_call_id":{"type":"string","description":"The consult call of the same account."}}),

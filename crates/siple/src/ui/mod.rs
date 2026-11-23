@@ -335,7 +335,7 @@ impl<'a> Cx<'a> {
             LayoutMode::Narrow => st.ext_tab,
             LayoutMode::Wide => st.ext_open.or(st.ext_pref).unwrap_or(true),
             // Only when the stage keeps room for a call card next to the drawer; a saved
-            // "open" means "open when it fits", a choice made this session is honoured.
+            // "open" means "open when it fits", a choice made this session is honored.
             LayoutMode::Medium => st
                 .ext_open
                 .unwrap_or(st.ext_pref != Some(false) && self.fits(st)),

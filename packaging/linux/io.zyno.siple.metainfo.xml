@@ -76,7 +76,7 @@
     <release version="0.2.4" date="2026-11-22">
       <url type="details">https://github.com/zyno-io/siple/releases/tag/v0.2.4</url>
       <description><ul>
-        <li>Auto-hold in a call between two of your own accounts holds the leg that dialled</li>
+        <li>Auto-hold in a call between two of your own accounts holds the leg that dialed</li>
       </ul></description>
     </release>
     <release version="0.2.3" date="2026-11-22">

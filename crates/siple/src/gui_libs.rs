@@ -172,7 +172,7 @@ pub fn dialog_commands(msg: &str) -> Vec<DialogCmd> {
         c("kdialog", &["--error"], false),
         c("xmessage", &["-center"], false),
     ];
-    // The text goes last (after `--` where the tool honours it) so it is never read as an option.
+    // The text goes last (after `--` where the tool honors it) so it is never read as an option.
     v[0].args.extend(["--".to_string(), msg.to_string()]);
     v[1].args.push(format!("--text={msg}"));
     v[2].args

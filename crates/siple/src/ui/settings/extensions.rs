@@ -1,4 +1,4 @@
-//! Settings > Extensions: BLF view and click behaviour (`[ui]`, instant) and the per-account
+//! Settings > Extensions: BLF view and click behavior (`[ui]`, instant) and the per-account
 //! extension lists (`set_blf`, staged until Apply; reorder with the buttons or Alt+Up / Alt+Down).
 
 use eframe::egui::{self, RichText};
@@ -19,7 +19,7 @@ pub(super) fn show(ui: &mut egui::Ui, cx: &Cx, st: &mut UiState, out: &mut Vec<U
     let p = cx.p;
     let snap = cx.vm.snap;
     let u = ui_json(snap);
-    group(ui, p, "View and click behaviour", |ui| {
+    group(ui, p, "View and click behavior", |ui| {
         sec_choice(
             ui,
             p,

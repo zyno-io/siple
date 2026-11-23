@@ -18,7 +18,7 @@
     "colorMeta": {
       "bg": {
         "role": "neutral",
-        "displayName": "Desk Grey",
+        "displayName": "Desk Gray",
         "canonical": "#f6f7f9",
         "oklch": "oklch(97.6% 0.003 264.5)",
         "tonalRamp": [
@@ -50,7 +50,7 @@
       },
       "surface-2": {
         "role": "neutral",
-        "displayName": "Inset Grey",
+        "displayName": "Inset Gray",
         "canonical": "#f3f4f6",
         "oklch": "oklch(96.7% 0.003 264.5)",
         "tonalRamp": [
@@ -162,7 +162,7 @@
       },
       "text-3": {
         "role": "neutral",
-        "displayName": "Meta Grey",
+        "displayName": "Meta Gray",
         "canonical": "#646a78",
         "oklch": "oklch(52.4% 0.023 267.1)",
         "tonalRamp": [
@@ -178,7 +178,7 @@
       },
       "placeholder": {
         "role": "neutral",
-        "displayName": "Placeholder Grey",
+        "displayName": "Placeholder Gray",
         "canonical": "#6f7583",
         "oklch": "oklch(56.2% 0.023 267.1)",
         "tonalRamp": [
@@ -487,7 +487,7 @@
       },
       "neutral": {
         "role": "secondary",
-        "displayName": "Draft Grey",
+        "displayName": "Draft Gray",
         "canonical": "#545b69",
         "oklch": "oklch(47.0% 0.024 264.3)",
         "tonalRamp": [
@@ -503,7 +503,7 @@
       },
       "neutral-soft": {
         "role": "secondary",
-        "displayName": "Draft Grey Fill",
+        "displayName": "Draft Gray Fill",
         "canonical": "#f1f2f5",
         "oklch": "oklch(96.1% 0.004 271.4)",
         "tonalRamp": [
@@ -519,7 +519,7 @@
       },
       "neutral-border": {
         "role": "secondary",
-        "displayName": "Draft Grey Border",
+        "displayName": "Draft Gray Border",
         "canonical": "#dcdfe5",
         "oklch": "oklch(90.3% 0.009 264.5)",
         "tonalRamp": [
@@ -583,7 +583,7 @@
       },
       "lamp-idle": {
         "role": "tertiary",
-        "displayName": "Lamp Grey",
+        "displayName": "Lamp Gray",
         "canonical": "#a3adb9",
         "oklch": "oklch(74.4% 0.021 252.9)",
         "tonalRamp": [
@@ -599,7 +599,7 @@
       },
       "bg-dark": {
         "role": "neutral",
-        "displayName": "Desk Grey (dark)",
+        "displayName": "Desk Gray (dark)",
         "canonical": "#0c0d10",
         "oklch": "oklch(15.9% 0.007 271.0)",
         "tonalRamp": [
@@ -631,7 +631,7 @@
       },
       "surface-2-dark": {
         "role": "neutral",
-        "displayName": "Inset Grey (dark)",
+        "displayName": "Inset Gray (dark)",
         "canonical": "#191b20",
         "oklch": "oklch(22.2% 0.010 268.2)",
         "tonalRamp": [
@@ -743,7 +743,7 @@
       },
       "text-3-dark": {
         "role": "neutral",
-        "displayName": "Meta Grey (dark)",
+        "displayName": "Meta Gray (dark)",
         "canonical": "#8b909c",
         "oklch": "oklch(65.3% 0.019 267.7)",
         "tonalRamp": [
@@ -759,7 +759,7 @@
       },
       "placeholder-dark": {
         "role": "neutral",
-        "displayName": "Placeholder Grey (dark)",
+        "displayName": "Placeholder Gray (dark)",
         "canonical": "#7a7f8c",
         "oklch": "oklch(59.7% 0.021 268.9)",
         "tonalRamp": [
@@ -980,7 +980,7 @@
       },
       "neutral-dark": {
         "role": "secondary",
-        "displayName": "Draft Grey (dark)",
+        "displayName": "Draft Gray (dark)",
         "canonical": "#b3b8c3",
         "oklch": "oklch(78.2% 0.017 266.3)",
         "tonalRamp": [
@@ -996,12 +996,12 @@
       },
       "neutral-soft-dark": {
         "role": "secondary",
-        "displayName": "Draft Grey Fill (dark)",
+        "displayName": "Draft Gray Fill (dark)",
         "canonical": "rgba(148, 155, 170, 0.1)"
       },
       "neutral-border-dark": {
         "role": "secondary",
-        "displayName": "Draft Grey Border (dark)",
+        "displayName": "Draft Gray Border (dark)",
         "canonical": "rgba(148, 155, 170, 0.24)"
       },
       "lamp-ok-dark": {
@@ -1054,7 +1054,7 @@
       },
       "lamp-idle-dark": {
         "role": "tertiary",
-        "displayName": "Lamp Grey (dark)",
+        "displayName": "Lamp Gray (dark)",
         "canonical": "#5e6a77",
         "oklch": "oklch(51.9% 0.025 250.4)",
         "tonalRamp": [
@@ -1100,7 +1100,7 @@
       },
       "caption": {
         "displayName": "Caption",
-        "purpose": "Dates, file names, captions, file-bar labels; Meta Grey."
+        "purpose": "Dates, file names, captions, file-bar labels; Meta Gray."
       },
       "control": {
         "displayName": "Control",
@@ -1149,7 +1149,7 @@
       {
         "name": "control",
         "value": "120ms ease",
-        "purpose": "Background, border and text colour on buttons, links, tabs."
+        "purpose": "Background, border and text color on buttons, links, tabs."
       },
       {
         "name": "hero-rise",
@@ -1169,7 +1169,7 @@
       {
         "name": "lamp",
         "value": "300ms ease",
-        "purpose": "Lamp colour change when the release state lands."
+        "purpose": "Lamp color change when the release state lands."
       },
       {
         "name": "header-rule",
@@ -1262,7 +1262,7 @@
       "name": "Lamp Status Line",
       "kind": "custom",
       "refersTo": "lamp",
-      "description": "The app's round LED beside a sentence; colour set by its data-lamp value.",
+      "description": "The app's round LED beside a sentence; color set by its data-lamp value.",
       "html": "<p class=\"ds-status\"><span class=\"ds-lamp ds-lamp--ok\"></span>Siple 0.9.0 &middot; Nov 17, 2026</p>",
       "css": ".ds-status{display:flex;align-items:center;gap:10px;margin:0 0 8px;font:400 14px/1.55 var(--font-sans);color:var(--text-2);font-variant-numeric:tabular-nums}.ds-lamp{flex:0 0 auto;width:8px;height:8px;border-radius:50%;background:var(--lamp-idle);box-shadow:0 0 0 3px color-mix(in srgb,var(--lamp-idle) 22%,transparent);transition:background-color 300ms ease}.ds-lamp--warn{background:var(--lamp-warn);box-shadow:0 0 0 3px color-mix(in srgb,var(--lamp-warn) 24%,transparent)}.ds-lamp--ok{background:var(--lamp-ok);box-shadow:0 0 0 3px color-mix(in srgb,var(--lamp-ok) 22%,transparent)}"
     },
@@ -1317,7 +1317,7 @@
   ],
   "narrative": {
     "northStar": "The Review Desk, wired for a phone",
-    "overview": "Siple's site is the PixelCI design system (\"The Review Desk\", documented in `pixelci/DESIGN.md`) carried over value for value, with Siple's identity swapped in. Every neutral, status triplet, radius, and shadow is PixelCI's, under the same token names. The marketing layer (display scale, generous sections, the faint desk grid in the hero) comes from the PixelCI sales site. Siple changes three things. The accent family is the app's teal-blue instead of indigo. The app's round status lamps join as a second status device for live state. And the page reads as the app's `config.toml`: each body section is one real table of that file, outlined by a sticky file bar.\n\nThe desk is quiet and utilitarian. A cool grey page, white cards with 1px hairlines and barely visible resting shadows, one accent, status as small tags with a word in them. The only imagery is the app's own rendered screenshots, light and dark, which swap with the page theme. A code-rendered terminal and real config excerpts carry the \"agents drive the same calls\" story. Nothing is illustrated, and no number or listing is invented.\n\nLight and dark come from one set of token names, redeclared for dark. Theme follows the OS through `prefers-color-scheme`. `html[data-theme]` pins the reader's choice, set by the header toggle or the page's live `[ui] theme` line. A component never branches on theme. Only the screenshot pair does, and only by showing one of its two images.",
+    "overview": "Siple's site is the PixelCI design system (\"The Review Desk\", documented in `pixelci/DESIGN.md`) carried over value for value, with Siple's identity swapped in. Every neutral, status triplet, radius, and shadow is PixelCI's, under the same token names. The marketing layer (display scale, generous sections, the faint desk grid in the hero) comes from the PixelCI sales site. Siple changes three things. The accent family is the app's teal-blue instead of indigo. The app's round status lamps join as a second status device for live state. And the page reads as the app's `config.toml`: each body section is one real table of that file, outlined by a sticky file bar.\n\nThe desk is quiet and utilitarian. A cool gray page, white cards with 1px hairlines and barely visible resting shadows, one accent, status as small tags with a word in them. The only imagery is the app's own rendered screenshots, light and dark, which swap with the page theme. A code-rendered terminal and real config excerpts carry the \"agents drive the same calls\" story. Nothing is illustrated, and no number or listing is invented.\n\nLight and dark come from one set of token names, redeclared for dark. Theme follows the OS through `prefers-color-scheme`. `html[data-theme]` pins the reader's choice, set by the header toggle or the page's live `[ui] theme` line. A component never branches on theme. Only the screenshot pair does, and only by showing one of its two images.",
     "keyCharacteristics": [
       "PixelCI's Review Desk tokens unchanged, except the accent family (teal-blue) and the added `--lamp-*` tokens.",
       "One teal accent for the primary action, the selected item, and focus. In dark it is a lighter teal with dark ink on it.",
@@ -1341,7 +1341,7 @@
       },
       {
         "name": "The Lamp Beside a Word Rule",
-        "body": "A lamp is an 8px round LED with a 3px halo of its own colour at 22% (24% for amber). It always sits next to text that says the same thing (the version and date). Its colour comes only from its `data-lamp` value, never from a per-element class. Opt in with `data-lamp`; without it a lamp stays idle grey.",
+        "body": "A lamp is an 8px round LED with a 3px halo of its own color at 22% (24% for amber). It always sits next to text that says the same thing (the version and date). Its color comes only from its `data-lamp` value, never from a per-element class. Opt in with `data-lamp`; without it a lamp stays idle gray.",
         "section": "colors"
       },
       {
@@ -1361,7 +1361,7 @@
       },
       {
         "name": "The File Is the Outline Rule",
-        "body": "Every section below the hero that describes a feature is one real table of Siple's config. It shows that table's real keys, and its order is the file bar's order. The licence, download, and promo sections sit outside the file and do not appear in the bar.",
+        "body": "Every section below the hero that describes a feature is one real table of Siple's config. It shows that table's real keys, and its order is the file bar's order. The license, download, and promo sections sit outside the file and do not appear in the bar.",
         "section": "layout"
       },
       {
@@ -1376,7 +1376,7 @@
       }
     ],
     "dos": [
-      "**Do** take every colour from the custom properties in `tokens.css`. Keep PixelCI's names and values for everything except the accent family and the lamps, so the two sites read as one family.",
+      "**Do** take every color from the custom properties in `tokens.css`. Keep PixelCI's names and values for everything except the accent family and the lamps, so the two sites read as one family.",
       "**Do** fill at most one control per section with teal, and keep the rest default or ghost (The One Teal Rule).",
       "**Do** show status as a tag triplet with a word in it, and live state as a lamp beside a sentence that says the same thing (The Lamp Beside a Word Rule).",
       "**Do** bake release content in at build time, and make the no-JS page complete and honest.",
@@ -1384,19 +1384,19 @@
       "**Do** set table names, keys, commands, and asset filenames in monospace, and everything else in Inter (The Machine Text Rule).",
       "**Do** use the app's own light and dark renders as a pair, so a screenshot always matches the page theme.",
       "**Do** nest radii 12px, 8px, 5px from container to control to inner piece.",
-      "**Do** keep motion to one hero settle (window and terminal rise 24px over 900ms on `cubic-bezier(0.16, 1, 0.3, 1)`, the terminal 160ms later), the one-time terminal type-in, 280ms cross-fades, and 120ms colour changes. Under reduced motion everything is static.",
+      "**Do** keep motion to one hero settle (window and terminal rise 24px over 900ms on `cubic-bezier(0.16, 1, 0.3, 1)`, the terminal 160ms later), the one-time terminal type-in, 280ms cross-fades, and 120ms color changes. Under reduced motion everything is static.",
       "**Do** mark \"not yet available\" with a dashed, transparent, shadowless shape that still reads at full strength (The Dashed Means Not Live Rule)."
     ],
     "donts": [
       "**Don't** use indigo anywhere; Siple's accent is teal-blue.",
       "**Don't** use teal for status, or a status tone for a general-purpose button.",
-      "**Don't** put a lamp anywhere without a word beside it, or colour a lamp by anything other than its `data-lamp` value.",
+      "**Don't** put a lamp anywhere without a word beside it, or color a lamp by anything other than its `data-lamp` value.",
       "**Don't** put an eyebrow, kicker, or table-name label above a heading (The No Eyebrow Rule).",
       "**Don't** show an Apple or Microsoft store badge for a listing that does not exist; use the dashed \"Coming soon\" button.",
       "**Don't** add a side rail for navigation; the outline is the horizontal file bar (The Screenshot Gets the Width Rule).",
       "**Don't** lift site cards with more than the resting shadow; floating shadows belong to pictures of the app (The Window Floats Rule).",
       "**Don't** use the desk grid and glow anywhere but the hero.",
-      "**Don't** hard-code a colour, radius, or shadow where a token exists.",
+      "**Don't** hard-code a color, radius, or shadow where a token exists.",
       "**Don't** copy the known gaps below into new work."
     ]
   }

@@ -18,7 +18,7 @@ npm run shots    # re-import app screenshots from crates/siple/tests/snapshots
 
 | Route | Notes |
 | --- | --- |
-| `/` | Hero with the download console and the real app + `siple-cli`; the "config file" body (`[calls]`, `[control]`, `[speech]`, `[[account]]`, `[ui]`, outlined by a sticky `config.toml` bar); downloads; licence; ZynoTalk promo |
+| `/` | Hero with the download console and the real app + `siple-cli`; the "config file" body (`[calls]`, `[control]`, `[speech]`, `[[account]]`, `[ui]`, outlined by a sticky `config.toml` bar); downloads; license; ZynoTalk promo |
 | `/404` | Not found (`noindex`) |
 | `/sitemap.xml` | Hand-listed (`src/pages/sitemap.xml.ts`); add new pages there |
 
@@ -28,7 +28,7 @@ npm run shots    # re-import app screenshots from crates/siple/tests/snapshots
   RELEASING.md), `sites/docs/` and `skills/siple/SKILL.md`. Commands, method names, config keys and the
   `methods | grep | cut` output in the agents terminal are real. No user counts, benchmarks, testimonials,
   prices or store availability.
-- **Licence wording**: Siple is *source-available* under FSL-1.1-ALv2. Never "open source" or "free software".
+- **License wording**: Siple is *source-available* under FSL-1.1-ALv2. Never "open source" or "free software".
 - **ZynoTalk promo** (`src/components/ZynoTalkPromo.astro`) uses only claims on ZynoTalk's own site
   (`../zynotalk-web/src`) and never implies ZynoTalk is required.
 - **Screenshots** in `public/shots/` are the app's own GUI snapshot goldens

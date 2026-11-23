@@ -1,7 +1,7 @@
 //! Extensions (BLF) panel: three densities (keys, lamps, list), filter box and
-//! chips, groups, click behaviour from `[ui]`, Pick up on ringing keys and subscription health.
+//! chips, groups, click behavior from `[ui]`, Pick up on ringing keys and subscription health.
 //!
-//! State is encoded by shape, colour and text, never colour alone: idle = filled circle,
+//! State is encoded by shape, color and text, never color alone: idle = filled circle,
 //! ringing = ringed dot (the lamp blinks; a static bold border under reduced motion), dialing =
 //! arrow, busy = filled square, held = pause bars, unknown = dashed ring, failed = triangle,
 //! stale = clock and dimmed.
@@ -43,7 +43,7 @@ pub(crate) fn blf_tone(p: &Palette, s: BlfState) -> (Tone, bool) {
     }
 }
 
-/// The state glyph (shape + colour). `d` is its diameter; `on` is the lit phase of a ringing
+/// The state glyph (shape + color). `d` is its diameter; `on` is the lit phase of a ringing
 /// lamp.
 pub(crate) fn paint_state_glyph(
     ui: &egui::Ui,
@@ -127,7 +127,7 @@ fn paint_failed_glyph(ui: &egui::Ui, c: egui::Pos2, r: f32, color: Color32) {
     );
 }
 
-// ---- click behaviour --------------------------------------------------------------------------
+// ---- click behavior --------------------------------------------------------------------------
 
 /// What a plain click on a key does.
 #[derive(Debug, PartialEq)]
@@ -498,7 +498,7 @@ fn health_banners(ui: &mut egui::Ui, cx: &Cx) {
     }
 }
 
-/// Failed keys covered by a banner show a quiet (grey) glyph instead of N red ones.
+/// Failed keys covered by a banner show a quiet (gray) glyph instead of N red ones.
 fn quiet_failures(shown: &[&BlfStatus]) -> HashSet<String> {
     let mut counts: HashMap<(&str, Problem), usize> = HashMap::new();
     for b in shown.iter().filter(|b| b.state == BlfState::Failed) {

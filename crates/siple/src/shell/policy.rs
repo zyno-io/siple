@@ -130,7 +130,7 @@ pub enum CallEvent {
     Answered(String),
     /// An inbound call ended unanswered because the caller gave up.
     Missed(String),
-    /// An inbound call stopped ringing (answered, declined, cancelled or gone).
+    /// An inbound call stopped ringing (answered, declined, canceled or gone).
     RingStopped(String),
     /// A transfer reached a terminal phase.
     TransferDone(String, TransferPhase),
@@ -225,7 +225,7 @@ pub fn ring_is_actionable(calls: &[CallInfo], call_id: &str) -> bool {
 }
 
 /// Headline and detail of a finished transfer, or `None` for outcomes not worth a toast
-/// (cancelled by the user).
+/// (canceled by the user).
 pub fn transfer_toast(phase: TransferPhase, target: &str) -> Option<(String, String)> {
     match phase {
         TransferPhase::Transferred => Some((

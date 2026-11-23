@@ -1,4 +1,4 @@
-//! Multi-line behaviour end to end, no PBX: peer-mode accounts of ONE app call each other over
+//! Multi-line behavior end to end, no PBX: peer-mode accounts of ONE app call each other over
 //! loopback UDP, driven through the control API: `call.activate`, answer modes,
 //! `status.active_line`, media focus, `[calls] hold_scope` hot reload and end causes.
 #![cfg(unix)]

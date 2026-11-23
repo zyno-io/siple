@@ -37,7 +37,7 @@ Subscriptions use the SIP dialog event package. Entries are diffed by `uri`, so 
 ## Choose how they look
 
 In the **EXTENSIONS** panel, switch between **Keys**, **Lamps** and **List**. You can also set **Layout** in
-**Settings › Extensions**, under **View and click behaviour**.
+**Settings › Extensions**, under **View and click behavior**.
 
 <Shot name="blf-list" alt="Extensions shown as a list" caption="The List view can be sorted by Name, Ext or State." />
 
@@ -53,7 +53,7 @@ In the **EXTENSIONS** panel, switch between **Keys**, **Lamps** and **List**. Yo
 
 ## Decide what a click does
 
-Choose these in **Settings › Extensions**, under **View and click behaviour**.
+Choose these in **Settings › Extensions**, under **View and click behavior**.
 
 | Situation | Setting | Default |
 |---|---|---|

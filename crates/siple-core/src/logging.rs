@@ -284,7 +284,7 @@ pub fn build(
     Ok((handle, subscriber))
 }
 
-/// Colours only on a terminal, and not when `NO_COLOR` is set to a non-empty value.
+/// Colors only on a terminal, and not when `NO_COLOR` is set to a non-empty value.
 fn ansi_allowed(is_terminal: bool, no_color: Option<&std::ffi::OsStr>) -> bool {
     is_terminal && no_color.is_none_or(|v| v.is_empty())
 }

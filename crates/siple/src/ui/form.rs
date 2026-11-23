@@ -1,4 +1,4 @@
-//! Labelled form rows shared by Settings and the first-run wizard. Every control gets its label
+//! Labeled form rows shared by Settings and the first-run wizard. Every control gets its label
 //! as accessible name (`labelled_by`), so screen readers and kittest find it by its text.
 
 use eframe::egui::{self, Align, CornerRadius, Layout, Margin, RichText, Stroke};

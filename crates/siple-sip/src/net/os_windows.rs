@@ -25,7 +25,7 @@ unsafe impl Send for Guard {}
 
 impl Drop for Guard {
     fn drop(&mut self) {
-        // SAFETY: each handle came from a successful Notify* call; cancelling waits for running
+        // SAFETY: each handle came from a successful Notify* call; canceling waits for running
         // callbacks, after which nothing uses `ctx` any more.
         unsafe {
             for h in self.handles {
@@ -70,7 +70,7 @@ pub fn start(sink: UnboundedSender<NetReason>) -> io::Result<Guard> {
     let ctx = Box::into_raw(Box::new(sink));
     let mut handles: [HANDLE; 3] = [std::ptr::null_mut(); 3];
     let af = AF_UNSPEC as _;
-    // SAFETY: `ctx` outlives the registrations (freed in `Guard::drop` after cancelling them).
+    // SAFETY: `ctx` outlives the registrations (freed in `Guard::drop` after canceling them).
     let codes = unsafe {
         [
             NotifyIpInterfaceChange(af, Some(on_interface), ctx.cast(), false, &mut handles[0]),

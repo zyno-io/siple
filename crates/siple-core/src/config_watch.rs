@@ -37,7 +37,7 @@ struct Target {
     dir: Option<PathBuf>,
 }
 
-/// Directory and file name of `path` (directory canonicalised if possible).
+/// Directory and file name of `path` (directory canonicalized if possible).
 fn target_of(path: &Path) -> Option<(PathBuf, Target)> {
     let dir: PathBuf = path
         .parent()

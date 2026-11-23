@@ -1,6 +1,6 @@
 ---
 name: Siple
-description: 'Marketing site for the scriptable SIP softphone: the PixelCI Review Desk (cool grey desk, white hairline cards, one accent) carrying Siple''s teal-blue and the app''s round status lamps.'
+description: 'Marketing site for the scriptable SIP softphone: the PixelCI Review Desk (cool gray desk, white hairline cards, one accent) carrying Siple''s teal-blue and the app''s round status lamps.'
 colors:
     bg: '#f6f7f9'
     surface: '#ffffff'
@@ -313,7 +313,7 @@ components:
 
 Siple's site is the PixelCI design system ("The Review Desk", documented in `pixelci/DESIGN.md`) carried over value for value, with Siple's identity swapped in. Every neutral, status triplet, radius, and shadow is PixelCI's, under the same token names. The marketing layer (display scale, generous sections, the faint desk grid in the hero) comes from the PixelCI sales site. Siple changes three things. The accent family is the app's teal-blue instead of indigo. The app's round status lamps join as a second status device for live state. And the page reads as the app's `config.toml`: each body section is one real table of that file, outlined by a sticky file bar.
 
-The desk is quiet and utilitarian. A cool grey page, white cards with 1px hairlines and barely visible resting shadows, one accent, status as small tags with a word in them. The only imagery is the app's own rendered screenshots, light and dark, which swap with the page theme. A code-rendered terminal and real config excerpts carry the "agents drive the same calls" story. Nothing is illustrated, and no number or listing is invented.
+The desk is quiet and utilitarian. A cool gray page, white cards with 1px hairlines and barely visible resting shadows, one accent, status as small tags with a word in them. The only imagery is the app's own rendered screenshots, light and dark, which swap with the page theme. A code-rendered terminal and real config excerpts carry the "agents drive the same calls" story. Nothing is illustrated, and no number or listing is invented.
 
 Light and dark come from one set of token names, redeclared for dark. Theme follows the OS through `prefers-color-scheme`. `html[data-theme]` pins the reader's choice, set by the header toggle or the page's live `[ui] theme` line. A component never branches on theme. Only the screenshot pair does, and only by showing one of its two images.
 
@@ -330,7 +330,7 @@ Light and dark come from one set of token names, redeclared for dark. Theme foll
 
 ## Colors
 
-PixelCI's cool near-neutral greys carry everything. One teal-blue family marks action, selection, and focus. Status tones appear only as tag and notice triplets, and four lamp colours mark live state. Every token has a dark twin under the same name (frontmatter suffix `-dark`). Values are in the frontmatter. The only roles described here are the ones that differ from PixelCI or are site-specific. Every neutral and status role not mentioned keeps PixelCI's meaning.
+PixelCI's cool near-neutral grays carry everything. One teal-blue family marks action, selection, and focus. Status tones appear only as tag and notice triplets, and four lamp colors mark live state. Every token has a dark twin under the same name (frontmatter suffix `-dark`). Values are in the frontmatter. The only roles described here are the ones that differ from PixelCI or are site-specific. Every neutral and status role not mentioned keeps PixelCI's meaning.
 
 ### Primary
 
@@ -343,7 +343,7 @@ PixelCI's cool near-neutral greys carry everything. One teal-blue family marks a
 
 ### Secondary (status triplets, inherited)
 
-Each tone ships as a text colour, soft fill, and border, used together. On this site: **Approved Green** (`success`) for "Latest", the Notarized and Authenticode-signed trust tags, "Allowed" in the licence, check marks in check lists, and the `$` prompt in the terminal. **No Changes Blue** (`info`) for "After two years", the default notice and its info icon. **Rejected Red** (`danger`) for "Not allowed". **Needs Review Amber** (`warning`) is carried in the tokens but not used on the home page. **Draft Grey** (`neutral`) is the default tag ("caller", the SHA-256 checksum trust tag). The `release` violet triplet is carried in the tokens but not used.
+Each tone ships as a text color, soft fill, and border, used together. On this site: **Approved Green** (`success`) for "Latest", the Notarized and Authenticode-signed trust tags, "Allowed" in the license, check marks in check lists, and the `$` prompt in the terminal. **No Changes Blue** (`info`) for "After two years", the default notice and its info icon. **Rejected Red** (`danger`) for "Not allowed". **Needs Review Amber** (`warning`) is carried in the tokens but not used on the home page. **Draft Gray** (`neutral`) is the default tag ("caller", the SHA-256 checksum trust tag). The `release` violet triplet is carried in the tokens but not used.
 
 ### Tertiary (status lamps, Siple-only)
 
@@ -352,16 +352,16 @@ The app's LED dots (`theme.rs` `Tone.led`). They mark live state and never stand
 - **Lamp Green** (`lamp-ok`): the released version in the download card.
 - **Lamp Amber** (`lamp-warn`): defined to match the app. No state on the page uses it today.
 - **Lamp Red** (`lamp-err`): defined to match the app. No state on the page uses it today.
-- **Lamp Grey** (`lamp-idle`): the resting lamp, for a lamp that has not opted in with `data-lamp`.
+- **Lamp Gray** (`lamp-idle`): the resting lamp, for a lamp that has not opted in with `data-lamp`.
 
 ### Neutral (inherited from PixelCI)
 
-- **Desk Grey** (`bg`): the page, and the header at 82% with blur.
+- **Desk Gray** (`bg`): the page, and the header at 82% with blur.
 - **Card White** (`surface`): cards, buttons, the file bar (88% with blur), config excerpt captions, the terminal body, the footer, and `section--inset` bands.
-- **Inset Grey** (`surface-2`): hover fill; config excerpt and snippet bodies; the terminal title bar; the download section band and the download card's foot; key caps.
+- **Inset Gray** (`surface-2`): hover fill; config excerpt and snippet bodies; the terminal title bar; the download section band and the download card's foot; key caps.
 - **Screenshot Mat** (`surface-3`): behind every screenshot, the selected call-state tab, and inline code.
 - **Hairline** (`border`) and **Control Outline** (`border-strong`): containers and dividers versus buttons, the terminal, the theme line's segmented box, and the call-state tab strip.
-- **Ink / Secondary Ink / Meta Grey** (`text`, `text-2`, `text-3`): headings and primary text / ledes, row bodies, nav / captions, file names, comments in code, the "Coming soon" prefix.
+- **Ink / Secondary Ink / Meta Gray** (`text`, `text-2`, `text-3`): headings and primary text / ledes, row bodies, nav / captions, file names, comments in code, the "Coming soon" prefix.
 
 ### Named Rules
 
@@ -369,7 +369,7 @@ The app's LED dots (`theme.rs` `Tone.led`). They mark live state and never stand
 
 **The Tag Triplet Rule** (inherited). A status tone is applied as soft fill, matching border, and tone text together, and every tag holds a word. `tag--accent` is the one solid tag. It is a selection marker ("This computer"), not a status.
 
-**The Lamp Beside a Word Rule.** A lamp is an 8px round LED with a 3px halo of its own colour at 22% (24% for amber). It always sits next to text that says the same thing (the version and date). Opt in with `data-lamp` for the green released lamp; without it a lamp stays idle grey.
+**The Lamp Beside a Word Rule.** A lamp is an 8px round LED with a 3px halo of its own color at 22% (24% for amber). It always sits next to text that says the same thing (the version and date). Opt in with `data-lamp` for the green released lamp; without it a lamp stays idle gray.
 
 ## Typography
 
@@ -377,7 +377,7 @@ The app's LED dots (`theme.rs` `Tone.led`). They mark live state and never stand
 **Body Font:** Inter, the same stack.
 **Label/Mono Font:** ui-monospace (with 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace), the platform's monospace; not loaded.
 
-**Character:** One sans-serif with Inter's single-storey a (`cv11`) and open digits (`ss01`), as in PixelCI. The site scales it up for a page instead of a dashboard: a tight, heavy display and a 16px body. Inter is self-hosted as static 400, 500, 600, and 700. Icons are Font Awesome Free (solid and brands) as an icon font.
+**Character:** One sans-serif with Inter's single-story a (`cv11`) and open digits (`ss01`), as in PixelCI. The site scales it up for a page instead of a dashboard: a tight, heavy display and a 16px body. Inter is self-hosted as static 400, 500, 600, and 700. Icons are Font Awesome Free (solid and brands) as an icon font.
 
 ### Hierarchy
 
@@ -386,7 +386,7 @@ The app's LED dots (`theme.rs` `Tone.led`). They mark live state and never stand
 - **Title** (650, fluid 20 to 24px, 1.25, -0.02em): the ZynoTalk promo heading.
 - **Card title** (600, 17px, 1.35, -0.01em): headings inside a section (agent layers, the download sidebar blocks).
 - **Lede** (400, 19px, 17px under 600px, 1.55, Secondary Ink): the paragraph under a headline, held to about 60ch in the hero.
-- **Body** (400, 16px, 1.55). **Body small** (400, 14px): row text, spec values, notices, footer links. **Caption** (400, 13px, Meta Grey): dates, file names, captions, the file bar's labels.
+- **Body** (400, 16px, 1.55). **Body small** (400, 14px): row text, spec values, notices, footer links. **Caption** (400, 13px, Meta Gray): dates, file names, captions, the file bar's labels.
 - **Control** (500, 14px, line-height 1): button labels and nav links. Large buttons use 16px. The xl hero button is 17px at 600.
 - **Tag** (500, 12px, line-height 1).
 - **Mono** (400, 12 to 13px): config excerpts and terminal lines (12.5px, 12px in the hero terminal), table names in the file bar (12px, 500), inline code (0.88em), config keys beside spec rows (11.5px), key caps (11px), theme values (13px).
@@ -399,32 +399,32 @@ The app's LED dots (`theme.rs` `Tone.led`). They mark live state and never stand
 
 ## Layout
 
-A single centred column (max 1180px, 32px gutters, 16px at 600px and below) under a sticky 60px header. Sections pad 112px top and bottom (80px at 820px and below). Tight sections pad 80px (56px). Bands separate sections by alternating tone, never by decoration: a hairline rule (`section--rule`), a Card White inset band with hairlines top and bottom (`section--inset`), and the download section's Inset Grey band.
+A single centered column (max 1180px, 32px gutters, 16px at 600px and below) under a sticky 60px header. Sections pad 112px top and bottom (80px at 820px and below). Tight sections pad 80px (56px). Bands separate sections by alternating tone, never by decoration: a hairline rule (`section--rule`), a Card White inset band with hairlines top and bottom (`section--inset`), and the download section's Inset Gray band.
 
 The hero is copy on the left and the terminal card on the right (up to 540px), bottom-aligned. Beneath them sits the real app screenshot in a window frame that runs off the bottom of the hero and fades out over its last 20%. The terminal overlaps the window's top edge by 52px. The pairing says it plainly: two hands driving the same call. At 1100px and below the hero stacks and the terminal indents 24px. At 640px the screenshot switches to the app's narrow render.
 
 Below the hero, the **file bar** is a 44px sticky band under the header at every width. It names `config.toml` and lists the tables in order (`[calls]`, `[control]`, `[speech]`, `[[account]]`, `[ui]`). The table under the reader is marked as they scroll. Labels hide below 1100px, the file name below 640px, and the list scrolls sideways when it does not fit. It is a band, not a side rail, so the screenshots keep the width.
 
-A config-table section opens with a two-column top: the heading block (max 760px, 16px gap) on the left and a real `config.toml` excerpt (up to 470px) on the right, bottom-aligned, 48px apart, 44px above the body. A row of mono links closes the section, 28px below its body. Other two-column bodies (agents, speech, accounts, licence, download) collapse to one column at 1000px. Anchors land below both sticky bars plus 24px.
+A config-table section opens with a two-column top: the heading block (max 760px, 16px gap) on the left and a real `config.toml` excerpt (up to 470px) on the right, bottom-aligned, 48px apart, 44px above the body. A row of mono links closes the section, 28px below its body. Other two-column bodies (agents, speech, accounts, license, download) collapse to one column at 1000px. Anchors land below both sticky bars plus 24px.
 
-Breakpoints are max-width and component-local: 1100 (hero, file-bar labels), 1000 (two-column bodies), 900 (header to burger, call-state tabs 4 to 2, footer columns), 820 (section padding, 44px touch targets), 720 (download rows, spec and licence rows stack), 640 (narrow screenshots), 600 (gutter, lede), 560 (header CTA hides, console buttons go full width), 520 (call-state tab text hides).
+Breakpoints are max-width and component-local: 1100 (hero, file-bar labels), 1000 (two-column bodies), 900 (header to burger, call-state tabs 4 to 2, footer columns), 820 (section padding, 44px touch targets), 720 (download rows, spec and license rows stack), 640 (narrow screenshots), 600 (gutter, lede), 560 (header CTA hides, console buttons go full width), 520 (call-state tab text hides).
 
 ### Named Rules
 
 **The Screenshot Gets the Width Rule** (inherited). Chrome never takes horizontal space from a screenshot. Navigation lives in horizontal bands, and screenshots span the full column.
 
-**The File Is the Outline Rule.** Every section below the hero that describes a feature is one real table of Siple's config. It shows that table's real keys, and its order is the file bar's order. The licence, download, and promo sections sit outside the file and do not appear in the bar.
+**The File Is the Outline Rule.** Every section below the hero that describes a feature is one real table of Siple's config. It shows that table's real keys, and its order is the file bar's order. The license, download, and promo sections sit outside the file and do not appear in the bar.
 
 ## Elevation & Depth
 
-Depth is tonal first, as in PixelCI: grey desk, white card, inset grey, hairline borders. The three PixelCI shadows keep their values, light and dark. The site gives them one extra job: pictures of the app are windows above the desk. The hero screenshot window, the call-state screenshots, and the hero terminal take the floating shadow. The agents terminal and the mobile menu take the attached shadow. Cards, buttons, the theme line's segmented box, and the call-state tab strip take the resting shadow. Sticky chrome (header, file bar) has no shadow: it is the page's own tone at 82% or 88% with `saturate(1.4) blur(12px)` and a hairline. The header's hairline appears only once the page has scrolled.
+Depth is tonal first, as in PixelCI: gray desk, white card, inset gray, hairline borders. The three PixelCI shadows keep their values, light and dark. The site gives them one extra job: pictures of the app are windows above the desk. The hero screenshot window, the call-state screenshots, and the hero terminal take the floating shadow. The agents terminal and the mobile menu take the attached shadow. Cards, buttons, the theme line's segmented box, and the call-state tab strip take the resting shadow. Sticky chrome (header, file bar) has no shadow: it is the page's own tone at 82% or 88% with `saturate(1.4) blur(12px)` and a hairline. The header's hairline appears only once the page has scrolled.
 
 ### Shadow Vocabulary
 
 - **Resting** (`--shadow-sm`): cards, default and primary buttons, the segmented box, the tab strip, speech turns, the promo card.
 - **Attached** (`--shadow-md`): the mobile menu panel and the agents terminal.
 - **Floating** (`--shadow-lg`): app screenshots and the hero terminal, the things depicted as open windows.
-- **Lamp halo** (`0 0 0 3px` in the lamp colour at 22%): only on lamps.
+- **Lamp halo** (`0 0 0 3px` in the lamp color at 22%): only on lamps.
 
 ### Named Rules
 
@@ -440,12 +440,12 @@ PixelCI's nested radii: 12px containers, 8px controls, 5px inner pieces (tags, n
 
 ## Components
 
-Controls are bordered and even. They change colour over 120ms and keep the product's proportions, scaled up a step for a page.
+Controls are bordered and even. They change color over 120ms and keep the product's proportions, scaled up a step for a page.
 
 ### Buttons
 
 - **Shape:** 8px radius, 36px tall, 14px padding, 8px icon gap, resting shadow.
-- **Default:** Card White, Control Outline, Ink. Hover fills Inset Grey.
+- **Default:** Card White, Control Outline, Ink. Hover fills Inset Gray.
 - **Primary:** Handset Teal fill and border with On Teal text. Hover moves to Handset Teal Deep.
 - **Ghost:** transparent, no shadow, Secondary Ink; hover darkens the label to Ink. Used for GitHub in the header and the console.
 - **Sizes:** large (46px, 20px padding, 16px label) for section actions; xl (52px, 22px padding, 17px semibold, 10px radius) for the hero download only.
@@ -454,16 +454,16 @@ Controls are bordered and even. They change colour over 120ms and keep the produ
 
 ### Download console (hero)
 
-One button row and one status line. The row holds the xl primary (its label names the detected OS, or "Follow releases on GitHub" while nothing is published), a large "All platforms" default button (hidden on phones), and a ghost GitHub button. Under it is a 14px Secondary Ink line with tabular numerals, led by a lamp, stating the release state. An optional 13px Meta Grey note follows, indented 18px to clear the lamp. Below 560px every button takes the full width.
+One button row and one status line. The row holds the xl primary (its label names the detected OS, or "Follow releases on GitHub" while nothing is published), a large "All platforms" default button (hidden on phones), and a ghost GitHub button. Under it is a 14px Secondary Ink line with tabular numerals, led by a lamp, stating the release state. An optional 13px Meta Gray note follows, indented 18px to clear the lamp. Below 560px every button takes the full width.
 
 ### Download card
 
-One card listing every platform, inside the Inset Grey download band, with a 300px sidebar at 48px.
+One card listing every platform, inside the Inset Gray download band, with a 300px sidebar at 48px.
 
-- **Head:** a lamp, the version (semibold, tabular), the `Latest` success tag with a check, the date in Meta Grey, and "Release notes" on the right. 16px 20px padding, hairline below.
-- **Rows:** a grid of 28px brand icon, name block (semibold name, 13px requirements, 12px file name in Meta Grey, mono, the real asset name), trust tag (shield or hash icon), and a "Download" button. Rows are 16px 20px and divided by hairlines. Below 720px the tag and button drop under the name, and the button goes full width.
+- **Head:** a lamp, the version (semibold, tabular), the `Latest` success tag with a check, the date in Meta Gray, and "Release notes" on the right. 16px 20px padding, hairline below.
+- **Rows:** a grid of 28px brand icon, name block (semibold name, 13px requirements, 12px file name in Meta Gray, mono, the real asset name), trust tag (shield or hash icon), and a "Download" button. Rows are 16px 20px and divided by hairlines. Below 720px the tag and button drop under the name, and the button goes full width.
 - **This computer:** the detected row gets a 6% teal tint, a 1px teal frame, a `tag--accent` "This computer" beside the name, an Ink icon, and a primary button. It is exactly one row: the one marker of where to go next.
-- **Foot:** an Inset Grey strip with the `SHA256SUMS` mono link and plain links, 14px 20px.
+- **Foot:** an Inset Gray strip with the `SHA256SUMS` mono link and plain links, 14px 20px.
 
 ### Release content
 
@@ -471,54 +471,54 @@ The version, date and every asset link are in the HTML at build time (`src/data/
 
 ### Store buttons (coming soon)
 
-A large button, 52px tall, at least 196px wide, left-aligned, with a 20px brand icon and two lines: "Coming soon" in 11px Meta Grey over the store name in 14px semibold. While a listing does not exist it is a real disabled button, kept legible: full opacity, transparent fill, dashed Control Outline, no shadow, Secondary Ink. A live listing turns it into a link button, or into the store's official badge (44px tall) when one is provided. A store badge never appears for a listing that does not exist.
+A large button, 52px tall, at least 196px wide, left-aligned, with a 20px brand icon and two lines: "Coming soon" in 11px Meta Gray over the store name in 14px semibold. While a listing does not exist it is a real disabled button, kept legible: full opacity, transparent fill, dashed Control Outline, no shadow, Secondary Ink. A live listing turns it into a link button, or into the store's official badge (44px tall) when one is provided. A store badge never appears for a listing that does not exist.
 
 ### Tags
 
-- **Style:** 22px tall, 5px radius, 8px padding, 12px medium, 1px border, 5px gap to an optional icon at 0.85em. The default is Draft Grey.
+- **Style:** 22px tall, 5px radius, 8px padding, 12px medium, 1px border, 5px gap to an optional icon at 0.85em. The default is Draft Gray.
 - **Tones:** success, info, danger, warning, swapped as triplets. `tag--accent` is a solid teal marker with a transparent border.
 
 ### Cards / Containers
 
 - **Corner Style:** 12px.
-- **Background:** Card White on Desk Grey or Inset Grey.
+- **Background:** Card White on Desk Gray or Inset Gray.
 - **Shadow Strategy:** resting (see Elevation).
 - **Border:** 1px Hairline.
-- **Internal Padding:** collections are one card with hairline-divided rows (download rows 16px 20px, licence rows 20px 22px, spec rows 15px 24px). Standalone cards pad 16px 18px (speech turns) to 32px 36px (promo).
+- **Internal Padding:** collections are one card with hairline-divided rows (download rows 16px 20px, license rows 20px 22px, spec rows 15px 24px). Standalone cards pad 16px 18px (speech turns) to 32px 36px (promo).
 
 ### Notices
 
-An 8px box with 12px 14px padding, 14px Secondary Ink text, and a leading icon in the tone. Info is the default; warning swaps fill, border, and icon colour.
+An 8px box with 12px 14px padding, 14px Secondary Ink text, and a leading icon in the tone. Info is the default; warning swaps fill, border, and icon color.
 
 ### Navigation
 
-- **Header:** sticky, 60px, Desk Grey at 82% with blur. Holds the 28px app icon and "Siple" wordmark (18px, 650), nav links, a spacer, a ghost GitHub button, a 36px theme icon button (it shows the theme you would switch to), and a primary Download.
-- **Nav link:** 14px medium Secondary Ink, 7px 11px, 5px radius. Hover fills Inset Grey with Ink text. No active indicator.
+- **Header:** sticky, 60px, Desk Gray at 82% with blur. Holds the 28px app icon and "Siple" wordmark (18px, 650), nav links, a spacer, a ghost GitHub button, a 36px theme icon button (it shows the theme you would switch to), and a primary Download.
+- **Nav link:** 14px medium Secondary Ink, 7px 11px, 5px radius. Hover fills Inset Gray with Ink text. No active indicator.
 - **Mobile (900px and below):** a CSS-only burger (checkbox) opens a Card White panel under the header with 44px rows, an attached shadow, and a large primary Download at the end. At 560px the header CTA hides.
 - **Skip link:** a teal block that drops in on focus.
 
 ### File bar (signature)
 
-The page's outline set as the config file. A file-lines icon and `config.toml` (13px mono semibold), separated by a hairline from an ordered list of links. Each link pairs a table name (12px mono 500, Secondary Ink) with a caption label, 6px 10px, 5px radius. Hover fills Inset Grey. The current table gets a Teal Halo fill and a Link Teal name, set with `aria-current` as the reader scrolls. On narrow screens the list scrolls itself to keep the current table in view.
+The page's outline set as the config file. A file-lines icon and `config.toml` (13px mono semibold), separated by a hairline from an ordered list of links. Each link pairs a table name (12px mono 500, Secondary Ink) with a caption label, 6px 10px, 5px radius. Hover fills Inset Gray. The current table gets a Teal Halo fill and a Link Teal name, set with `aria-current` as the reader scrolls. On narrow screens the list scrolls itself to keep the current table in view.
 
 ### Config excerpt (signature)
 
 A few real lines of a table, beside the section heading. A 12px clipping box with a Hairline border:
 
-- **Caption:** 36px Card White strip with a hairline below: a Meta Grey file-lines icon, `config.toml` in 12px mono semibold, and on the right a 12px Inter Meta Grey note ("edit it while Siple runs; no restart", or a section-specific note).
-- **Body:** an Inset Grey snippet at 12.5px and 1.65 line height. Table headers are Link Teal semibold, strings are success green, comments are Meta Grey. It scrolls sideways and is focusable.
+- **Caption:** 36px Card White strip with a hairline below: a Meta Gray file-lines icon, `config.toml` in 12px mono semibold, and on the right a 12px Inter Meta Gray note ("edit it while Siple runs; no restart", or a section-specific note).
+- **Body:** an Inset Gray snippet at 12.5px and 1.65 line height. Table headers are Link Teal semibold, strings are success green, comments are Meta Gray. It scrolls sideways and is focusable.
 
 ### Terminal card (signature)
 
-A code-rendered shell session with real `siple-cli` commands. A 12px box with a Control Outline border and a Card White body. A 34px Inset Grey title bar holds a terminal icon and the title in 12px mono Meta Grey. The body is 12.5px at 1.7 (12px in the hero). Command lines are Ink with a success-green `$` that cannot be selected. Output is Secondary Ink, and comments are Meta Grey with 8px above. With motion allowed, lines type in once when the card is 35% visible: each line reveals left to right over 520ms (260ms for output), staggered 260ms. Under reduced motion or without JS every line is simply there.
+A code-rendered shell session with real `siple-cli` commands. A 12px box with a Control Outline border and a Card White body. A 34px Inset Gray title bar holds a terminal icon and the title in 12px mono Meta Gray. The body is 12.5px at 1.7 (12px in the hero). Command lines are Ink with a success-green `$` that cannot be selected. Output is Secondary Ink, and comments are Meta Gray with 8px above. With motion allowed, lines type in once when the card is 35% visible: each line reveals left to right over 520ms (260ms for output), staggered 260ms. Under reduced motion or without JS every line is simply there.
 
 ### Theme line (signature interaction)
 
-The `[ui]` card opens with a live config line on a 5% teal tint. It has a Theme legend with a description, then `theme =` in 14px mono and a segmented radio group of `"system"`, `"light"`, and `"dark"`. The group is a 3px-padded Card White box with a Control Outline border and resting shadow. Options are 34px (40px at 420px and below), 13px mono, with 6px radius. The checked option fills teal. This differs from PixelCI, where a pressed segment takes Screenshot Mat: here the choice is a live setting, so it takes the selection colour. Choosing a value re-themes the page and swaps every screenshot.
+The `[ui]` card opens with a live config line on a 5% teal tint. It has a Theme legend with a description, then `theme =` in 14px mono and a segmented radio group of `"system"`, `"light"`, and `"dark"`. The group is a 3px-padded Card White box with a Control Outline border and resting shadow. Options are 34px (40px at 420px and below), 13px mono, with 6px radius. The checked option fills teal. This differs from PixelCI, where a pressed segment takes Screenshot Mat: here the choice is a live setting, so it takes the selection color. Choosing a value re-themes the page and swaps every screenshot.
 
 ### Call states
 
-A strip of four tabs in one Control Outline box with a resting shadow, with hairlines between tabs (2 by 2 at 900px). Each tab is a 14px semibold title with a Meta Grey icon over 13px text. Hover is Row Hover. Selected is Screenshot Mat with a 2px teal underline (inset shadow) and a Link Teal icon. Below the strip the screenshots cross-fade over 280ms. Each screenshot sits in a 12px Hairline frame with the floating shadow and a 13px Meta Grey caption row. Without JS every state stacks.
+A strip of four tabs in one Control Outline box with a resting shadow, with hairlines between tabs (2 by 2 at 900px). Each tab is a 14px semibold title with a Meta Gray icon over 13px text. Hover is Row Hover. Selected is Screenshot Mat with a 2px teal underline (inset shadow) and a Link Teal icon. Below the strip the screenshots cross-fade over 280ms. Each screenshot sits in a 12px Hairline frame with the floating shadow and a 13px Meta Gray caption row. Without JS every state stacks.
 
 ### Screenshot
 
@@ -526,17 +526,17 @@ Every app image ships as a light and dark pair. CSS shows the one that matches t
 
 ### Mono link
 
-The section-foot link and footer-style anchor: the table name in 13px mono Meta Grey, with its `<b>` in 500 Secondary Ink, a 14px Inter description, and an arrow. Hover turns it Link Teal. Used for `[calls]`, `[control]`, `[speech]`, `[[account]]`, `[ui]`, and `SHA256SUMS`.
+The section-foot link and footer-style anchor: the table name in 13px mono Meta Gray, with its `<b>` in 500 Secondary Ink, a 14px Inter description, and an arrow. Hover turns it Link Teal. Used for `[calls]`, `[control]`, `[speech]`, `[[account]]`, `[ui]`, and `SHA256SUMS`.
 
 ### Key caps
 
-20px tall, at least 20px wide, Inset Grey with a Hairline border (2px on the bottom edge), 4px radius, 11px medium in Secondary Ink.
+20px tall, at least 20px wide, Inset Gray with a Hairline border (2px on the bottom edge), 4px radius, 11px medium in Secondary Ink.
 
 ## Do's and Don'ts
 
 ### Do:
 
-- **Do** take every colour from the custom properties in `tokens.css`. Keep PixelCI's names and values for everything except the accent family and the lamps, so the two sites read as one family.
+- **Do** take every color from the custom properties in `tokens.css`. Keep PixelCI's names and values for everything except the accent family and the lamps, so the two sites read as one family.
 - **Do** fill at most one control per section with teal, and keep the rest default or ghost (The One Teal Rule).
 - **Do** show status as a tag triplet with a word in it, and live state as a lamp beside a sentence that says the same thing (The Lamp Beside a Word Rule).
 - **Do** bake release-dependent content in at build time from the CHANGELOG, so the no-JS page is complete and honest.
@@ -544,7 +544,7 @@ The section-foot link and footer-style anchor: the table name in 13px mono Meta 
 - **Do** set table names, keys, commands, and asset filenames in monospace, and everything else in Inter (The Machine Text Rule).
 - **Do** use the app's own light and dark renders as a pair, so a screenshot always matches the page theme.
 - **Do** nest radii 12px, 8px, 5px from container to control to inner piece.
-- **Do** keep motion to one hero settle (window and terminal rise 24px over 900ms on `cubic-bezier(0.16, 1, 0.3, 1)`, the terminal 160ms later), the one-time terminal type-in, 280ms cross-fades, and 120ms colour changes. Under reduced motion everything is static.
+- **Do** keep motion to one hero settle (window and terminal rise 24px over 900ms on `cubic-bezier(0.16, 1, 0.3, 1)`, the terminal 160ms later), the one-time terminal type-in, 280ms cross-fades, and 120ms color changes. Under reduced motion everything is static.
 - **Do** mark "not yet available" with a dashed, transparent, shadowless shape that still reads at full strength (The Dashed Means Not Live Rule).
 
 ### Don't:
@@ -557,7 +557,7 @@ The section-foot link and footer-style anchor: the table name in 13px mono Meta 
 - **Don't** add a side rail for navigation; the outline is the horizontal file bar (The Screenshot Gets the Width Rule).
 - **Don't** lift site cards with more than the resting shadow; floating shadows belong to pictures of the app (The Window Floats Rule).
 - **Don't** use the desk grid and glow anywhere but the hero.
-- **Don't** hard-code a colour, radius, or shadow where a token exists.
+- **Don't** hard-code a color, radius, or shadow where a token exists.
 - **Don't** copy the known gaps below into new work.
 
 ### Known gaps, not rules to copy
@@ -567,6 +567,6 @@ The section-foot link and footer-style anchor: the table name in 13px mono Meta 
 - **Off-scale radii.** 10px (xl button), 14px (hero window top corners), 6px (theme options), 4px (key caps, inline code), 2px (ZynoTalk dot) sit beside the three radius tokens.
 - **Off-ramp mono sizes.** 11px, 11.5px, 12px, 12.5px, and 13px are all in use.
 - **Weight 650 is not loaded.** Headings and the wordmark ask for 650, but only static 400 to 700 ship, so they render at 700.
-- **Literal sibling colours.** The ZynoTalk promo's dot is `#2855d4` / `#5c86f2` as literals. It is the sibling's brand mark, not a Siple token.
+- **Literal sibling colors.** The ZynoTalk promo's dot is `#2855d4` / `#5c86f2` as literals. It is the sibling's brand mark, not a Siple token.
 - **Accent as a speaker label.** The speech turns mark the agent side with `tag--accent` ("agent"). That is teal used as a role label, outside action, selection, and focus.
 - **Two teal fills in the first viewport.** The header Download and the hero's download button are both teal at 1440x900.

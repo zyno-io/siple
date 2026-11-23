@@ -12,7 +12,7 @@
 //! ===== 2026-10-08T10:15:32.001Z SEND tcp 10.0.0.5:52311 -> 203.0.113.10:5060 (4 bytes) keep-alive CRLFCRLF
 //! ```
 //!
-//! The arrow always points in the direction the bytes travelled (`local -> remote` for SEND,
+//! The arrow always points in the direction the bytes traveled (`local -> remote` for SEND,
 //! `remote -> local` for RECV). Retransmissions and unparsable input are traced like anything
 //! else; nothing is redacted unless `[logging] redact_credentials` / `redact_srtp_keys` ask for it
 //! (see [`crate::redact`]). Whether an account is traced at all is decided by the SIP stack,

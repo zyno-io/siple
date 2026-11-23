@@ -1279,7 +1279,7 @@ fn rfc6188_7_2_aes256_key_derivation() {
     }
 }
 
-// ── All-suite behaviour ──────────────────────────────────────────
+// ── All-suite behavior ──────────────────────────────────────────
 
 #[test]
 fn all_suites_roundtrip_and_tag_lengths() {

@@ -133,7 +133,7 @@ async fn failed_inbound_refer_keeps_user_hold() {
     r.stack.shutdown().await;
 }
 
-/// H4: semi-attended transfer refers to the dialled target, not the asserted identity.
+/// H4: semi-attended transfer refers to the dialed target, not the asserted identity.
 #[tokio::test]
 async fn semi_attended_uses_dialled_target() {
     let mut r = rig();

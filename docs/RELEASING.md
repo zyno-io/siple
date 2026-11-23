@@ -109,7 +109,7 @@ Any new `Command::new` must call it. `scripts/linux-needed-check.sh` (the NEEDED
 - **`scripts/appimage-smoke.sh`** (release job; the container has no FUSE, so everything runs with extract-and-run): the runtime
   commit, `--version` of `siple` and `siple-cli` (through `--cli`, and through a `siple-cli` symlink for the argv0 dispatch), and a headless engine whose
   `status.build.channel` must be `appimage`. It also checks the bundled libraries (all roots in `usr/lib`, none on the excludelist,
-  every NEEDED bundled or excluded, licences present), and that every soname string in `usr/bin/siple` is bundled, excluded or listed in `GUI_STRINGS_ALLOWED` (`scripts/appimage-libs.sh`).
+  every NEEDED bundled or excluded, licenses present), and that every soname string in `usr/bin/siple` is bundled, excluded or listed in `GUI_STRINGS_ALLOWED` (`scripts/appimage-libs.sh`).
 - **`scripts/package-appimage.sh --self-test`** (job `appimage` of `ci.yml`): stub binaries instead of cargo, the pinned runtime,
   the golden file list, the `AppRun` dispatch and reproducibility.
 - **The runtime's notice** is `packaging/appimage/APPIMAGE-RUNTIME.txt`, shipped as `usr/share/doc/siple/APPIMAGE-RUNTIME.txt`:
@@ -212,7 +212,7 @@ cargo build --release --locked -p siple -p siple-cli --features store
 ```
 
 The feature is declared on `siple-core`, `siple` and `siple-cli` (the last two forward it). It removes code, it does not select
-behaviour: with it the GitHub source (its API request and releases parser) is not compiled, and neither is any downloader or
+behavior: with it the GitHub source (its API request and releases parser) is not compiled, and neither is any downloader or
 installer. The store update checks stay in every build, so they can be tested everywhere; only the call into Windows' Store service
 (the `windows` crate, enabled by the feature) is Windows-and-`store` only. A store build run outside a store package has no update
 source (`app.update_status`: `source: none`, `disabled_reason: store_build_outside_store`), and a direct build inside a package has
@@ -332,7 +332,7 @@ These values must match Partner Center exactly or the upload is rejected. Before
 `io.zyno.siple` (with the App Groups capability) and the App Store Connect app record (the API cannot create it),
 and reserve the app name in Partner Center.
 
-Skip behaviour: while a `*_ENABLED` variable is unset, a gated job prints a notice and stays green (`mas-sign` skips its
+Skip behavior: while a `*_ENABLED` variable is unset, a gated job prints a notice and stays green (`mas-sign` skips its
 steps; `msix-package` builds only the placeholder-identity sideload package). On a branch (`workflow_dispatch`) `mas-sign`
 does not run at all. If the secrets arrive after a tag was pushed, re-run the workflow with `workflow_dispatch` on that tag
 (the tag ref satisfies the `store` environment rule). `msix_store_version` (dispatch input, `X.Y.Z.0`) lets a branch build

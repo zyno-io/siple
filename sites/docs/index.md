@@ -34,7 +34,7 @@ hero:
   system (PBX) or your SIP provider. If you don't have these, ask whoever runs your phones.
 - **A headset or speakers and a microphone.** Siple uses the devices your computer already has.
 
-Siple is free to use. It is **source-available** under the [FSL-1.1-ALv2 licence](/project/licence): use it, change it and share
+Siple is free to use. It is **source-available** under the [FSL-1.1-ALv2 license](/project/licence): use it, change it and share
 it for anything except a competing commercial product, and every release becomes Apache-2.0 two years after it ships.
 
 </div>

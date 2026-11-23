@@ -56,7 +56,7 @@ impl Notifier {
     }
 }
 
-/// A sample type cpal may hand us; converts to/from normalised `f32`.
+/// A sample type cpal may hand us; converts to/from normalized `f32`.
 pub trait AudioSample: cpal::SizedSample + Copy + Send + 'static {
     /// To `-1.0..=1.0`.
     fn to_f32(self) -> f32;

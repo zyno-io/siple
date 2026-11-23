@@ -305,7 +305,7 @@ pub struct SessionDescription {
     /// Session-level direction attribute, if any.
     pub direction: Option<Direction>,
     pub media: Vec<MediaDescription>,
-    /// Session-level attributes not otherwise modelled.
+    /// Session-level attributes not otherwise modeled.
     pub attrs: Vec<Attr>,
 }
 

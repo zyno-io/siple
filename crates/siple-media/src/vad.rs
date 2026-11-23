@@ -216,7 +216,7 @@ impl Segmenter {
     }
 
     /// Counts `start_timeout` only from frame `frames` on (default 0): earlier frames are still
-    /// analysed for speech but never time the wait out.
+    /// analyzed for speech but never time the wait out.
     pub fn with_timeout_from(mut self, frames: u32) -> Self {
         self.timeout_from = frames;
         self

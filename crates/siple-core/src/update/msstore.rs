@@ -75,7 +75,7 @@ mod win {
 
     /// The real query through `Windows.Services.Store`.
     ///
-    /// No COM initialisation is done here: `signature_kind` runs on whatever thread starts the app
+    /// No COM initialization is done here: `signature_kind` runs on whatever thread starts the app
     /// (the GUI's main thread, where winit later needs `OleInitialize`, which fails on a thread
     /// that was put in the MTA), and the `windows` crate already makes an apartment-agnostic call
     /// work on a thread without COM (`CoIncrementMTAUsage`, a process-wide implicit MTA that
@@ -100,7 +100,7 @@ mod win {
     }
 
     fn cancelled() -> FetchError {
-        FetchError::Network("Microsoft Store: the query was cancelled".into())
+        FetchError::Network("Microsoft Store: the query was canceled".into())
     }
 
     fn query(pfn: &str, slot: &Mutex<Slot>) -> Result<StoreUpdates, FetchError> {

@@ -54,7 +54,7 @@ telemetry, works with any standards-based PBX or SIP provider.
   builds are Developer ID signed, notarized and stapled; Windows executables are
   Authenticode-signed (Azure Artifact Signing); Linux ships checksums.
 - Mac App Store and Microsoft Store listings are planned but not available ("coming soon").
-- Docs: https://zyno-io.github.io/siple/ (Guide, AI agents, API reference, Licence).
+- Docs: https://zyno-io.github.io/siple/ (Guide, AI agents, API reference, License).
 - Repo: https://github.com/zyno-io/siple. Contact: oss@zyno.io.
 
 ## Capabilities and Constraints
@@ -85,10 +85,10 @@ Pre-1.0. Never claim: user counts, benchmarks, testimonials, ratings, prices, st
 - Name: **Siple**. App icon: white handset on a teal-to-blue rounded square
   (`zyno-io/siple:packaging/icons/siple-1024.png`). The app's own accent is that teal-blue
   (`#17769A` light / `#3FB2D4` dark in `crates/siple/src/theme.rs`).
-- The site uses the **PixelCI design system** ("The Review Desk": cool grey desk, white cards,
+- The site uses the **PixelCI design system** ("The Review Desk": cool gray desk, white cards,
   hairlines, one accent, status as tag triplets, Inter + Font Awesome Free), pinned by the owner,
   adapted to Siple's identity.
-- Licence wording: **source-available** under FSL-1.1-ALv2, converting to Apache-2.0 two years
+- License wording: **source-available** under FSL-1.1-ALv2, converting to Apache-2.0 two years
   after each release. Licensor: Signal24 LLC dba Zyno Consulting. Never "open source".
 - Sibling product: ZynoTalk (https://zyno.talk), a cloud phone system by the same company. Siple
   works with any SIP provider; ZynoTalk is never implied to be required.
@@ -106,7 +106,7 @@ Pre-1.0. Never claim: user counts, benchmarks, testimonials, ratings, prices, st
 1. Show the real app; no mockups that drift from it.
 2. One state machine for people and agents: the agent story is the same product, not an add-on.
 3. Honest release state: say plainly what is signed, what is a draft, what is coming soon.
-4. Plain licence language: source-available, what you can and cannot do.
+4. Plain license language: source-available, what you can and cannot do.
 
 ## Accessibility & Inclusion
 
