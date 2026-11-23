@@ -675,15 +675,16 @@ fn settings_toggle_hints_stay_inside_the_window() {
             "{size:?}: hint ends at {} past the window ({r:?})",
             r.max.x
         );
-        // The hint sits right under its own label, not a full row gap away.
-        let label = h
-            .query_by_label("Install updates in the app")
-            .expect("the install toggle label")
-            .rect();
-        let gap = r.min.y - label.max.y;
+        // The hint sits right under its own row (the switch and its label text share the
+        // label), not a full row gap away.
+        let row_bottom = h
+            .query_all_by_label("Install updates in the app")
+            .map(|n| n.rect().max.y)
+            .fold(f32::NEG_INFINITY, f32::max);
+        let gap = r.min.y - row_bottom;
         assert!(
             (0.0..=8.0).contains(&gap),
-            "{size:?}: hint is {gap} px below its label ({label:?} / {r:?})"
+            "{size:?}: hint is {gap} px below its toggle row (ends at {row_bottom}; hint {r:?})"
         );
     }
 }
