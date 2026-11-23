@@ -772,7 +772,11 @@ impl AppBackend {
         let names = if info.state == CallState::Ended {
             Vec::new()
         } else {
-            self.inner.agent.capture.active(&info.id).names()
+            let mut a = self.inner.agent.capture.active(&info.id);
+            if self.inner.call_media.is_recording(&info.id) {
+                a = a.with(crate::agent::capture::CaptureKind::Record);
+            }
+            a.names()
         };
         v["agent_capture"] = json!(names);
         v
@@ -915,7 +919,6 @@ impl AppBackend {
         entry
             .handle
             .record_start(path.clone(), p.stereo.unwrap_or(false));
-        self.inner.agent.capture.set_recording(&p.call_id, true);
         Ok(json!({
             "ok": true, "call_id": p.call_id, "path": path.display().to_string(), "event_seq": seq
         }))
@@ -925,7 +928,6 @@ impl AppBackend {
         let entry = self.media_entry(&p.call_id)?;
         let seq = self.event_seq();
         entry.handle.record_stop();
-        self.inner.agent.capture.set_recording(&p.call_id, false);
         let filter = EventFilter {
             kinds: Some(vec!["call.record_finished".into()]),
             account: None,
@@ -1269,7 +1271,7 @@ pub fn call_methods() -> Vec<MethodInfo> {
         ),
         MethodInfo::new(
             "call.list",
-            "All calls of this run (the last 64 ended ones included), oldest first: id, account, direction, state, remote party, SIP Call-ID, timestamps, end {code, reason, by, problem (absent for a normal end)}, negotiated codec / SRTP suite, `agent_capture` (what an agent is capturing of the call's audio right now: a list of listen|transcribe|stream|record, empty when nothing; the app shows an \"Agent listening\" badge meanwhile).",
+            "All calls of this run (the last 64 ended ones included), oldest first: id, account, direction, state, remote party, SIP Call-ID, timestamps, end {code, reason, by, problem (absent for a normal end)}, negotiated codec / SRTP suite, `agent_capture` (what an agent is capturing of the call's audio right now: a list of listen|transcribe|stream|record (`record`: any recording of the call, including a `record:` sink), empty when nothing; the app shows a badge meanwhile).",
             obj(
                 json!({"account":{"type":"string","description":"Only calls of this account."},
                 "active_only":{"type":"boolean","description":"Leave out ended calls."}}),

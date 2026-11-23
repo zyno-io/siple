@@ -86,6 +86,24 @@ impl MediaRegistry {
         self.lock().map.get(call_id).cloned()
     }
 
+    /// Whether the call's media is being recorded to a file (false for unknown calls).
+    pub fn is_recording(&self, call_id: &str) -> bool {
+        self.lock()
+            .map
+            .get(call_id)
+            .is_some_and(|e| !e.closed && e.handle.is_recording())
+    }
+
+    /// Ids of the calls whose media is being recorded.
+    pub fn recording_calls(&self) -> Vec<String> {
+        self.lock()
+            .map
+            .iter()
+            .filter(|(_, e)| !e.closed && e.handle.is_recording())
+            .map(|(id, _)| id.clone())
+            .collect()
+    }
+
     /// Whether the call is device-bound (false for unknown calls).
     pub fn device_bound(&self, call_id: &str) -> bool {
         self.lock().map.get(call_id).is_some_and(|e| e.device_bound)

@@ -3,7 +3,8 @@
 //!
 //! Capturing means an agent request that takes the far end's audio out of Siple: `call.listen`
 //! and `call.rx_audio` (returned, saved or transcribed), a `call.stream` with RX, and
-//! `call.record_start` until `call.record_stop` (or the call's end). The receive-history buffer
+//! any recording of the call (`call.record_start`, or a `record:` sink: the media layer owns that
+//! flag, see `CallMediaHandle::is_recording`, and the views below merge it in). The receive-history buffer
 //! that backs `since_rx_ms` is a short in-memory ring that nothing can read without such a
 //! request, so it is not "recording" by itself: the indicator covers the request that reads it.
 //!
@@ -27,7 +28,8 @@ pub enum CaptureKind {
     Transcribe,
     /// `call.stream` with RX.
     Stream,
-    /// `call.record_start` .. `call.record_stop`.
+    /// The call's audio is being recorded to a file (`call.record_start` or a `record:` sink).
+    /// Owned by the media layer, never begun through [`CaptureRegistry::begin`].
     Record,
 }
 
@@ -65,6 +67,12 @@ impl AgentCapture {
         c
     }
 
+    /// A copy with `kind` added.
+    pub fn with(mut self, kind: CaptureKind) -> Self {
+        self.kinds[kind.idx()] = true;
+        self
+    }
+
     /// Any capture at all.
     pub fn is_active(&self) -> bool {
         self.kinds.iter().any(|k| *k)
@@ -84,17 +92,26 @@ impl AgentCapture {
             .collect()
     }
 
-    /// Short label for the call badge.
-    pub fn label(&self) -> &'static str {
-        if self.has(CaptureKind::Record) {
-            "Agent recording"
-        } else if self.has(CaptureKind::Transcribe) {
-            "Agent transcribing"
+    /// Badge text of what an agent does with the audio (`None` when only a recording runs).
+    pub fn agent_label(&self) -> Option<&'static str> {
+        if self.has(CaptureKind::Transcribe) {
+            Some("Agent transcribing")
+        } else if self.has(CaptureKind::Listen) || self.has(CaptureKind::Stream) {
+            Some("Agent listening")
         } else {
-            "Agent listening"
+            None
         }
     }
+
+    /// Badge text of a recording. A `record:` sink from the config is not an agent, so no
+    /// "Agent" here.
+    pub fn recording_label(&self) -> Option<&'static str> {
+        self.has(CaptureKind::Record).then_some("Recording")
+    }
 }
+
+/// Calls remembered as over, so a request that races the end of its call cannot re-create state.
+const GONE_KEEP: usize = 256;
 
 #[derive(Default)]
 struct Entry {
@@ -103,36 +120,63 @@ struct Entry {
     ended: [Option<Instant>; 4],
 }
 
+#[derive(Default)]
+struct State {
+    map: HashMap<String, Entry>,
+    /// The last [`GONE_KEEP`] calls that ended.
+    gone: std::collections::VecDeque<String>,
+}
+
+impl State {
+    /// Drops entries nothing is active on and whose linger is over (nobody polls headless).
+    fn prune(&mut self, now: Instant) {
+        self.map.retain(|_, e| {
+            e.counts.iter().any(|c| *c > 0)
+                || e.ended
+                    .iter()
+                    .flatten()
+                    .any(|t| now.saturating_duration_since(*t) < LINGER)
+        });
+    }
+}
+
 /// Per-call capture state.
 #[derive(Default)]
 pub struct CaptureRegistry {
-    map: Mutex<HashMap<String, Entry>>,
+    map: Mutex<State>,
 }
 
 impl CaptureRegistry {
-    fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<String, Entry>> {
+    fn lock(&self) -> std::sync::MutexGuard<'_, State> {
         self.map.lock().unwrap_or_else(|e| e.into_inner())
     }
 
     /// Marks `kinds` active on the call until the returned guard is dropped.
     pub fn begin(self: &Arc<Self>, call_id: &str, kinds: &[CaptureKind]) -> CaptureGuard {
-        {
+        let counted = {
             let mut g = self.lock();
-            let e = g.entry(call_id.to_string()).or_default();
-            for k in kinds {
-                e.counts[k.idx()] += 1;
+            g.prune(Instant::now());
+            if g.gone.iter().any(|id| id == call_id) {
+                false
+            } else {
+                let e = g.map.entry(call_id.to_string()).or_default();
+                for k in kinds {
+                    e.counts[k.idx()] += 1;
+                }
+                true
             }
-        }
+        };
         CaptureGuard {
             reg: self.clone(),
             call_id: call_id.to_string(),
-            kinds: kinds.to_vec(),
+            // A call that is already over is not captured: the guard does nothing.
+            kinds: if counted { kinds.to_vec() } else { Vec::new() },
         }
     }
 
     fn end(&self, call_id: &str, kinds: &[CaptureKind], now: Instant) {
         let mut g = self.lock();
-        if let Some(e) = g.get_mut(call_id) {
+        if let Some(e) = g.map.get_mut(call_id) {
             for k in kinds {
                 let c = &mut e.counts[k.idx()];
                 if *c > 0 {
@@ -143,31 +187,25 @@ impl CaptureRegistry {
                 }
             }
         }
-    }
-
-    /// Sets or clears the recording flag (not request-scoped).
-    pub fn set_recording(&self, call_id: &str, on: bool) {
-        let mut g = self.lock();
-        let i = CaptureKind::Record.idx();
-        if !on && !g.contains_key(call_id) {
-            return;
-        }
-        let e = g.entry(call_id.to_string()).or_default();
-        let was = e.counts[i] > 0;
-        e.counts[i] = u32::from(on);
-        if was && !on {
-            e.ended[i] = Some(Instant::now());
-        }
+        g.prune(now);
     }
 
     /// The call ended: nothing is captured any more. Lingering display is dropped too.
     pub fn clear_call(&self, call_id: &str) {
-        self.lock().remove(call_id);
+        let mut g = self.lock();
+        g.map.remove(call_id);
+        if !g.gone.iter().any(|id| id == call_id) {
+            if g.gone.len() >= GONE_KEEP {
+                g.gone.pop_front();
+            }
+            g.gone.push_back(call_id.to_string());
+        }
     }
 
     /// What is being captured on the call right now (`call.get`).
     pub fn active(&self, call_id: &str) -> AgentCapture {
         self.lock()
+            .map
             .get(call_id)
             .map_or_else(AgentCapture::default, |e| {
                 let mut c = AgentCapture::default();
@@ -183,7 +221,7 @@ impl CaptureRegistry {
     pub fn visible(&self, now: Instant) -> HashMap<String, AgentCapture> {
         let mut g = self.lock();
         let mut out = HashMap::new();
-        g.retain(|id, e| {
+        g.map.retain(|id, e| {
             let mut c = AgentCapture::default();
             for k in CaptureKind::ALL {
                 let i = k.idx();
@@ -229,7 +267,7 @@ mod tests {
         let g = r.begin("c1", &[CaptureKind::Listen, CaptureKind::Transcribe]);
         let a = r.active("c1");
         assert_eq!(a.names(), ["listen", "transcribe"]);
-        assert_eq!(a.label(), "Agent transcribing");
+        assert_eq!(a.agent_label(), Some("Agent transcribing"));
         assert!(!r.active("c2").is_active());
         drop(g);
         assert!(!r.active("c1").is_active());
@@ -265,9 +303,6 @@ mod tests {
     fn call_end_clears_and_a_late_guard_is_harmless() {
         let r = reg();
         let g = r.begin("c1", &[CaptureKind::Stream]);
-        r.set_recording("c1", true);
-        assert_eq!(r.active("c1").names(), ["stream", "record"]);
-        assert_eq!(r.active("c1").label(), "Agent recording");
         r.clear_call("c1");
         assert!(!r.active("c1").is_active());
         drop(g);
@@ -276,12 +311,39 @@ mod tests {
     }
 
     #[test]
-    fn recording_flag_toggles() {
+    fn a_request_racing_the_call_end_does_not_recreate_state() {
         let r = reg();
-        r.set_recording("c1", true);
-        assert!(r.active("c1").has(CaptureKind::Record));
-        r.set_recording("c1", false);
+        r.clear_call("c1");
+        let g = r.begin("c1", &[CaptureKind::Listen]);
         assert!(!r.active("c1").is_active());
+        drop(g);
+        assert!(r.visible(Instant::now()).is_empty());
+        assert!(r.lock().map.is_empty());
+    }
+
+    #[test]
+    fn labels_split_agent_and_recording() {
+        let a = AgentCapture::of(&[CaptureKind::Listen, CaptureKind::Record]);
+        assert_eq!(a.agent_label(), Some("Agent listening"));
+        assert_eq!(a.recording_label(), Some("Recording"));
+        let a = AgentCapture::of(&[CaptureKind::Record]);
+        assert_eq!(a.agent_label(), None);
+        assert_eq!(
+            AgentCapture::of(&[CaptureKind::Listen, CaptureKind::Transcribe]).agent_label(),
+            Some("Agent transcribing")
+        );
+    }
+
+    #[test]
+    fn idle_entries_do_not_pile_up_without_a_ui() {
+        let r = reg();
+        for i in 0..50 {
+            drop(r.begin(&format!("c{i}"), &[CaptureKind::Listen]));
+        }
+        // Entries within their linger stay; once it has passed nothing is kept.
+        let mut g = r.lock();
+        g.prune(Instant::now() + LINGER + Duration::from_millis(1));
+        assert!(g.map.is_empty());
     }
 
     #[test]

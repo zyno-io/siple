@@ -83,7 +83,28 @@ fn ended_text(c: &CallInfo) -> String {
 fn access_label(cx: &Cx, st: &UiState, c: &CallInfo) -> String {
     let (_, _, text) = line_summary(cx, st, c);
     let slot = st.slots.get(&c.id).copied().unwrap_or(0);
-    format!("Line {slot}, {}, {text}, {}", display_name(c), c.account)
+    let mut s = format!("Line {slot}, {}, {text}, {}", display_name(c), c.account);
+    if let Some(a) = cx.capture(&c.id).filter(|_| c.state != CallState::Ended) {
+        for l in [a.agent_label(), a.recording_label()].into_iter().flatten() {
+            s.push_str(&format!(", {}", l.to_lowercase()));
+        }
+    }
+    s
+}
+
+/// A small amber microphone dot: something captures this call's audio.
+fn capture_dot(ui: &egui::Ui, cx: &Cx, c: &CallInfo, center: egui::Pos2) {
+    if c.state == CallState::Ended || cx.capture(&c.id).is_none() {
+        return;
+    }
+    ui.painter().circle_filled(center, 8.0, cx.p.warn.led);
+    ui.painter().text(
+        center,
+        egui::Align2::CENTER_CENTER,
+        ic::MICROPHONE,
+        egui::FontId::new(11.0, crate::theme::icons_fill()),
+        Color32::from_rgb(0x1B, 0x1B, 0x1B),
+    );
 }
 
 /// A click on a line: select it; a held line becomes the active line; the other leg of a
@@ -287,6 +308,7 @@ fn line_badge(ui: &mut egui::Ui, cx: &Cx, st: &UiState, slot: usize, c: &CallInf
         tone.ink,
     );
     paint_focus_ring(ui, p, &resp, rect);
+    capture_dot(ui, cx, c, rect.right_top() + egui::vec2(-4.0, 4.0));
     let label = access_label(cx, st, c);
     resp.widget_info(|| {
         egui::WidgetInfo::selected(egui::WidgetType::Button, true, selected, label.clone())
@@ -435,9 +457,15 @@ fn line_row(ui: &mut egui::Ui, cx: &Cx, st: &UiState, slot: usize, c: &CallInfo)
         FS_MICRO,
         egui::FontFamily::Monospace,
         p.muted,
-        (rect.right() - x - 10.0).max(20.0),
+        (rect.right() - x - 36.0).max(20.0),
     );
     painter.galley(egui::pos2(x + 16.0, rect.top() + 43.0), acct, p.muted);
+    capture_dot(
+        ui,
+        cx,
+        c,
+        egui::pos2(rect.right() - 18.0, rect.top() + 46.0),
+    );
     let label = access_label(cx, st, c);
     resp.widget_info(|| {
         egui::WidgetInfo::selected(egui::WidgetType::Button, true, selected, label.clone())

@@ -5,7 +5,7 @@
 
 ### New
 
-- A badge on the call shows when an agent is listening to it: "Agent listening", "Agent transcribing" or "Agent recording" appears on the call (and in the tray menu) while an AI agent connected through the control API, MCP or `siple-cli` captures the call's audio with `call.listen`, `call.rx_audio`, `call.stream` or `call.record_start`. `call.get` and `call.list` report it as `agent_capture`.
+- A badge on the call shows when an agent is listening to it: "Agent listening" or "Agent transcribing" appears on the call, on its line in the rail, in a banner under the header (also in Settings) and in the tray menu and tooltip while an AI agent connected through the control API, MCP or `siple-cli` captures the call's audio with `call.listen`, `call.rx_audio` or `call.stream`. A call whose audio is recorded to a file (`call.record_start`, a `record:` sink, or an account's `audio_sink = "record:..."`) shows "Recording" the same way. `call.get` and `call.list` report it as `agent_capture`.
 
 ## 0.2.5 (2026-11-23)
 

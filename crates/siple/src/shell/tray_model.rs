@@ -43,8 +43,8 @@ pub struct TrayCall {
     pub who: String,
     /// What it offers.
     pub kind: TrayCallKind,
-    /// An agent is capturing the call's audio ("Agent listening", ...).
-    pub agent: Option<&'static str>,
+    /// What captures the call's audio ("Agent listening", "Recording", ...).
+    pub agent: Vec<&'static str>,
 }
 
 /// The tray's state.
@@ -90,8 +90,13 @@ impl TrayModel {
                 agent: snap
                     .agent_capture
                     .get(&c.id)
-                    .filter(|a| a.is_active())
-                    .map(|a| a.label()),
+                    .map(|a| {
+                        [a.agent_label(), a.recording_label()]
+                            .into_iter()
+                            .flatten()
+                            .collect()
+                    })
+                    .unwrap_or_default(),
                 kind: match (c.direction, c.state) {
                     (CallDirection::Inbound, CallState::Ringing | CallState::Early) => {
                         TrayCallKind::Ringing
@@ -130,7 +135,14 @@ impl TrayModel {
             .iter()
             .map(|a| (a.id.clone(), reg_label(a)))
             .collect();
-        let tooltip = tooltip(icon, &calls, &accounts, snap);
+        let mut tooltip = tooltip(icon, &calls, &accounts, snap);
+        // The audio of a call is captured: the tooltip says so whatever the icon shows.
+        let mut captures: Vec<&str> = calls.iter().flat_map(|c| c.agent.iter().copied()).collect();
+        captures.sort_unstable();
+        captures.dedup();
+        if !captures.is_empty() {
+            tooltip.push_str(&format!(" ({})", captures.join(", ")));
+        }
         Self {
             icon,
             tooltip,
@@ -140,6 +152,13 @@ impl TrayModel {
             has_accounts: !enabled.is_empty(),
             window_visible,
         }
+    }
+}
+
+/// One label per thing capturing the call's audio.
+fn capture_labels(m: &mut Vec<MenuEntry>, c: &TrayCall) {
+    for a in &c.agent {
+        m.push(MenuEntry::Label((*a).into()));
     }
 }
 
@@ -288,6 +307,7 @@ impl TrayModel {
                 match &c.kind {
                     TrayCallKind::Ringing => {
                         m.push(MenuEntry::Label(format!("{} is calling", c.who)));
+                        capture_labels(&mut m, c);
                         m.push(MenuEntry::Item(
                             "Answer".into(),
                             TrayCmd::Answer(c.id.clone()),
@@ -303,9 +323,7 @@ impl TrayModel {
                             c.who,
                             if *held { " (on hold)" } else { "" }
                         )));
-                        if let Some(a) = c.agent {
-                            m.push(MenuEntry::Label(a.into()));
-                        }
+                        capture_labels(&mut m, c);
                         m.push(MenuEntry::Item(
                             if *muted { "Unmute" } else { "Mute" }.into(),
                             TrayCmd::Mute(c.id.clone(), !muted),
@@ -321,6 +339,7 @@ impl TrayModel {
                     }
                     TrayCallKind::Dialing => {
                         m.push(MenuEntry::Label(format!("Calling {}", c.who)));
+                        capture_labels(&mut m, c);
                         m.push(MenuEntry::Item(
                             "Hang up".into(),
                             TrayCmd::Hangup(c.id.clone()),
@@ -549,6 +568,7 @@ mod tests {
             m.menu()
                 .contains(&MenuEntry::Label("Agent listening".into()))
         );
+        assert!(m.tooltip.contains("Agent listening"), "{}", m.tooltip);
         let m = model(|s| {
             s.calls = vec![call(
                 "c1",

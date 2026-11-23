@@ -629,6 +629,11 @@ impl CallMediaHandle {
         self.inner.shared.answered.store(true, Ordering::Release);
     }
 
+    /// A recording of the call is running (`call.record_start`, or a `record:` sink).
+    pub fn is_recording(&self) -> bool {
+        self.inner.shared.recording.load(Ordering::Acquire)
+    }
+
     /// Whether [`mark_answered`](Self::mark_answered) ran.
     pub fn is_answered(&self) -> bool {
         self.inner.shared.answered.load(Ordering::Acquire)

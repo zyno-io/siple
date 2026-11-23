@@ -1607,21 +1607,66 @@ async fn agent_capture_is_set_during_a_listen_and_cleared_after() {
     assert_eq!(capture_of(&mut r.a, &a).await, json!([]));
 }
 
-/// A recording counts until `call.record_stop`.
+/// A recording counts until `call.record_stop`; rotating to a new file keeps it on.
 #[tokio::test(flavor = "multi_thread")]
-async fn agent_capture_covers_a_recording() {
+async fn agent_capture_covers_a_recording_and_survives_rotation() {
     let mut r = rig_with("").await;
     let (a, _b) = establish_silent(&mut r).await;
-    let path = r.dir.path().join("rec.wav");
-    r.a.call(
-        "call.record_start",
-        json!({"call_id":a,"path":path.display().to_string()}),
-    )
-    .await
-    .unwrap();
+    let rec = |name: &str| r.dir.path().join(name).display().to_string();
+    let (pa, pb) = (rec("a.wav"), rec("b.wav"));
+    r.a.call("call.record_start", json!({"call_id":a,"path":pa}))
+        .await
+        .unwrap();
+    assert_eq!(capture_of(&mut r.a, &a).await, json!(["record"]));
+    // Rotation: the old file finishes (call.record_finished) while the new one runs.
+    let s = seq(&mut r.a).await;
+    r.a.call("call.record_start", json!({"call_id":a,"path":pb}))
+        .await
+        .unwrap();
+    let ev =
+        r.a.call(
+            "events.poll",
+            json!({"since":s,"kinds":["call.record_finished"],"timeout_ms":10_000}),
+        )
+        .await
+        .unwrap();
+    assert!(!ev["events"].as_array().unwrap().is_empty(), "{ev}");
     assert_eq!(capture_of(&mut r.a, &a).await, json!(["record"]));
     r.a.call("call.record_stop", json!({"call_id":a}))
         .await
         .unwrap();
     assert_eq!(capture_of(&mut r.a, &a).await, json!([]));
+}
+
+/// A `record:` sink records the whole call and counts too.
+#[tokio::test(flavor = "multi_thread")]
+async fn agent_capture_covers_a_record_sink() {
+    let mut r = rig_with("").await;
+    let path = r.dir.path().join("sink.wav").display().to_string();
+    let b_seq = seq(&mut r.b).await;
+    let d =
+        r.a.call(
+            "call.dial",
+            json!({"account":"alice","target":r.bob_uri,"source":"silence",
+                   "sink":format!("record:{path}")}),
+        )
+        .await
+        .unwrap();
+    let a = d["call_id"].as_str().unwrap().to_string();
+    let ringing =
+        r.b.call(
+            "call.wait_for",
+            json!({"account":"bob","state":"ringing","since":b_seq,"timeout_ms":30_000}),
+        )
+        .await
+        .unwrap();
+    let b = ringing["call"]["id"].as_str().unwrap().to_string();
+    r.b.call("call.answer", json!({"call_id": b}))
+        .await
+        .unwrap();
+    wait_capture(&mut r.a, &a, json!(["record"])).await;
+    r.a.call("call.hangup", json!({"call_id": a}))
+        .await
+        .unwrap();
+    wait_capture(&mut r.a, &a, json!([])).await;
 }

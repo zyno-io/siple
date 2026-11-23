@@ -928,7 +928,13 @@ impl App {
     pub fn agent_captures(
         &self,
     ) -> std::collections::HashMap<String, crate::agent::capture::AgentCapture> {
-        self.inner.agent.capture.visible(std::time::Instant::now())
+        use crate::agent::capture::CaptureKind;
+        let mut v = self.inner.agent.capture.visible(std::time::Instant::now());
+        for id in self.inner.call_media.recording_calls() {
+            let a = v.get(&id).copied().unwrap_or_default();
+            v.insert(id, a.with(CaptureKind::Record));
+        }
+        v
     }
 
     /// The media engine.
@@ -1475,11 +1481,6 @@ async fn bridge_media_events(
     mut rx: tokio::sync::mpsc::UnboundedReceiver<MediaEvent>,
 ) {
     while let Some(ev) = rx.recv().await {
-        if let MediaEventKind::RecordFinished { .. } = &ev.kind
-            && !ev.call_id.is_empty()
-        {
-            inner.agent.capture.set_recording(&ev.call_id, false);
-        }
         if let Some((kind, call, data)) = media_event_to_wire(&ev) {
             let account = call_account(&inner, call.as_deref());
             inner

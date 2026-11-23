@@ -213,10 +213,13 @@ new network path (`call.reconnecting` .. `call.reconnected`); with `[network] mo
 peer does not follow, the call ends with `end.cause = network_lost`.
 `srtp_fallback: true` means the PBX refused our SRTP (`srtp = "optional"`) offer with 488/415/606 and
 the call was retried once with plain RTP.
-`call.get` / `call.list` add `agent_capture`: what an agent (the control API, MCP, `siple-cli`) is capturing of
-the call's audio right now, a list of `listen` (`call.listen`, `call.rx_audio`), `transcribe` (with `transcribe:true`),
-`stream` (`call.stream` with RX) and `record` (`call.record_start` .. `call.record_stop`); empty otherwise. The app shows
-an "Agent listening" badge on the call (and in the tray menu) while it is not empty, and for two seconds after.
+`call.get` / `call.list` add `agent_capture`: what captures the call's audio right now, a list of `listen`
+(`call.listen`, `call.rx_audio`), `transcribe` (with `transcribe:true`), `stream` (`call.stream` with RX) and `record`
+(any recording of the call: `call.record_start`, or a `record:` sink on `call.dial|answer|consult_start`, `blf.dial`,
+`call.pickup` or the account's `audio_sink`); empty otherwise. While it is not empty, and for two seconds after an
+agent request, the app shows a badge on the call (and on its line in the rail), a banner under the header on every
+screen, and a line in the tray menu and tooltip: "Agent listening", "Agent transcribing" or, for a recording, "Recording"
+(the recording may come from the user's own config, so the label does not say "Agent")
 
 ## Testing an account and keyring passwords
 
@@ -2412,7 +2415,7 @@ Send up to 32 DTMF digits (0-9 * # A-D) on an established call; each lasts durat
 
 ### `call.list`
 
-All calls of this run (the last 64 ended ones included), oldest first: id, account, direction, state, remote party, SIP Call-ID, timestamps, end {code, reason, by, problem (absent for a normal end)}, negotiated codec / SRTP suite, `agent_capture` (what an agent is capturing of the call's audio right now: a list of listen|transcribe|stream|record, empty when nothing; the app shows an "Agent listening" badge meanwhile).
+All calls of this run (the last 64 ended ones included), oldest first: id, account, direction, state, remote party, SIP Call-ID, timestamps, end {code, reason, by, problem (absent for a normal end)}, negotiated codec / SRTP suite, `agent_capture` (what an agent is capturing of the call's audio right now: a list of listen|transcribe|stream|record (`record`: any recording of the call, including a `record:` sink), empty when nothing; the app shows a badge meanwhile).
 
 | Param | Type | Required | Description |
 |---|---|---|---|

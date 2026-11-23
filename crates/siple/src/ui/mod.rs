@@ -286,6 +286,16 @@ pub(crate) struct Cx<'a> {
 }
 
 impl<'a> Cx<'a> {
+    /// What captures the call's audio right now (an agent listening, a recording).
+    pub fn capture(&self, id: &str) -> Option<siple_core::agent::capture::AgentCapture> {
+        self.vm
+            .snap
+            .agent_capture
+            .get(id)
+            .copied()
+            .filter(|a| a.is_active())
+    }
+
     pub fn call(&self, id: &str) -> Option<&'a CallInfo> {
         self.calls.iter().find(|c| c.id == id).copied()
     }
@@ -617,6 +627,7 @@ pub fn draw(ui: &mut egui::Ui, vm: &ViewModel, st: &mut UiState) -> Vec<UiAction
         )
         .show_separator_line(true)
         .show(ui, |ui| header::show(ui, &cx, st, &mut out));
+    stage::capture_banner(ui, &cx, st);
     egui::Panel::bottom("footer")
         .frame(
             egui::Frame::new()
