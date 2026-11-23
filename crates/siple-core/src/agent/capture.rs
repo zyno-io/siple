@@ -374,7 +374,7 @@ mod tests {
         // Nothing is created for a call that is over.
         r.clear_call("c2");
         r.recording_finished("c2");
-        assert!(r.visible(Instant::now()).get("c2").is_none());
+        assert!(!r.visible(Instant::now()).contains_key("c2"));
     }
 
     #[test]
