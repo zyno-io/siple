@@ -4793,7 +4793,7 @@ checksum = "33f4fe9184a62d842c9ef383018f3306d8ba224fd9d836f56d7288308847c256"
 
 [[package]]
 name = "siple"
-version = "0.2.5"
+version = "0.2.6"
 dependencies = [
  "anyhow",
  "block2 0.6.2",
@@ -4828,7 +4828,7 @@ dependencies = [
 
 [[package]]
 name = "siple-cli"
-version = "0.2.5"
+version = "0.2.6"
 dependencies = [
  "anyhow",
  "clap",
@@ -4841,7 +4841,7 @@ dependencies = [
 
 [[package]]
 name = "siple-config"
-version = "0.2.5"
+version = "0.2.6"
 dependencies = [
  "dirs",
  "keyring",
@@ -4862,7 +4862,7 @@ dependencies = [
 
 [[package]]
 name = "siple-core"
-version = "0.2.5"
+version = "0.2.6"
 dependencies = [
  "alsa",
  "anyhow",
@@ -4918,7 +4918,7 @@ dependencies = [
 
 [[package]]
 name = "siple-media"
-version = "0.2.5"
+version = "0.2.6"
 dependencies = [
  "aes",
  "anyhow",
@@ -4935,7 +4935,7 @@ dependencies = [
 
 [[package]]
 name = "siple-problem"
-version = "0.2.5"
+version = "0.2.6"
 dependencies = [
  "serde",
  "serde_json",
@@ -4943,7 +4943,7 @@ dependencies = [
 
 [[package]]
 name = "siple-sip"
-version = "0.2.5"
+version = "0.2.6"
 dependencies = [
  "anyhow",
  "async-trait",

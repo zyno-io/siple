@@ -1,7 +1,7 @@
 <!-- siple-rename: keep (this file documents the legacy ZynoPhone names on purpose) -->
 # Changelog
 
-## Unreleased
+## 0.2.6 (2026-11-23)
 
 ### New
 
@@ -14,6 +14,11 @@
 
 - Mac App Store, Microsoft Store and Flatpak editions: the link-handling switch is gone from Settings and the first-run wizard, where it did nothing. These editions register the links when they are installed; if another app opens them, make Siple the default (see the links guide).
 - Mac App Store edition: the MCP snippet in Settings > Developer shows the full path of the bundled `siple-cli`, which is not on `PATH`.
+- Settings: a switch's explanation sits right under it, instead of a full row below where it looked like it belonged to the next switch.
+
+### Changed
+
+- The configuration reference is about half as long: each section is a short introduction and a table of keys, defaults and what they do. Longer explanations moved to the user guide.
 
 ## 0.2.5 (2026-11-23)
 
