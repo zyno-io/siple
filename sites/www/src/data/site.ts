@@ -9,6 +9,7 @@ export const site = {
   name: 'Siple',
   tagline: 'The scriptable SIP softphone',
   maker: 'Zyno Consulting',
+  legalName: 'Signal24 LLC dba Zyno Consulting',
   contact: 'oss@zyno.io',
   repo,
   releases: `${repo}/releases`,
