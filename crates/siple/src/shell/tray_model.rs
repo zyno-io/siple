@@ -263,10 +263,19 @@ pub enum MenuEntry {
     Separator,
 }
 
+/// The version line under the app name ("Version 0.2.4", or "Version 0.2.5-rc.1" on a release candidate).
+pub fn version_label() -> String {
+    format!("Version {}", siple_core::update::full_version())
+}
+
 impl TrayModel {
     /// The menu, top to bottom.
     pub fn menu(&self) -> Vec<MenuEntry> {
-        let mut m = vec![MenuEntry::Label("Siple".into()), MenuEntry::Separator];
+        let mut m = vec![
+            MenuEntry::Label("Siple".into()),
+            MenuEntry::Label(version_label()),
+            MenuEntry::Separator,
+        ];
         if !self.calls.is_empty() {
             for c in &self.calls {
                 match &c.kind {
@@ -438,6 +447,10 @@ mod tests {
         ));
         let menu = m.menu();
         assert_eq!(menu.first(), Some(&MenuEntry::Label("Siple".into())));
+        // The version sits between the app name and the first separator.
+        assert_eq!(menu.get(1), Some(&MenuEntry::Label(version_label())));
+        assert_eq!(menu.get(2), Some(&MenuEntry::Separator));
+        assert!(version_label().starts_with("Version 0."));
         assert!(menu.contains(&MenuEntry::Item("Show Siple".into(), TrayCmd::Show)));
         assert_eq!(
             menu.last(),

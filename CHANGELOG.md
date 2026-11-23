@@ -7,6 +7,7 @@
 
 - Direct downloads check for updates about every hour, from siple.app, instead of once a day. GitHub is asked at most once a day per run, as a cross-check of siple.app's list (a stale site can hide an update for a day at most) or instead of siple.app when it does not answer. The store editions still check once a day.
 - Publishing a release candidate refreshes the update feed on siple.app at once, so the prerelease channel sees it.
+- The tray / menu-bar menu shows the version under the app name.
 
 ## 0.2.4 (2026-11-22)
 
