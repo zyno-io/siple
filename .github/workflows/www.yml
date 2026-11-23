@@ -8,6 +8,9 @@ name: Website
 #     production (e.g. a copy fix between releases).
 #     Before deploying, the job checks that the CHANGELOG version matches the tag and that every download link in
 #     the built page is live, so siple.app never links to a draft or missing asset.
+#     The build also writes the app's update feed (/updates/v1/releases.json, scripts/update-feed.mjs) from the
+#     GitHub releases list. On a release build it fails unless the newest stable release in the feed is the tag, so
+#     a production deploy always carries the release that was just published.
 # Pull requests only build the site; they never deploy.
 #
 # Each deploy job reads ZYNOHOSTING_DEPLOY_TOKEN from its GitHub environment (www-staging, www-production).
@@ -71,8 +74,14 @@ jobs:
       - name: Install
         working-directory: sites/www
         run: npm ci
+      - name: Self-check the update feed script
+        working-directory: sites/www
+        run: npm run feed:test
       - name: Build
         working-directory: sites/www
+        # GITHUB_TOKEN (contents: read) lifts the API rate limit of the update feed fetch (scripts/update-feed.mjs).
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: npm run build
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: github.event_name != 'pull_request'
@@ -167,6 +176,17 @@ jobs:
             [ "$code" = 200 ] || bad=1
           done
           [ "$bad" = 0 ] || { echo "::error::some download links are not live (unpublished release or missing asset); not deploying"; exit 1; }
+      - name: Check the update feed carries this release
+        run: |
+          set -euo pipefail
+          feed=dist/updates/v1/releases.json
+          [ -s "$feed" ] || { echo "::error::$feed is missing from the build"; exit 1; }
+          # The newest stable release in the feed must be the one the site links (the release.yml tag on a release run).
+          want=$(grep -oE 'releases/download/v[0-9]+\.[0-9]+\.[0-9]+/' dist/index.html | head -n1 | sed -E 's#releases/download/(v[^/]+)/#\1#')
+          [ -n "$want" ] || { echo "::error::no release version found in dist/index.html"; exit 1; }
+          jq -e --arg want "$want" '[.[] | select(.prerelease == false and .draft == false)] | sort_by(.tag_name | ltrimstr("v") | split(".") | map(tonumber)) | last | .tag_name == $want' "$feed" > /dev/null \
+            || { echo "::error::the newest stable release in the update feed is not $want"; exit 1; }
+          echo "update feed ok: newest stable is $want"
       - name: Deploy
         env:
           ZYNOHOSTING_DEPLOY_TOKEN: ${{ secrets.ZYNOHOSTING_DEPLOY_TOKEN }}

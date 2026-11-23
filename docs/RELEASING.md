@@ -172,11 +172,27 @@ A tag for another version is ignored. Packaging scripts need no change.
 ## Update check, and store builds
 
 Where the update check looks is decided at run time from how the process was installed (`[updates]` in `docs/CONFIG.md`; detection
-only): direct-download builds read the GitHub releases list, the Mac App Store edition asks Apple's lookup of its listing, the
+only): direct-download builds read the release feed of siple.app (`https://siple.app/updates/v1/releases.json`) about every hour and
+fall back to the GitHub releases list in the same check when the site does not answer usably; the Mac App Store edition asks Apple's lookup of its listing, the
 Microsoft Store edition asks Windows' Store service; the Flatpak is a store build (`--features store`) that makes no check at all
 (Flatpak updates it, `disabled_reason: managed_by_flatpak`). Releases that should be offered on GitHub must be **published** (drafts are
 skipped), tagged `v<semver>`; release candidates `v<semver>-rc.N` are marked as GitHub pre-releases and are only offered to users on the
 `prerelease` channel (the default for someone already running a release candidate).
+
+### The update feed is part of the release
+
+`sites/www/scripts/update-feed.mjs` writes the feed (`public/updates/v1/releases.json`, generated, not committed) at the start of every
+site build: the GitHub releases list (read with the workflow's `GITHUB_TOKEN`, so no rate limit), cut down to published releases with a
+`vX.Y.Z[-pre]` tag, newest first, at most 20, pre-releases included. The app's channel logic does the filtering. The `Website` workflow
+deploys siple.app when you **publish** the release (`release: published`), built from the tag, so publishing is what makes the feed
+current; there is no separate step. The release build fails, and nothing is deployed, when the fetch fails or the newest stable release
+in the feed is not the tag and the newest CHANGELOG section (a draft is not in the feed, so publish first). The production deploy job
+checks again that `dist/updates/v1/releases.json` exists and names the version the page links. A staging build from `main` (and a pull
+request) only warns on a mismatch, since the CHANGELOG may name a version that is not published yet.
+The feed is unsigned: the installer ignores everything in it except the version and the asset names and sizes, and trusts only the
+minisign-signed `SHA256SUMS` of that version (its trusted comment must read `siple v<version> SHA256SUMS`), so a wrong feed can hide an
+update but cannot make the app install anything unsigned or an older release. If the site's feed ever lags (a failed deploy), apps
+see the new release when the next successful deploy lands; re-run the `Website` workflow (target `production`) from the tag.
 
 Builds for the Mac App Store and the Microsoft Store update through their store: they never read the GitHub releases list and never
 download or install anything themselves. Build them with the cargo feature `store` (off by default):

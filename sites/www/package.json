@@ -6,10 +6,12 @@
   "scripts": {
     "dev": "astro dev",
     "start": "astro dev",
-    "build": "astro build",
+    "feed": "node scripts/update-feed.mjs",
+    "feed:test": "node --test scripts/update-feed.test.mjs",
+    "build": "node scripts/update-feed.mjs && astro build",
     "preview": "astro preview",
     "astro": "astro",
-    "vrt": "astro build && playwright test",
+    "vrt": "npm run build && playwright test",
     "og": "node scripts/og.mjs",
     "store-shots": "node scripts/store-shots.mjs",
     "shots": "sh scripts/shots.sh"
