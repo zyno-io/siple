@@ -379,6 +379,8 @@ fn line_row(ui: &mut egui::Ui, cx: &Cx, st: &UiState, slot: usize, c: &CallInfo)
         );
     }
     let x = rect.left() + 12.0;
+    // A capture dot sits at the right end of rows 2-3: those texts end before it.
+    let dot = c.state != CallState::Ended && cx.capture(&c.id).is_some();
     // Row 1: slot, name, mic marker.
     let is_active = cx.vm.snap.active_line.as_deref() == Some(c.id.as_str());
     let right_mark = if c.muted && c.state != CallState::Ended {
@@ -448,7 +450,7 @@ fn line_row(ui: &mut egui::Ui, cx: &Cx, st: &UiState, slot: usize, c: &CallInfo)
         FS_SMALL,
         crate::theme::semibold(),
         tone.ink,
-        (rect.right() - x - 36.0).max(20.0),
+        (rect.right() - x - if dot { 60.0 } else { 36.0 }).max(20.0),
     );
     painter.galley(egui::pos2(x + 34.0, rect.top() + 26.0), text_g, tone.ink);
     let acct = super::truncate_galley(
@@ -457,7 +459,7 @@ fn line_row(ui: &mut egui::Ui, cx: &Cx, st: &UiState, slot: usize, c: &CallInfo)
         FS_MICRO,
         egui::FontFamily::Monospace,
         p.muted,
-        (rect.right() - x - 36.0).max(20.0),
+        (rect.right() - x - if dot { 44.0 } else { 10.0 }).max(20.0),
     );
     painter.galley(egui::pos2(x + 16.0, rect.top() + 43.0), acct, p.muted);
     capture_dot(

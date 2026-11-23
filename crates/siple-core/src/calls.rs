@@ -766,7 +766,8 @@ impl AppBackend {
         Ok(json!({ "calls": calls, "event_seq": self.event_seq() }))
     }
 
-    /// `CallInfo` plus `agent_capture`: what an agent is capturing of the call's audio right now.
+    /// `CallInfo` plus `agent_capture`: what captures the call's audio right now (agent requests and
+    /// recordings).
     fn call_json(&self, info: &siple_sip::CallInfo) -> Value {
         let mut v = to_json(info);
         let names = if info.state == CallState::Ended {
@@ -916,9 +917,12 @@ impl AppBackend {
                 ApiError::invalid_params(format!("cannot create {}: {e}", path.display()))
             })?;
         let seq = self.event_seq();
+        // Wait for the media thread: the recording flag is up (or the start failed) on return.
         entry
             .handle
-            .record_start(path.clone(), p.stereo.unwrap_or(false));
+            .record_start_acked(path.clone(), p.stereo.unwrap_or(false))
+            .await
+            .map_err(|_| ApiError::invalid_state(format!("call {} has no media", p.call_id)))?;
         Ok(json!({
             "ok": true, "call_id": p.call_id, "path": path.display().to_string(), "event_seq": seq
         }))
@@ -1271,7 +1275,7 @@ pub fn call_methods() -> Vec<MethodInfo> {
         ),
         MethodInfo::new(
             "call.list",
-            "All calls of this run (the last 64 ended ones included), oldest first: id, account, direction, state, remote party, SIP Call-ID, timestamps, end {code, reason, by, problem (absent for a normal end)}, negotiated codec / SRTP suite, `agent_capture` (what an agent is capturing of the call's audio right now: a list of listen|transcribe|stream|record (`record`: any recording of the call, including a `record:` sink), empty when nothing; the app shows a badge meanwhile).",
+            "All calls of this run (the last 64 ended ones included), oldest first: id, account, direction, state, remote party, SIP Call-ID, timestamps, end {code, reason, by, problem (absent for a normal end)}, negotiated codec / SRTP suite, `agent_capture` (what captures the call's audio right now, an agent or a recording: a list of listen|transcribe|stream|record (`record`: any recording of the call, including a `record:` sink), empty when nothing; the app shows a badge meanwhile).",
             obj(
                 json!({"account":{"type":"string","description":"Only calls of this account."},
                 "active_only":{"type":"boolean","description":"Leave out ended calls."}}),

@@ -27,6 +27,8 @@ use crate::widgets::{
 pub(super) const AGENT_HOVER: &str = "An agent connected to Siple is capturing this call's audio";
 /// Hover text of the recording badge.
 pub(super) const RECORDING_HOVER: &str = "This call's audio is being recorded to a file";
+/// Hover text of the banner row when both apply.
+const BOTH_HOVER: &str = "An agent connected to Siple is capturing this call's audio, and it is being recorded to a file";
 
 /// Banners shown at once; the rest collapse into "+N more".
 const MAX_BANNERS: usize = 3;
@@ -179,12 +181,11 @@ pub(super) fn is_waiting(c: &CallInfo) -> bool {
     c.direction == CallDirection::Inbound && c.state == CallState::Ringing
 }
 
-/// Incoming calls that do not have the stage: pinned banners, newest first.
 /// A bar under the header on every screen (every layout, the extensions tab, Settings, the
 /// wizard) while anything captures a call's audio: App Review guideline 2.5.14.
 pub(super) fn capture_banner(ui: &mut egui::Ui, cx: &Cx, st: &UiState) {
     let p = cx.p;
-    let rows: Vec<String> = cx
+    let rows: Vec<(String, &'static str)> = cx
         .lines(st)
         .into_iter()
         .filter(|(_, c)| c.state != CallState::Ended)
@@ -195,12 +196,20 @@ pub(super) fn capture_banner(ui: &mut egui::Ui, cx: &Cx, st: &UiState) {
                 .flatten()
                 .collect::<Vec<_>>()
                 .join(" and ");
+            let hover = match (a.agent_label(), a.recording_label()) {
+                (Some(_), Some(_)) => BOTH_HOVER,
+                (None, Some(_)) => RECORDING_HOVER,
+                _ => AGENT_HOVER,
+            };
             let line = if slot == usize::MAX {
                 String::new()
             } else {
                 format!("L{slot} ")
             };
-            Some(format!("{what} \u{b7} {line}{}", super::display_name(c)))
+            Some((
+                format!("{what} \u{b7} {line}{}", super::display_name(c)),
+                hover,
+            ))
         })
         .collect();
     if rows.is_empty() {
@@ -215,16 +224,12 @@ pub(super) fn capture_banner(ui: &mut egui::Ui, cx: &Cx, st: &UiState) {
         .show_separator_line(true)
         .show(ui, |ui| {
             ui.spacing_mut().item_spacing.y = 2.0;
-            for r in rows.iter().take(MAX_BANNERS) {
+            for (r, hover) in rows.iter().take(MAX_BANNERS) {
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = 6.0;
                     ui.label(icon_fill(ic::MICROPHONE, FS_SMALL + 1.0).color(p.warn.ink));
                     ui.add(egui::Label::new(strong(r, FS_SMALL).color(p.warn.ink)).truncate())
-                        .on_hover_text(if r.starts_with("Recording") {
-                            RECORDING_HOVER
-                        } else {
-                            AGENT_HOVER
-                        });
+                        .on_hover_text(*hover);
                 });
             }
             if rows.len() > MAX_BANNERS {
@@ -237,6 +242,7 @@ pub(super) fn capture_banner(ui: &mut egui::Ui, cx: &Cx, st: &UiState) {
         });
 }
 
+/// Incoming calls that do not have the stage: pinned banners, newest first.
 fn banners(
     ui: &mut egui::Ui,
     cx: &Cx,

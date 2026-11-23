@@ -136,12 +136,13 @@ impl TrayModel {
             .map(|a| (a.id.clone(), reg_label(a)))
             .collect();
         let mut tooltip = tooltip(icon, &calls, &accounts, snap);
-        // The audio of a call is captured: the tooltip says so whatever the icon shows.
+        // The audio of a call is captured: the tooltip says so whatever the icon shows. First,
+        // because the Windows tray cuts a tooltip at 128 UTF-16 units.
         let mut captures: Vec<&str> = calls.iter().flat_map(|c| c.agent.iter().copied()).collect();
         captures.sort_unstable();
         captures.dedup();
         if !captures.is_empty() {
-            tooltip.push_str(&format!(" ({})", captures.join(", ")));
+            tooltip = format!("{}. {tooltip}", captures.join(", "));
         }
         Self {
             icon,

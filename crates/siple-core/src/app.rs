@@ -1481,6 +1481,12 @@ async fn bridge_media_events(
     mut rx: tokio::sync::mpsc::UnboundedReceiver<MediaEvent>,
 ) {
     while let Some(ev) = rx.recv().await {
+        if let MediaEventKind::RecordFinished { .. } = &ev.kind
+            && !ev.call_id.is_empty()
+        {
+            // Only the UI linger: the live flag belongs to the media thread.
+            inner.agent.capture.recording_finished(&ev.call_id);
+        }
         if let Some((kind, call, data)) = media_event_to_wire(&ev) {
             let account = call_account(&inner, call.as_deref());
             inner

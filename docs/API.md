@@ -219,7 +219,7 @@ the call was retried once with plain RTP.
 `call.pickup` or the account's `audio_sink`); empty otherwise. While it is not empty, and for two seconds after an
 agent request, the app shows a badge on the call (and on its line in the rail), a banner under the header on every
 screen, and a line in the tray menu and tooltip: "Agent listening", "Agent transcribing" or, for a recording, "Recording"
-(the recording may come from the user's own config, so the label does not say "Agent")
+(the recording may come from the user's own config, so the label does not say "Agent").
 
 ## Testing an account and keyring passwords
 
@@ -2415,7 +2415,7 @@ Send up to 32 DTMF digits (0-9 * # A-D) on an established call; each lasts durat
 
 ### `call.list`
 
-All calls of this run (the last 64 ended ones included), oldest first: id, account, direction, state, remote party, SIP Call-ID, timestamps, end {code, reason, by, problem (absent for a normal end)}, negotiated codec / SRTP suite, `agent_capture` (what an agent is capturing of the call's audio right now: a list of listen|transcribe|stream|record (`record`: any recording of the call, including a `record:` sink), empty when nothing; the app shows a badge meanwhile).
+All calls of this run (the last 64 ended ones included), oldest first: id, account, direction, state, remote party, SIP Call-ID, timestamps, end {code, reason, by, problem (absent for a normal end)}, negotiated codec / SRTP suite, `agent_capture` (what captures the call's audio right now, an agent or a recording: a list of listen|transcribe|stream|record (`record`: any recording of the call, including a `record:` sink), empty when nothing; the app shows a badge meanwhile).
 
 | Param | Type | Required | Description |
 |---|---|---|---|

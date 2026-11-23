@@ -4,13 +4,14 @@
 //! Capturing means an agent request that takes the far end's audio out of Siple: `call.listen`
 //! and `call.rx_audio` (returned, saved or transcribed), a `call.stream` with RX, and
 //! any recording of the call (`call.record_start`, or a `record:` sink: the media layer owns that
-//! flag, see `CallMediaHandle::is_recording`, and the views below merge it in). The receive-history buffer
-//! that backs `since_rx_ms` is a short in-memory ring that nothing can read without such a
+//! flag, see `CallMediaHandle::is_recording`, and the views below merge it in). The
+//! receive-history buffer that backs `since_rx_ms` is a short in-memory ring that nothing can read without such a
 //! request, so it is not "recording" by itself: the indicator covers the request that reads it.
 //!
 //! Request-scoped captures hold a [`CaptureGuard`], so the flag is cleared on every exit path
 //! (success, error, timeout, a dropped request future). The UI view additionally keeps a capture
-//! visible for [`LINGER`] after it ended so a short request is not missed by a poll.
+//! visible for [`LINGER`] after it ended (a request, or a recording once its file is finished)
+//! so a short one is not missed by a poll.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -190,6 +191,19 @@ impl CaptureRegistry {
         g.prune(now);
     }
 
+    /// A recording of the call finished: the UI view keeps showing it for [`LINGER`], like a
+    /// request. Only the linger: the live flag is the media layer's (a rotation to a new file
+    /// also finishes one), and nothing is recorded for a call that is already over.
+    pub fn recording_finished(&self, call_id: &str) {
+        let mut g = self.lock();
+        if g.gone.iter().any(|id| id == call_id) {
+            return;
+        }
+        let now = Instant::now();
+        g.map.entry(call_id.to_string()).or_default().ended[CaptureKind::Record.idx()] = Some(now);
+        g.prune(now);
+    }
+
     /// The call ended: nothing is captured any more. Lingering display is dropped too.
     pub fn clear_call(&self, call_id: &str) {
         let mut g = self.lock();
@@ -344,6 +358,23 @@ mod tests {
         let mut g = r.lock();
         g.prune(Instant::now() + LINGER + Duration::from_millis(1));
         assert!(g.map.is_empty());
+    }
+
+    #[test]
+    fn a_finished_recording_lingers_in_the_ui_view_only() {
+        let r = reg();
+        r.recording_finished("c1");
+        assert!(!r.active("c1").is_active());
+        let now = Instant::now();
+        assert!(r.visible(now)["c1"].has(CaptureKind::Record));
+        assert!(
+            r.visible(now + LINGER + Duration::from_millis(1))
+                .is_empty()
+        );
+        // Nothing is created for a call that is over.
+        r.clear_call("c2");
+        r.recording_finished("c2");
+        assert!(r.visible(Instant::now()).get("c2").is_none());
     }
 
     #[test]

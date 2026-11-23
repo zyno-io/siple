@@ -1391,8 +1391,9 @@ impl CallState {
     }
 
     pub fn record_stop(&mut self) {
-        self.finish_recording();
+        // Flag first: whoever sees `RecordFinished` must not still see the recording running.
         self.shared.recording.store(false, Ordering::Release);
+        self.finish_recording();
     }
 
     /// Closes the running recording's file (event `RecordFinished`) without touching the flag.

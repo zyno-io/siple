@@ -188,7 +188,7 @@ the call was retried once with plain RTP.
 `call.pickup` or the account's `audio_sink`); empty otherwise. While it is not empty, and for two seconds after an
 agent request, the app shows a badge on the call (and on its line in the rail), a banner under the header on every
 screen, and a line in the tray menu and tooltip: "Agent listening", "Agent transcribing" or, for a recording, "Recording"
-(the recording may come from the user's own config, so the label does not say "Agent")
+(the recording may come from the user's own config, so the label does not say "Agent").
 
 ## Testing an account and keyring passwords
 
