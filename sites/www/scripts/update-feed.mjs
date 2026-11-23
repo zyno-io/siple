@@ -1,12 +1,14 @@
 #!/usr/bin/env node
 /**
  * Writes public/updates/v1/releases.json, the update feed of the direct-download builds of the app
- * (crates/siple-core/src/update/site.rs asks https://siple.app/updates/v1/releases.json about every hour and falls
- * back to the GitHub releases API when the site gives no usable answer).
+ * (crates/siple-core/src/update/site.rs asks https://siple.app/updates/v1/releases.json about every hour, and
+ * cross-checks GitHub's releases API at most once a day; it falls back to GitHub, on the same daily budget, when
+ * the site gives no usable answer).
  *
  * The feed is a JSON array in the shape of the GitHub releases API, cut down to what the app's parser reads
  * (crates/siple-core/src/update/releases.rs): published releases only (no drafts), newest first, at most 20,
- * pre-releases included (the app's channel setting filters them). The file is unsigned and only a hint: the app
+ * pre-releases included (the app's channel setting filters them). Release notes (`body`) are left out: the app
+ * never reads them, and cutting text can split a character and make the file unparsable. The file is unsigned and only a hint: the app
  * installs from the minisign-signed SHA256SUMS of the version it found, never from anything in here.
  *
  * Runs before `astro build` (npm run build). Generated, not committed.
@@ -14,7 +16,10 @@
  *                            anonymous (60 per hour per IP, plenty for a local build).
  *   SIPLE_FEED=skip          local builds only: write no feed (offline work). Refused in GitHub Actions.
  *   SIPLE_EXPECT_VERSION     release and tag builds (set by www.yml): the build fails unless the newest stable
- *                            release in the feed is this version. Other builds (staging from main, pull requests)
+ *                            release in the feed is the CHANGELOG version (the tag being built; on a pre-release
+ *                            publish www.yml builds the latest stable tag, so that is the stable version, and the
+ *                            new release candidate lands in the feed alongside it). The release may not be in the
+ *                            list yet: the build looks again RETRIES times, RETRY_DELAY_MS apart, before failing. Other builds (staging from main, pull requests)
  *                            only warn, since main's CHANGELOG may name a version that is not published yet.
  *   SIPLE_CHANGELOG          the CHANGELOG to read, as in src/data/release.ts.
  *   SIPLE_RELEASES_JSON      a file to read instead of calling GitHub (tests, offline checks).
@@ -26,7 +31,9 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 export const REPO = 'zyno-io/siple';
 export const MAX_RELEASES = 20;
-const MAX_BODY_CHARS = 10_000;
+/** Strict builds look again this many times (after the first try), this far apart, before giving up. */
+export const RETRIES = 5;
+export const RETRY_DELAY_MS = 30_000;
 const TAG = /^v(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?$/;
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -65,7 +72,6 @@ export function buildFeed(releases) {
       prerelease: Boolean(r.prerelease) || r.tag_name.includes('-'),
       published_at: r.published_at ?? null,
       html_url: r.html_url,
-      ...(typeof r.body === 'string' && r.body ? { body: r.body.slice(0, MAX_BODY_CHARS) } : {}),
       assets: (Array.isArray(r.assets) ? r.assets : [])
         // The app only takes assets that finished uploading.
         .filter((a) => a && a.state === 'uploaded' && typeof a.name === 'string' && Number.isSafeInteger(a.size))
@@ -147,6 +153,23 @@ async function fetchReleases() {
   return all;
 }
 
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Fetches the feed until `checkFeed` finds nothing wrong, for strict builds: the list may lag the release that was
+ * just published. `fetchFn`, `wait` and the counts are parameters for the self-checks. Returns `{ feed, problems }`
+ * of the last attempt.
+ */
+export async function fetchChecked(version, strict, { fetchFn = fetchReleases, wait = sleep, retries = RETRIES, delayMs = RETRY_DELAY_MS } = {}) {
+  for (let attempt = 0; ; attempt++) {
+    const feed = buildFeed(await fetchFn());
+    const problems = checkFeed(feed, version);
+    if (!problems.length || !strict || attempt >= retries) return { feed, problems };
+    console.warn(`update-feed: ${problems[0]}; looking again in ${delayMs / 1000} s (${attempt + 1}/${retries})`);
+    await wait(delayMs);
+  }
+}
+
 async function main() {
   if (process.env.SIPLE_FEED === 'skip') {
     if (process.env.GITHUB_ACTIONS) throw new Error('SIPLE_FEED=skip is not allowed in GitHub Actions: the deploy must carry the feed');
@@ -155,9 +178,8 @@ async function main() {
   }
   const changelog = resolve(process.cwd(), process.env.SIPLE_CHANGELOG ?? '../../CHANGELOG.md');
   const version = changelogVersion(readFileSync(changelog, 'utf8'));
-  const feed = buildFeed(await fetchReleases());
-  const problems = checkFeed(feed, version);
   const strict = Boolean(process.env.SIPLE_EXPECT_VERSION);
+  const { feed, problems } = await fetchChecked(version, strict);
   if (problems.length && strict) {
     throw new Error(`the update feed does not carry the release being published:\n  - ${problems.join('\n  - ')}`);
   }

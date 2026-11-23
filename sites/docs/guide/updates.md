@@ -92,6 +92,13 @@ User-Agent: Siple/<your version>
 Accept: application/vnd.github+json
 ```
 
+GitHub is asked at most once per 24 hours while Siple runs, either way. When siple.app answers, that one request is a cross-check: the
+two lists are merged and, for a release both list, GitHub's entry is used. So a siple.app that is out of date (or wrong) can hide an
+update for about a day at most, and a release candidate published since the site was last rebuilt shows up within a day. When
+siple.app does not answer and GitHub was already asked less than 24 hours ago, Siple does not ask again: the check fails
+(shown in Settings), retries after 5, 10, 20 and 40 minutes, then hourly, against siple.app only, and keeps the last list it had. A
+siple.app outage therefore costs GitHub at most one request per installation per day.
+
 If GitHub limits requests (HTTP 429 or 403), Siple waits as long as GitHub asks before trying again. The list only says which
 version exists; an install still downloads from the project's GitHub release and is checked against its signed checksum list (see below).
 
@@ -111,7 +118,7 @@ does for the Store's own updates; Siple sends no request of its own. A copy that
 package) does not check.
 
 In every case there is no identifier, no account or call information, no install ID and no cookie. The server (siple.app, GitHub or Apple)
-sees your IP address, as any web server does. A failed check (offline, a firewall) is logged and shown in Settings; it never opens
+sees your IP address, as any web server does (siple.app's web server logs each request, so a running install shows up there about once an hour as IP address, time and version). A failed check (offline, a firewall) is logged and shown in Settings; it never opens
 a dialog.
 
 This is the only network activity Siple starts on its own. Siple has no telemetry.

@@ -3,14 +3,19 @@ name: Website
 # Builds the Astro marketing site in sites/www/ and publishes it to ZynoHosting.
 #   - www-staging.siple.app (alpha cluster): automatically on every push to main.
 #   - siple.app (production): when a stable GitHub release is published (release.yml uploads a draft; publishing it
-#     by hand fires `release: published`). The site is built from the release's tag. Release candidates never
-#     publish it. Manually: Actions > Website > Run workflow from main or a stable tag (v1.2.3), target =
+#     by hand fires `release: published`). The site is built from the release's tag. Manually: Actions > Website > Run workflow from main or a stable tag (v1.2.3), target =
 #     production (e.g. a copy fix between releases).
 #     Before deploying, the job checks that the CHANGELOG version matches the tag and that every download link in
 #     the built page is live, so siple.app never links to a draft or missing asset.
 #     The build also writes the app's update feed (/updates/v1/releases.json, scripts/update-feed.mjs) from the
 #     GitHub releases list. On a release build it fails unless the newest stable release in the feed is the tag, so
 #     a production deploy always carries the release that was just published.
+#   - A published release candidate (`release: published`, prerelease) also redeploys production, so the update feed
+#     lists it at once (the app's prerelease channel reads the feed). The site is built from the source of the latest
+#     stable tag, not from the candidate's, so the page's download links and text stay on the stable release; only
+#     the feed (fetched live) gains the candidate. The latest stable tag must already carry the feed script. Its
+#     deploy has its own concurrency group, so it can never replace a pending stable deploy, and it re-checks that
+#     no newer stable release appeared while it ran.
 # Pull requests only build the site; they never deploy.
 #
 # Each deploy job reads ZYNOHOSTING_DEPLOY_TOKEN from its GitHub environment (www-staging, www-production).
@@ -33,6 +38,7 @@ on:
       - 'CHANGELOG.md'
       - '.github/workflows/www.yml'
   # Not a tag push: assets only become public when the draft release is published, ~20 minutes after the tag.
+  # A published release candidate refreshes the update feed on production (see above).
   release:
     types: [published]
   workflow_dispatch:
@@ -55,17 +61,45 @@ concurrency:
 jobs:
   build:
     name: build
-    # A published release candidate has nothing to build: it never deploys, and its tag (v0.3.0-rc.1) isn't a
-    # CHANGELOG version.
-    if: github.event_name != 'release' || (!github.event.release.prerelease && !contains(github.event.release.tag_name, '-'))
+    # A published release candidate builds the latest stable tag (its own tag, v0.3.0-rc.1, isn't a CHANGELOG
+    # version), so that the feed lists it while the page stays on the stable release.
+    if: >-
+      github.event_name != 'release' || github.event.release.prerelease ||
+      (!github.event.release.prerelease && !contains(github.event.release.tag_name, '-'))
     runs-on: ubuntu-latest
+    outputs:
+      # Set on a release candidate run: the stable tag the site was built from.
+      stable-tag: ${{ steps.src.outputs.ref }}
     env:
       # @playwright/test (VRT, local only) is a devDependency; the build never needs its browsers.
       PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
       # Release and tag builds: src/data/release.ts fails the build unless the newest CHANGELOG version is this tag.
+      # (A release candidate run replaces it with the stable tag it builds, in the Build step.)
       SIPLE_EXPECT_VERSION: ${{ github.event_name == 'release' && github.event.release.tag_name || (github.ref_type == 'tag' && github.ref_name || '') }}
     steps:
+      - name: Find the latest stable tag (release candidate runs)
+        id: src
+        if: github.event_name == 'release' && github.event.release.prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          # Published, not a draft, not a pre-release, a plain vX.Y.Z tag; the highest version wins.
+          tag=$(gh api --paginate "repos/$GH_REPO/releases?per_page=100" \
+                  --jq '.[] | select(.draft == false and .prerelease == false) | .tag_name' \
+                | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n1 || true)
+          [ -n "$tag" ] || { echo "::error::no stable release found to build the site from"; exit 1; }
+          echo "release candidate ${{ github.event.release.tag_name }}: building the site from the latest stable tag $tag"
+          echo "ref=$tag" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Empty (the event's own ref) except on a release candidate run.
+          ref: ${{ steps.src.outputs.ref }}
+      - name: Check the stable tag carries the feed script
+        if: steps.src.outputs.ref != ''
+        run: |
+          [ -f sites/www/scripts/update-feed.mjs ] || { echo "::error::${{ steps.src.outputs.ref }} predates the update feed; nothing to refresh until a stable release includes it"; exit 1; }
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: sites/www/.nvmrc
@@ -82,6 +116,8 @@ jobs:
         # GITHUB_TOKEN (contents: read) lifts the API rate limit of the update feed fetch (scripts/update-feed.mjs).
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          # On a release candidate run the CHANGELOG is the stable tag's: the feed's newest stable must be that tag.
+          SIPLE_EXPECT_VERSION: ${{ steps.src.outputs.ref || env.SIPLE_EXPECT_VERSION }}
         run: npm run build
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: github.event_name != 'pull_request'
@@ -132,19 +168,24 @@ jobs:
   deploy-production:
     name: deploy (siple.app)
     needs: build
-    # A published stable release (its tag has no "-", so no v1.2.3-rc.1), or a manual run from main or a stable tag.
+    # A published stable release (its tag has no "-", so no v1.2.3-rc.1), a published release candidate (the build
+    # is the latest stable tag's, refreshing the feed), or a manual run from main or a stable tag.
     # A manual run from main while main's CHANGELOG names an unreleased version stops at the link check below.
     if: >-
       (github.event_name == 'release' && !github.event.release.prerelease && !github.event.release.draft &&
        startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, '-')) ||
+      (github.event_name == 'release' && github.event.release.prerelease && !github.event.release.draft &&
+       startsWith(github.ref, 'refs/tags/v')) ||
       (github.event_name == 'workflow_dispatch' && inputs.target == 'production' &&
        (github.ref == 'refs/heads/main' || (startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, '-'))))
     runs-on: ubuntu-latest
     environment:
       name: www-production
       url: https://siple.app
+    # A queued run replaces an older queued one in the same group, so release candidate deploys get their own group:
+    # they can never cancel a pending stable deploy (the stable group also serves manual runs).
     concurrency:
-      group: www-deploy-production
+      group: ${{ github.event_name == 'release' && github.event.release.prerelease && 'www-deploy-production-rc' || 'www-deploy-production' }}
       cancel-in-progress: false
     steps:
       # The CLI and its whole dependency tree come from sites/www/deploy/package-lock.json, installed
@@ -163,6 +204,19 @@ jobs:
         with:
           name: www-dist
           path: dist
+      - name: Check no newer stable release appeared (release candidate runs)
+        if: needs.build.outputs.stable-tag != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          BUILT: ${{ needs.build.outputs.stable-tag }}
+        run: |
+          set -euo pipefail
+          # A stable release published meanwhile has its own deploy; this older build must not overwrite it.
+          now=$(gh api --paginate "repos/$GH_REPO/releases?per_page=100" \
+                  --jq '.[] | select(.draft == false and .prerelease == false) | .tag_name' \
+                | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n1 || true)
+          [ "$now" = "$BUILT" ] || { echo "::error::the latest stable release is now ${now:-unknown}, not $BUILT; not deploying (the stable release's own run deploys)"; exit 1; }
       - name: Check every download link is live
         # A draft release's assets 404; never publish a page whose buttons are broken.
         run: |

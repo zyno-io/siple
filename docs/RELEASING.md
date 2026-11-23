@@ -173,7 +173,7 @@ A tag for another version is ignored. Packaging scripts need no change.
 
 Where the update check looks is decided at run time from how the process was installed (`[updates]` in `docs/CONFIG.md`; detection
 only): direct-download builds read the release feed of siple.app (`https://siple.app/updates/v1/releases.json`) about every hour and
-fall back to the GitHub releases list in the same check when the site does not answer usably; the Mac App Store edition asks Apple's lookup of its listing, the
+fall back to the GitHub releases list in the same check when the site does not answer usably, on a budget of one GitHub request per process per 24 hours that the app also uses for a daily cross-check of the site's list (see `docs/CONFIG.md`); the Mac App Store edition asks Apple's lookup of its listing, the
 Microsoft Store edition asks Windows' Store service; the Flatpak is a store build (`--features store`) that makes no check at all
 (Flatpak updates it, `disabled_reason: managed_by_flatpak`). Releases that should be offered on GitHub must be **published** (drafts are
 skipped), tagged `v<semver>`; release candidates `v<semver>-rc.N` are marked as GitHub pre-releases and are only offered to users on the
@@ -183,12 +183,22 @@ skipped), tagged `v<semver>`; release candidates `v<semver>-rc.N` are marked as 
 
 `sites/www/scripts/update-feed.mjs` writes the feed (`public/updates/v1/releases.json`, generated, not committed) at the start of every
 site build: the GitHub releases list (read with the workflow's `GITHUB_TOKEN`, so no rate limit), cut down to published releases with a
-`vX.Y.Z[-pre]` tag, newest first, at most 20, pre-releases included. The app's channel logic does the filtering. The `Website` workflow
+`vX.Y.Z[-pre]` tag, newest first, at most 20, pre-releases included, and only the fields the app reads (no release notes: `body` is not in the feed, since the app never reads it and cutting text could split a character and break the JSON). The app's channel logic does the filtering. The `Website` workflow
 deploys siple.app when you **publish** the release (`release: published`), built from the tag, so publishing is what makes the feed
 current; there is no separate step. The release build fails, and nothing is deployed, when the fetch fails or the newest stable release
 in the feed is not the tag and the newest CHANGELOG section (a draft is not in the feed, so publish first). The production deploy job
 checks again that `dist/updates/v1/releases.json` exists and names the version the page links. A staging build from `main` (and a pull
-request) only warns on a mismatch, since the CHANGELOG may name a version that is not published yet.
+request) only warns on a mismatch, since the CHANGELOG may name a version that is not published yet. A release build looks again up to
+5 times, 30 s apart, before failing, since the release may not be in the API's list yet.
+
+**Publishing a release candidate also refreshes the feed.** `release: published` for a pre-release redeploys siple.app from the source
+of the **latest stable tag** (found with the releases API: published, not a draft, not a pre-release, highest `vX.Y.Z`), so the page's
+download links stay on the stable release while the feed, fetched live, gains the candidate at once and the `prerelease` channel sees
+it. The strict version check compares against that stable tag's CHANGELOG. The deploy runs in its own concurrency group
+(`www-deploy-production-rc`), so it never replaces a pending stable deploy, and it fails instead of deploying when a newer stable
+release appeared while it built. The latest stable tag must contain the feed script: until one does, a candidate's run fails early
+with that message and the feed refreshes with the next stable release. Even without the refresh, the app sees a candidate within a day:
+it cross-checks GitHub once per 24 hours.
 The feed is unsigned: the installer ignores everything in it except the version and the asset names and sizes, and trusts only the
 minisign-signed `SHA256SUMS` of that version (its trusted comment must read `siple v<version> SHA256SUMS`), so a wrong feed can hide an
 update but cannot make the app install anything unsigned or an older release. If the site's feed ever lags (a failed deploy), apps

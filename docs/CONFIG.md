@@ -294,8 +294,14 @@ What is sent, by edition:
   with the headers `User-Agent: Siple/<version>` and `Accept: application/json` (plus `If-None-Match` with the ETag of the previous
   answer, so an unchanged list costs almost nothing). If siple.app does not answer, answers with an error or sends a list Siple cannot
   read, the same check asks GitHub instead: `GET https://api.github.com/repos/zyno-io/siple/releases?per_page=20` with
-  `User-Agent: Siple/<version>` and `Accept: application/vnd.github+json`. Each host sees your IP address, as any web server does,
-  and the app version. The list is unsigned and only says which version exists: an install downloads from the project's GitHub
+  `User-Agent: Siple/<version>` and `Accept: application/vnd.github+json`. GitHub has **one request budget of 24 hours per
+  process**, spent in one of two ways: the fallback above, or a cross-check when siple.app did answer (the same GitHub request, whose
+  list is merged with the site's by release tag, GitHub's entry winning; a stale siple.app can then hide an update for about a day
+  at most, and a release candidate published since the last site build shows up within a day). Inside the window a siple.app
+  failure is reported as the check's error and retried after 5, 10, 20 and 40 minutes, then hourly, against siple.app only (the last
+  list is kept), so an outage costs GitHub at most one request per install per day. A failed cross-check keeps the site's list.
+  siple.app is asked with an 8 s time limit and GitHub with 15 s (one check is bounded at 30 s). Each host sees your IP address, as
+  any web server does, and the app version; siple.app's web server logs each request like any other. The list is unsigned and only says which version exists: an install downloads from the project's GitHub
   release and trusts only the minisign-signed `SHA256SUMS` of that exact version. `app.update_status` reports `source: github`
   (direct downloads) and `feed: site|github`, the host that answered the last check.
 - **Mac App Store**: one anonymous HTTPS `GET https://itunes.apple.com/lookup?id=6836164262` (Apple's public lookup of Siple's own

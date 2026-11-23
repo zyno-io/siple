@@ -41,8 +41,11 @@ pub const MIN_MANUAL_INTERVAL: Duration = Duration::from_secs(60);
 /// monotonic sleep does not run while the machine sleeps. Short against the hourly interval, so a
 /// machine that wakes up checks within minutes.
 const MAX_SLEEP: Duration = Duration::from_secs(15 * 60);
-/// Upper bound for any fetcher, whatever it does.
-const FETCH_LIMIT: Duration = Duration::from_secs(20);
+/// Upper bound for any fetcher, whatever it does. A direct-build check can ask siple.app (up to
+/// `SITE_TIMEOUT`, 8 s) and then GitHub (up to `REQUEST_TIMEOUT`, 15 s), so this covers both
+/// requests plus a margin; the site's own shorter timeout is what keeps a hanging site from
+/// starving the GitHub request. The only user is the fetch in `Updater::check`.
+const FETCH_LIMIT: Duration = Duration::from_secs(30);
 /// First retry after a failed check of a source that is checked less often than hourly (the
 /// stores); doubles per failure up to the interval.
 const RETRY_BASE: Duration = Duration::from_secs(3600);
@@ -665,7 +668,9 @@ impl Updater {
                 // After the clock jumps backwards, nothing may stay due further away than one
                 // interval (or a "last check" lie in the future).
                 let mut st = self.st();
-                let cap = now + delta(self.o.interval);
+                // The latest a jittered check can be due is `interval` + [`JITTER_PERCENT`]: capping
+                // at exactly one interval would clip every late draw to the interval.
+                let cap = now + delta(jittered(self.o.interval, u32::MAX));
                 if st.next_due.is_some_and(|d| d > cap) {
                     st.next_due = Some(cap);
                 }
@@ -1295,6 +1300,13 @@ mod tests {
         assert!(DEFAULT_BACKOFF.as_secs() <= CHECK_INTERVAL.as_secs());
         assert!(MAX_SLEEP.as_secs() < CHECK_INTERVAL.as_secs());
         assert!(MIN_MANUAL_INTERVAL.as_secs() < RETRY_BASE_FAST.as_secs());
+        // One check may ask the site, then GitHub, one after the other.
+        assert!(
+            FETCH_LIMIT.as_secs()
+                >= crate::update::site::SITE_TIMEOUT.as_secs()
+                    + crate::update::http::REQUEST_TIMEOUT.as_secs()
+                    + 5
+        );
     };
 
     #[test]
@@ -1347,6 +1359,45 @@ mod tests {
         let d = due_in(&r).as_secs_f64();
         let base = STORE_CHECK_INTERVAL.as_secs_f64();
         assert!(d >= base * 0.9 - 1.0 && d <= base * 1.1 + 1.0, "{d}");
+    }
+
+    /// Records when each fetch happened (paused tokio time) and always answers with a list.
+    struct Stamps(Mutex<Vec<tokio::time::Instant>>);
+
+    #[async_trait]
+    impl ReleaseFetcher for Stamps {
+        async fn fetch(&self, _: Option<&str>, _: &str) -> Step {
+            self.0.lock().unwrap().push(tokio::time::Instant::now());
+            Fake::body("\"e\"")
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn the_scheduler_uses_the_whole_jitter_range_including_late_checks() {
+        let stamps = Arc::new(Stamps(Mutex::default()));
+        let u = with_interval(stamps.clone(), CHECK_INTERVAL);
+        u.enable_jitter();
+        let cancel = CancellationToken::new();
+        let h = spawn_updater(u, cancel.clone());
+        tokio::time::sleep(Duration::from_secs(60 * 3600)).await;
+        cancel.cancel();
+        h.await.unwrap();
+        let t = stamps.0.lock().unwrap().clone();
+        assert!(t.len() > 40, "{} checks", t.len());
+        let gaps: Vec<f64> = t.windows(2).map(|w| (w[1] - w[0]).as_secs_f64()).collect();
+        let base = CHECK_INTERVAL.as_secs_f64();
+        for g in &gaps {
+            assert!(
+                *g >= base * 0.9 - 2.0 && *g <= base * 1.1 + 2.0,
+                "gap {g} outside 0.9x..1.1x"
+            );
+        }
+        // Before the fix the scheduler capped every due time at one interval.
+        assert!(
+            gaps.iter().any(|g| *g > base + 60.0),
+            "no gap above the interval: {gaps:?}"
+        );
+        assert!(gaps.iter().any(|g| *g < base - 60.0), "no gap below it");
     }
 
     #[tokio::test(start_paused = true)]

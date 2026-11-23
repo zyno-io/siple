@@ -451,7 +451,7 @@ fn updates_help(u: &siple_core::update::UpdateStatus) -> &'static str {
     use siple_core::update::{DisabledReason, SourceName};
     match (u.source, u.disabled_reason) {
         (SourceName::Github, _) => {
-            "Once a day Siple asks GitHub whether a newer release exists (one anonymous request that carries only the version). A new version is downloaded only when you choose to install it."
+            "About once an hour Siple asks siple.app for the list of releases (one anonymous request that carries only the version). About once a day it also asks GitHub as a second opinion, and asks GitHub alone when siple.app does not answer. A new version is downloaded only when you choose to install it."
         }
         (SourceName::AppStore, _) => {
             "Once a day Siple asks the App Store whether a newer version exists (one anonymous request to Apple that carries only the version). The App Store installs updates."

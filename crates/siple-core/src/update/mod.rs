@@ -5,8 +5,9 @@
 //! Which source answers is decided at run time from the distribution channel ([`source::select`]):
 //!
 //! - direct builds: one anonymous HTTPS GET of the release feed of siple.app
-//!   (`https://siple.app/updates/v1/releases.json`, see [`site`]), or, when the site gives no
-//!   usable answer, of the GitHub releases list of this project (see [`http`]);
+//!   (`https://siple.app/updates/v1/releases.json`, see [`site`]). GitHub's releases list of this
+//!   project (see [`http`]) is asked at most once per process per 24 hours: as a cross-check
+//!   merged into the site's list, or instead of the site when it gives no usable answer;
 //! - Mac App Store: one anonymous HTTPS GET of Apple's lookup of Siple's listing;
 //! - Microsoft Store: a question to Windows' Store service about this package (Siple sends
 //!   nothing itself);

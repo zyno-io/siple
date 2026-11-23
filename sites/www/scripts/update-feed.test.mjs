@@ -1,7 +1,7 @@
 // Self-checks of scripts/update-feed.mjs: `npm run feed:test` (node's built-in runner, no network).
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { buildFeed, changelogVersion, checkFeed, newestStable, parseTag } from './update-feed.mjs';
+import { buildFeed, changelogVersion, checkFeed, fetchChecked, newestStable, parseTag } from './update-feed.mjs';
 
 const asset = (name, size = 1, state = 'uploaded') => ({ name, size, state, browser_download_url: `https://example/${name}`, id: 7, uploader: {} });
 const rel = (tag, extra = {}) => ({
@@ -32,10 +32,20 @@ test('drafts and non-version tags are dropped, newest first, only the app fields
     rel('v0.2.4', { published_at: '2026-11-20T00:00:00Z', assets: [asset('a'), asset('b', 2, 'starter'), asset('c', 'x')] }),
   ]);
   assert.deepEqual(feed.map((r) => r.tag_name), ['v0.2.4', 'v0.3.0-rc.1', 'v0.2.0']);
-  assert.deepEqual(Object.keys(feed[0]), ['tag_name', 'name', 'draft', 'prerelease', 'published_at', 'html_url', 'body', 'assets']);
+  assert.deepEqual(Object.keys(feed[0]), ['tag_name', 'name', 'draft', 'prerelease', 'published_at', 'html_url', 'assets']);
   assert.deepEqual(feed[0].assets, [{ name: 'a', size: 1, state: 'uploaded', browser_download_url: 'https://example/a' }]);
   assert.equal(feed[1].prerelease, true);
   assert.ok(feed.every((r) => r.draft === false));
+});
+
+test('release notes are not in the feed, so no text is cut (a surrogate pair stays whole)', () => {
+  const notes = `${'a'.repeat(9_999)}\u{1F600} and more`;
+  const feed = buildFeed([rel('v0.2.0', { body: notes })]);
+  assert.ok(!('body' in feed[0]));
+  assert.ok(!JSON.stringify(feed).includes('and more'));
+  // The file always parses as strict JSON text (no lone surrogate from a cut).
+  assert.deepEqual(JSON.parse(JSON.stringify(feed)), feed);
+  assert.ok(!/[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/.test(JSON.stringify(feed)));
 });
 
 test('at most 20, keeping the newest', () => {
@@ -64,4 +74,30 @@ test('the check fails unless the newest stable is the CHANGELOG version, with it
 test('the CHANGELOG version', () => {
   assert.equal(changelogVersion('# Changelog\n\n## Unreleased\n\n### New\n\n## 0.2.4 (2026-11-22)\n\n## 0.2.3 (2026-11-01)\n'), '0.2.4');
   assert.throws(() => changelogVersion('## Unreleased\n## 0.2.4\n'));
+});
+
+test('a strict build looks again while the release is not in the list yet', async () => {
+  const lists = [[rel('v0.2.3')], [rel('v0.2.3')], [rel('v0.2.4'), rel('v0.2.3')]];
+  let calls = 0;
+  const waits = [];
+  const out = await fetchChecked('0.2.4', true, { fetchFn: async () => lists[Math.min(calls++, 2)], wait: async (ms) => waits.push(ms), retries: 5, delayMs: 30_000 });
+  assert.deepEqual(out.problems, []);
+  assert.equal(calls, 3);
+  assert.deepEqual(waits, [30_000, 30_000]);
+});
+
+test('a strict build gives up after 5 more tries, a normal build never retries', async () => {
+  let calls = 0;
+  const waits = [];
+  const stale = { fetchFn: async () => (calls++, [rel('v0.2.3')]), wait: async (ms) => waits.push(ms) };
+  const out = await fetchChecked('0.2.4', true, stale);
+  assert.equal(calls, 6);
+  assert.equal(waits.length, 5);
+  assert.ok(waits.every((ms) => ms === 30_000));
+  assert.match(out.problems[0], /newest stable release in the feed is v0\.2\.3/);
+  calls = 0;
+  waits.length = 0;
+  assert.equal((await fetchChecked('0.2.4', false, stale)).problems.length, 1);
+  assert.equal(calls, 1);
+  assert.deepEqual(waits, []);
 });
