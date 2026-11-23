@@ -232,9 +232,10 @@ app. `launch_at_login` is also in Settings > Notifications > Tray and window and
   hide-to-tray run `env -u WAYLAND_DISPLAY -u WAYLAND_SOCKET siple`.
 - **`launch_at_login`** writes a macOS LaunchAgent, a Windows `HKCU\...\Run` entry or a Linux autostart `.desktop` file for the
   running executable (the `.AppImage` file in the AppImage edition). `false` removes it. A non-default `--config` profile has its
-  own entry.
-  - *Mac App Store:* uses `SMAppService` (System Settings > General > Login Items). The switch there wins, and a non-default
-    `--config` profile leaves it alone.
+  own entry. On macOS, a copy running from a disk image or a quarantined download cannot start at login: Settings says
+  "Move Siple to Applications first" until you move it.
+  - *Mac App Store:* uses `SMAppService` (System Settings > General > Login Items). The switch there wins, and Siple re-checks the
+    login item's status after registering. A non-default `--config` profile leaves it alone and Settings shows a note.
   - *Microsoft Store:* no effect (logged at info), and Settings shows a note. Use Windows Settings > Apps > Startup.
   - *Flatpak:* goes through the desktop's Background portal, which may ask once. One entry serves the app, so the last profile
     to enable it wins. `false` removes the entry only if this profile registered it.
