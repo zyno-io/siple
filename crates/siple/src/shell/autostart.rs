@@ -413,6 +413,7 @@ pub fn location_problem(exe: &Path, read_only: impl Fn(&Path) -> bool) -> Option
 /// Whether `p` is on a read-only volume (`statvfs`; the updater's check, which the store build
 /// does not compile).
 #[cfg(target_os = "macos")]
+#[allow(clippy::unnecessary_cast)] // the flag types differ per OS
 fn read_only_volume(p: &Path) -> bool {
     use std::os::unix::ffi::OsStrExt;
     let Ok(c) = std::ffi::CString::new(p.as_os_str().as_bytes()) else {
