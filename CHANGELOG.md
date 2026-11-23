@@ -1,6 +1,12 @@
 <!-- siple-rename: keep (this file documents the legacy ZynoPhone names on purpose) -->
 # Changelog
 
+## Unreleased
+
+### New
+
+- The tray / menu-bar menu shows the version under the app name.
+
 ## 0.2.4 (2026-11-22)
 
 ### Fixed
