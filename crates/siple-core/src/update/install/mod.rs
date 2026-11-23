@@ -579,6 +579,18 @@ impl Drop for Staging {
     }
 }
 
+/// The per-target install lock, held until dropped.
+struct InstallLock(std::fs::File);
+
+impl Drop for InstallLock {
+    fn drop(&mut self) {
+        // Unlock before the close. A child process that another thread is starting holds a copy of
+        // every open file until its exec closes it, and a lock left to the close lasts as long as
+        // any copy: the next install would find it still held for a moment.
+        let _ = self.0.unlock();
+    }
+}
+
 impl Installer {
     /// The installer of an app. It adds its part to the updater's status.
     pub fn new(o: InstallerOptions) -> Arc<Self> {
@@ -1029,7 +1041,7 @@ impl Installer {
         }
     }
 
-    fn lock_target(&self, target: &Target) -> Result<std::fs::File, InstallError> {
+    fn lock_target(&self, target: &Target) -> Result<InstallLock, InstallError> {
         use std::hash::{Hash, Hasher};
         let mut h = std::collections::hash_map::DefaultHasher::new();
         target.root.hash(&mut h);
@@ -1068,7 +1080,7 @@ impl Installer {
                 "another Siple is installing an update",
             )
         })?;
-        Ok(f)
+        Ok(InstallLock(f))
     }
 
     async fn run_inner(

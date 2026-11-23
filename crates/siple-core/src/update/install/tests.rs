@@ -715,3 +715,17 @@ async fn the_commit_writes_the_record_the_new_version_reads() {
     assert_eq!((rec.from.as_str(), rec.to.as_str()), ("0.1.0", "0.2.0"));
     assert_eq!(rec.cleanup.len(), 1);
 }
+
+#[tokio::test(start_paused = true)]
+async fn the_lock_is_free_once_dropped_even_while_a_copy_is_open() {
+    let r = rig().await;
+    let t = r.plat.probe().unwrap();
+    let held = r.i.lock_target(&t).unwrap();
+    // A child that another thread is starting holds a copy of every open file until its exec.
+    let copy = held.0.try_clone().unwrap();
+    drop(held);
+    let _lock = r.i.lock_target(&t).expect("free while the copy is open");
+    drop(copy);
+    let e = r.i.lock_target(&t).err().expect("held");
+    assert_eq!(e.message, "another Siple is installing an update");
+}
