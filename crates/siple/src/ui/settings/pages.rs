@@ -879,35 +879,33 @@ mod mcp_snippet_tests {
     fn the_mac_app_store_snippet_uses_the_bundled_cli_path() {
         use super::{bundled_cli_path, mcp_snippet_for};
         use std::path::Path;
-        let command = |exe: Option<&Path>| -> String {
+        let command = |exe: Option<&Path>| -> std::path::PathBuf {
             let v: serde_json::Value =
                 serde_json::from_str(&mcp_snippet_for(&Channel::MAC_APP_STORE, exe)).unwrap();
             assert_eq!(v["mcpServers"]["siple"]["args"], serde_json::json!(["mcp"]));
-            v["mcpServers"]["siple"]["command"]
-                .as_str()
-                .unwrap()
-                .to_string()
+            // Path equality ignores the separator style (Windows runs this test too).
+            Path::new(v["mcpServers"]["siple"]["command"].as_str().unwrap()).to_path_buf()
         };
         assert_eq!(
             command(Some(Path::new(
                 "/Applications/Siple.app/Contents/MacOS/siple"
             ))),
-            "/Applications/Siple.app/Contents/MacOS/siple-cli"
+            Path::new("/Applications/Siple.app/Contents/MacOS/siple-cli")
         );
         assert_eq!(
             command(Some(Path::new(
                 "/Users/u/Apps/Siple.app/Contents/MacOS/siple"
             ))),
-            "/Users/u/Apps/Siple.app/Contents/MacOS/siple-cli"
+            Path::new("/Users/u/Apps/Siple.app/Contents/MacOS/siple-cli")
         );
         // Not inside a bundle: the default install location.
         assert_eq!(
             command(Some(Path::new("/tmp/target/debug/siple"))),
-            "/Applications/Siple.app/Contents/MacOS/siple-cli"
+            Path::new("/Applications/Siple.app/Contents/MacOS/siple-cli")
         );
         assert_eq!(
             command(None),
-            "/Applications/Siple.app/Contents/MacOS/siple-cli"
+            Path::new("/Applications/Siple.app/Contents/MacOS/siple-cli")
         );
         assert!(bundled_cli_path(Path::new("/x/Contents/MacOS/siple")).is_none());
         // Other editions keep the bare name.
