@@ -292,9 +292,7 @@ async fn end_cause_rejected_by_remote_and_by_us() {
         .dial("a", &format!("sip:x@{caddr}"), DialOptions::default())
         .await
         .unwrap();
-    let mut buf = vec![0u8; 8192];
-    let (n, from) = callee.recv_from(&mut buf).await.unwrap();
-    let invite = String::from_utf8_lossy(&buf[..n]).into_owned();
+    let (invite, from) = recv_request(&callee, "INVITE").await;
     let resp = format!(
         "SIP/2.0 486 Busy Here\r\n{}\r\n{}\r\n{};tag=callee1\r\n{}\r\n{}\r\nContent-Length: 0\r\n\r\n",
         hdr(&invite, "via").join("\r\n"),
@@ -1159,9 +1157,7 @@ async fn outbound_answer_holds_lines_activated_while_ringing() {
         .await
         .unwrap();
     assert_eq!(state(&r, &a1), CallState::Held);
-    let mut buf = vec![0u8; 8192];
-    let (n, from) = callee.recv_from(&mut buf).await.unwrap();
-    let invite = String::from_utf8_lossy(&buf[..n]).into_owned();
+    let (invite, from) = recv_request(&callee, "INVITE").await;
     // The user goes back to the first call while the second still rings.
     r.stack.activate(&a1).await.unwrap();
     assert_eq!(state(&r, &a1), CallState::Active);
