@@ -139,6 +139,13 @@ impl Channel {
         )
     }
 
+    /// Whether the app can change which links it opens at runtime (`[ui] handle_links`). Store and
+    /// sandboxed editions cannot: the Info.plist, AppxManifest or Flatpak desktop file declares the
+    /// schemes at install time, so the setting would do nothing there.
+    pub fn can_register_links(&self) -> bool {
+        !self.is_packaged()
+    }
+
     /// Arguments that must come first when the file is started again: `--appimage-extract-and-run`
     /// for an AppImage that runs from an extraction directory (the runtime honours it only as the
     /// first argument), nothing otherwise.
@@ -626,6 +633,10 @@ mod tests {
         let m = Channel::msix("a_b", Some("a_b!App"));
         assert!(m.is_packaged() && m.can_exec && !m.sandboxed);
         assert_eq!(ChannelKind::MacAppStore.as_str(), "mas");
+        assert!(Channel::DIRECT.can_register_links());
+        assert!(!Channel::MAC_APP_STORE.can_register_links());
+        assert!(!Channel::FLATPAK.can_register_links());
+        assert!(!m.can_register_links());
         let f = std::hint::black_box(Channel::FLATPAK);
         assert!(f.is_packaged() && f.sandboxed && !f.can_exec);
         assert_eq!(ChannelKind::Flatpak.as_str(), "flatpak");

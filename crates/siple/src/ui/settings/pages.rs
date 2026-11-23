@@ -277,16 +277,20 @@ pub(super) fn notifications(ui: &mut egui::Ui, cx: &Cx, out: &mut Vec<UiAction>)
             "",
             &v,
         );
-        sec_toggle(
-            ui,
-            p,
-            out,
-            "ui",
-            "handle_links",
-            "Open sip:, sips:, tel:, callto: and siple: setup links",
-            "",
-            &v,
-        );
+        if siple_core::config::channel::current().can_register_links() {
+            sec_toggle(
+                ui,
+                p,
+                out,
+                "ui",
+                "handle_links",
+                "Open sip:, sips:, tel:, callto: and siple: setup links",
+                "",
+                &v,
+            );
+        } else {
+            links_automatic_note(ui, p);
+        }
     });
 }
 
@@ -746,10 +750,42 @@ pub(in crate::ui) fn sec_toggle_pub(
     sec_toggle(ui, p, out, section, key, label, "", v);
 }
 
+/// Faint one-liner shown instead of the `handle_links` toggle in editions that declare the link
+/// schemes at install time.
+pub(in crate::ui) fn links_automatic_note(ui: &mut egui::Ui, p: &Palette) {
+    ui.label(
+        egui::RichText::new("Links open in Siple automatically in this edition.")
+            .size(FS_SMALL)
+            .color(p.faint),
+    );
+}
+
+/// Absolute path of the bundled `siple-cli` for an executable inside `Siple.app`
+/// (`.../Siple.app/Contents/MacOS/siple`): the CLI sits next to it. `None` outside a bundle.
+fn bundled_cli_path(exe: &std::path::Path) -> Option<std::path::PathBuf> {
+    let dir = exe.parent()?;
+    let in_bundle = dir.ends_with("Contents/MacOS")
+        && dir
+            .ancestors()
+            .nth(2)
+            .is_some_and(|b| b.extension().is_some_and(|e| e == "app"));
+    in_bundle.then(|| dir.join("siple-cli"))
+}
+
 /// The MCP client configuration for `channel`: the Flatpak edition's CLI is reached through
-/// `flatpak run`, the AppImage's through the file with `--cli`, every other edition has
-/// `siple-cli` on its path.
+/// `flatpak run`, the AppImage's through the file with `--cli`, the Mac App Store edition's by the
+/// absolute path of the bundled CLI (not on `PATH`), every other edition has `siple-cli` on its
+/// path.
 fn mcp_snippet(channel: &siple_core::config::channel::Channel) -> String {
+    let exe = std::env::current_exe().ok();
+    mcp_snippet_for(channel, exe.as_deref())
+}
+
+/// [`mcp_snippet`] for a given running executable.
+fn mcp_snippet_for(
+    channel: &siple_core::config::channel::Channel,
+    exe: Option<&std::path::Path>,
+) -> String {
     use siple_core::config::channel::ChannelKind;
     if let Some(file) = channel.appimage {
         // The runtime option must come first; `--cli mcp` selects the CLI whatever argv[0] is.
@@ -765,6 +801,14 @@ fn mcp_snippet(channel: &siple_core::config::channel::Channel) -> String {
             "{{\n  \"mcpServers\": {{\n    \"siple\": {{\n      \"command\": \"flatpak\",\n      \"args\": [\"run\", \"--command=siple-cli\", \"{}\", \"mcp\"]\n    }}\n  }}\n}}",
             siple_core::config::APP_ID
         )
+    } else if channel.kind == ChannelKind::MacAppStore {
+        let cli = exe
+            .and_then(bundled_cli_path)
+            .unwrap_or_else(|| "/Applications/Siple.app/Contents/MacOS/siple-cli".into());
+        serde_json::to_string_pretty(&serde_json::json!({
+            "mcpServers": {"siple": {"command": cli.to_string_lossy(), "args": ["mcp"]}}
+        }))
+        .unwrap_or_default()
     } else {
         "{\n  \"mcpServers\": {\n    \"siple\": { \"command\": \"siple-cli\", \"args\": [\"mcp\"] }\n  }\n}"
             .to_string()
@@ -829,6 +873,51 @@ mod mcp_snippet_tests {
         );
         let d: serde_json::Value = serde_json::from_str(&direct).unwrap();
         assert_eq!(d["mcpServers"]["siple"]["args"], serde_json::json!(["mcp"]));
+    }
+
+    #[test]
+    fn the_mac_app_store_snippet_uses_the_bundled_cli_path() {
+        use super::{bundled_cli_path, mcp_snippet_for};
+        use std::path::Path;
+        let command = |exe: Option<&Path>| -> String {
+            let v: serde_json::Value =
+                serde_json::from_str(&mcp_snippet_for(&Channel::MAC_APP_STORE, exe)).unwrap();
+            assert_eq!(v["mcpServers"]["siple"]["args"], serde_json::json!(["mcp"]));
+            v["mcpServers"]["siple"]["command"]
+                .as_str()
+                .unwrap()
+                .to_string()
+        };
+        assert_eq!(
+            command(Some(Path::new(
+                "/Applications/Siple.app/Contents/MacOS/siple"
+            ))),
+            "/Applications/Siple.app/Contents/MacOS/siple-cli"
+        );
+        assert_eq!(
+            command(Some(Path::new(
+                "/Users/u/Apps/Siple.app/Contents/MacOS/siple"
+            ))),
+            "/Users/u/Apps/Siple.app/Contents/MacOS/siple-cli"
+        );
+        // Not inside a bundle: the default install location.
+        assert_eq!(
+            command(Some(Path::new("/tmp/target/debug/siple"))),
+            "/Applications/Siple.app/Contents/MacOS/siple-cli"
+        );
+        assert_eq!(
+            command(None),
+            "/Applications/Siple.app/Contents/MacOS/siple-cli"
+        );
+        assert!(bundled_cli_path(Path::new("/x/Contents/MacOS/siple")).is_none());
+        // Other editions keep the bare name.
+        assert!(
+            mcp_snippet_for(
+                &Channel::DIRECT,
+                Some(Path::new("/A/Siple.app/Contents/MacOS/siple"))
+            )
+            .contains("\"command\": \"siple-cli\"")
+        );
     }
 
     #[test]

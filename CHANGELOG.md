@@ -1,6 +1,18 @@
 <!-- siple-rename: keep (this file documents the legacy ZynoPhone names on purpose) -->
 # Changelog
 
+## Unreleased
+
+### New
+
+- Mac App Store edition: launch at login works (a login item you can also switch off in System Settings > General > Login Items).
+- Support page on siple.app, linked from the footer.
+
+### Fixed
+
+- Mac App Store, Microsoft Store and Flatpak editions: the link-handling switch is gone from Settings and the first-run wizard, where it did nothing. Links open in Siple automatically in these editions.
+- Mac App Store edition: the MCP snippet in Settings > Developer shows the full path of the bundled `siple-cli`, which is not on `PATH`.
+
 ## 0.2.5 (2026-11-23)
 
 ### New

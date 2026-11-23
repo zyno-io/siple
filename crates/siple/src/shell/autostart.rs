@@ -4,6 +4,9 @@
 //! [`apply`] writes or removes the real entry for the current OS:
 //! - macOS: LaunchAgent plist `~/Library/LaunchAgents/io.zyno.siple.plist` (works unsigned and
 //!   on macOS 12; `SMAppService` needs macOS 13 and a signed bundle);
+//! - Mac App Store: `SMAppService.mainAppService` register / unregister (macOS 13+, which that
+//!   edition requires); a LaunchAgent cannot work in the app sandbox. The login item appears in
+//!   System Settings > General > Login Items, where the user can also switch it off;
 //! - Windows: `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`;
 //! - Linux: `~/.config/autostart/io.zyno.siple.desktop` (XDG autostart);
 //! - Flatpak: the Background portal (`portal_background`), which writes that entry on the host.
@@ -253,9 +256,10 @@ fn remove_if_present(path: &Path) -> std::io::Result<()> {
 /// [`entry_name`]) which starts it, and disabling removes exactly that entry, wherever the
 /// executable was when it was written.
 ///
-/// A no-op in packaged editions: a LaunchAgent cannot work in the Mac App Store sandbox, and an
-/// MSIX run key would persist the versioned `WindowsApps` path (MSIX users enable the declared
-/// startup task in Windows Settings instead).
+/// The Mac App Store edition registers the main app with `SMAppService` (`config` is ignored: the
+/// service always starts the default profile). Otherwise a no-op in packaged editions: an MSIX run
+/// key would persist the versioned `WindowsApps` path (MSIX users enable the declared startup task
+/// in Windows Settings instead).
 ///
 /// The Flatpak edition asks the Background portal instead (`config_dir` holds its marker, `rt`
 /// drives the D-Bus call; both are unused elsewhere).
@@ -266,6 +270,10 @@ pub fn apply(
     rt: &tokio::runtime::Handle,
 ) -> std::io::Result<()> {
     let ch = siple_core::config::channel::current();
+    #[cfg(target_os = "macos")]
+    if uses_service_management(ch) {
+        return service_management(enabled, config);
+    }
     let portal = || {
         #[cfg(target_os = "linux")]
         return super::portal_background::sync(enabled, config, config_dir, rt);
@@ -290,6 +298,46 @@ fn dispatch(
 /// Whether the login entry goes through the Background portal (the Flatpak edition).
 fn uses_portal(c: &siple_core::config::channel::Channel) -> bool {
     c.kind == siple_core::config::channel::ChannelKind::Flatpak
+}
+
+/// Whether the login item goes through `SMAppService` (the Mac App Store edition).
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn uses_service_management(c: &siple_core::config::channel::Channel) -> bool {
+    c.kind == siple_core::config::channel::ChannelKind::MacAppStore
+}
+
+/// Registers (`enabled`) or unregisters the main app as a login item with `SMAppService`.
+#[cfg(target_os = "macos")]
+fn service_management(enabled: bool, config: Option<&Path>) -> std::io::Result<()> {
+    use objc2_service_management::{SMAppService, SMAppServiceStatus};
+    if config.is_some() {
+        tracing::warn!("the Mac App Store login item always starts the default profile");
+    }
+    // SAFETY: plain Objective-C calls on the shared main-app service object.
+    let svc = unsafe { SMAppService::mainAppService() };
+    let status = unsafe { svc.status() };
+    let fail = |what: &str, e: objc2::rc::Retained<objc2_foundation::NSError>| {
+        let msg = e.localizedDescription().to_string();
+        tracing::warn!(error = %msg, "SMAppService {what} failed");
+        std::io::Error::other(format!("login item {what} failed: {msg}"))
+    };
+    if enabled {
+        if status == SMAppServiceStatus::Enabled {
+            return Ok(());
+        }
+        unsafe { svc.registerAndReturnError() }.map_err(|e| fail("register", e))?;
+        if unsafe { svc.status() } == SMAppServiceStatus::RequiresApproval {
+            tracing::warn!(
+                "the login item needs approval in System Settings > General > Login Items"
+            );
+        }
+        Ok(())
+    } else if status == SMAppServiceStatus::NotRegistered || status == SMAppServiceStatus::NotFound
+    {
+        Ok(())
+    } else {
+        unsafe { svc.unregisterAndReturnError() }.map_err(|e| fail("unregister", e))
+    }
 }
 
 fn apply_for(
@@ -385,6 +433,15 @@ mod tests {
         }
         #[cfg(not(target_os = "windows"))]
         assert_eq!(entry.as_ref().map(|p| p.exists()), before);
+    }
+
+    #[test]
+    fn only_the_mac_app_store_uses_service_management() {
+        use siple_core::config::channel::Channel;
+        assert!(uses_service_management(&Channel::MAC_APP_STORE));
+        assert!(!uses_service_management(&Channel::DIRECT));
+        assert!(!uses_service_management(&Channel::FLATPAK));
+        assert!(!uses_service_management(&Channel::msix("a_b", None)));
     }
 
     #[test]
