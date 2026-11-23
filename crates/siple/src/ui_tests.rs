@@ -678,7 +678,7 @@ fn settings_toggle_hints_stay_inside_the_window() {
     }
 }
 
-/// Launch at login is a switch in the tray and window group and applies at once.
+/// Launch at login is a switch in the tray and window group; it emits the config edit.
 #[test]
 fn launch_at_login_toggle_emits_the_config_edit() {
     for size in [WIDE, NARROW] {

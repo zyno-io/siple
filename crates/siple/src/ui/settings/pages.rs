@@ -244,7 +244,7 @@ pub(super) fn notifications(ui: &mut egui::Ui, cx: &Cx, out: &mut Vec<UiAction>)
             "",
             &v,
         );
-        launch_at_login_row(ui, p, out, &v, true);
+        launch_at_login_row(ui, p, out, cx, &v, true);
         sec_toggle(ui, p, out, "ui", "start_hidden", "Start hidden", "", &v);
         sec_toggle(
             ui,
@@ -751,41 +751,74 @@ pub(in crate::ui) fn sec_toggle_pub(
     sec_toggle(ui, p, out, section, key, label, "", v);
 }
 
-/// The launch-at-login switch, or in the Microsoft Store edition (where only the user can enable
-/// the startup task) a faint note on where to do it. `with_hint` adds the explanation line.
+/// What the launch-at-login row shows.
+#[derive(Debug, PartialEq, Eq)]
+enum LoginRow {
+    /// No switch, only a faint note.
+    Note(&'static str),
+    /// The switch with an explanation line (may be empty).
+    Switch(&'static str),
+}
+
+/// The launch-at-login row for `channel`. `non_default_profile`: a `--config` profile is running;
+/// `location_problem`: the macOS direct build runs from a place where a login item cannot work;
+/// `with_hint`: add the explanation line (the wizard keeps it short).
+fn login_row(
+    channel: &siple_core::config::channel::Channel,
+    non_default_profile: bool,
+    location_problem: Option<&'static str>,
+    with_hint: bool,
+) -> LoginRow {
+    use siple_core::config::channel::ChannelKind;
+    if !channel.launch_at_login_in_app() {
+        LoginRow::Note("Turn on Siple in Windows Settings > Apps > Startup.")
+    } else if channel.kind == ChannelKind::MacAppStore && non_default_profile {
+        LoginRow::Note("Launch at login applies to the default profile only in this edition.")
+    } else if let Some(problem) = location_problem {
+        LoginRow::Switch(problem)
+    } else if !with_hint {
+        LoginRow::Switch("")
+    } else if channel.kind == ChannelKind::MacAppStore {
+        LoginRow::Switch(
+            "If it's switched off in System Settings > General > Login Items, turn it on there.",
+        )
+    } else {
+        LoginRow::Switch("Combine with Start hidden to start in the tray.")
+    }
+}
+
+/// The launch-at-login switch, or a faint note where the switch cannot work (see [`login_row`]).
 pub(in crate::ui) fn launch_at_login_row(
     ui: &mut egui::Ui,
     p: &Palette,
     out: &mut Vec<UiAction>,
+    cx: &Cx,
     v: &Value,
     with_hint: bool,
 ) {
-    let ch = siple_core::config::channel::current();
-    if !ch.launch_at_login_in_app() {
-        ui.label(
-            RichText::new("Turn on Siple in Windows Settings > Apps > Startup.")
-                .size(FS_SMALL)
-                .color(p.faint),
-        );
-        return;
-    }
-    let hint = match (with_hint, ch.kind) {
-        (false, _) => "",
-        (true, siple_core::config::channel::ChannelKind::MacAppStore) => {
-            "If it's switched off in System Settings > General > Login Items, turn it on there."
-        }
-        (true, _) => "Combine with Start hidden to start in the tray.",
-    };
-    sec_toggle(
-        ui,
-        p,
-        out,
-        "ui",
-        "launch_at_login",
-        "Start Siple when you log in",
-        hint,
-        v,
+    let non_default =
+        siple_core::config::default_config_path().is_some_and(|d| d != cx.vm.config_path);
+    let row = login_row(
+        siple_core::config::channel::current(),
+        non_default,
+        crate::shell::autostart::running_location_problem(),
+        with_hint,
     );
+    match row {
+        LoginRow::Note(text) => {
+            ui.label(RichText::new(text).size(FS_SMALL).color(p.faint));
+        }
+        LoginRow::Switch(hint) => sec_toggle(
+            ui,
+            p,
+            out,
+            "ui",
+            "launch_at_login",
+            "Start Siple when you log in",
+            hint,
+            v,
+        ),
+    }
 }
 
 /// Faint one-liner shown instead of the `handle_links` toggle in editions that declare the link
@@ -891,6 +924,43 @@ mod speech_label_tests {
             "configured"
         );
         assert_eq!(speech_commands_label(false, &Channel::DIRECT), "(none)");
+    }
+}
+
+#[cfg(test)]
+mod login_row_tests {
+    use super::{LoginRow, login_row};
+    use siple_core::config::channel::Channel;
+
+    #[test]
+    fn the_row_by_edition() {
+        let msix = Channel::msix("a_b", None);
+        assert!(matches!(
+            login_row(&msix, false, None, true),
+            LoginRow::Note(t) if t.contains("Windows Settings > Apps > Startup")
+        ));
+        assert!(matches!(
+            login_row(&Channel::MAC_APP_STORE, false, None, true),
+            LoginRow::Switch(t) if t.contains("System Settings > General > Login Items")
+        ));
+        assert!(matches!(
+            login_row(&Channel::MAC_APP_STORE, true, None, true),
+            LoginRow::Note(t) if t.contains("default profile only")
+        ));
+        // Other editions keep the switch for a profile.
+        assert!(matches!(
+            login_row(&Channel::DIRECT, true, None, true),
+            LoginRow::Switch(t) if t.contains("Start hidden")
+        ));
+        assert_eq!(
+            login_row(&Channel::DIRECT, false, None, false),
+            LoginRow::Switch("")
+        );
+        // A bad macOS location is told even in the short (wizard) form.
+        assert!(matches!(
+            login_row(&Channel::DIRECT, false, Some("Move Siple to Applications first."), false),
+            LoginRow::Switch(t) if t.starts_with("Move Siple")
+        ));
     }
 }
 

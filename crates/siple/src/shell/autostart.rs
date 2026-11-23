@@ -344,10 +344,6 @@ fn login_item_plan(
     }
 }
 
-/// `kSMErrorAlreadyRegistered` of `SMAppService.register`.
-#[cfg(target_os = "macos")]
-const SM_ERROR_ALREADY_REGISTERED: isize = 1;
-
 /// Registers (`enabled`) or unregisters the main app as a login item with `SMAppService`.
 #[cfg(target_os = "macos")]
 fn service_management(enabled: bool, config: Option<&Path>) -> std::io::Result<()> {
@@ -356,14 +352,13 @@ fn service_management(enabled: bool, config: Option<&Path>) -> std::io::Result<(
         tracing::info!(
             "the Mac App Store login item starts the default profile only; leaving it alone"
         );
-        return Ok(());
     }
     // SAFETY: plain Objective-C calls on the shared main-app service object.
     let svc = unsafe { SMAppService::mainAppService() };
     let status = unsafe { svc.status() };
     let plan = login_item_plan(
         enabled,
-        false,
+        config.is_some(),
         status == SMAppServiceStatus::Enabled,
         status == SMAppServiceStatus::RequiresApproval,
     );
@@ -372,22 +367,66 @@ fn service_management(enabled: bool, config: Option<&Path>) -> std::io::Result<(
         tracing::warn!(error = %msg, "SMAppService {what} failed");
         std::io::Error::other(format!("login item {what} failed: {msg}"))
     };
+    let switched_off = || {
+        tracing::info!(
+            "the login item is switched off in System Settings > General > Login Items; turn it on there"
+        );
+    };
     match plan {
         LoginItemPlan::Nothing => Ok(()),
         LoginItemPlan::UserSwitchedOff => {
-            tracing::info!(
-                "the login item is switched off in System Settings > General > Login Items; turn it on there"
-            );
+            switched_off();
             Ok(())
         }
-        LoginItemPlan::Register => match unsafe { svc.registerAndReturnError() } {
-            Err(e) if e.code() == SM_ERROR_ALREADY_REGISTERED => Ok(()),
-            r => r.map_err(|e| fail("register", e)),
-        },
+        LoginItemPlan::Register => {
+            let result = unsafe { svc.registerAndReturnError() };
+            // The status after the call decides, not the error code: an already registered item
+            // errors, and a registered one the user has switched off needs approval.
+            let after = unsafe { svc.status() };
+            if after == SMAppServiceStatus::RequiresApproval {
+                switched_off();
+                Ok(())
+            } else if after == SMAppServiceStatus::Enabled {
+                Ok(())
+            } else {
+                result.map_err(|e| fail("register", e))
+            }
+        }
         LoginItemPlan::Unregister => {
             unsafe { svc.unregisterAndReturnError() }.map_err(|e| fail("unregister", e))
         }
     }
+}
+
+/// Why a macOS login item for the app at `exe` could never work: macOS runs it from a randomized
+/// quarantine path (App Translocation) or it sits on a read-only volume (a mounted disk image).
+/// `None` outside an app bundle (a development build) and when the location is fine. The same
+/// checks as the updater's (`update/install/macos.rs`). `read_only` answers for a bundle path.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+pub fn location_problem(exe: &Path, read_only: impl Fn(&Path) -> bool) -> Option<&'static str> {
+    let s = exe.to_string_lossy();
+    let bundle = Path::new(&s[..s.find(".app/Contents/MacOS/")? + 4]);
+    (s.contains("/AppTranslocation/") || read_only(bundle))
+        .then_some("Move Siple to Applications first, then turn this on.")
+}
+
+/// [`location_problem`] for the running macOS direct build, looked up once.
+pub fn running_location_problem() -> Option<&'static str> {
+    #[cfg(target_os = "macos")]
+    {
+        use siple_core::update::install::env::{Fs, RealFs};
+        static P: std::sync::OnceLock<Option<&'static str>> = std::sync::OnceLock::new();
+        *P.get_or_init(|| {
+            let ch = siple_core::config::channel::current();
+            if ch.kind != siple_core::config::channel::ChannelKind::Direct {
+                return None;
+            }
+            let exe = std::env::current_exe().ok()?;
+            location_problem(&exe, |b| RealFs.read_only_volume(b))
+        })
+    }
+    #[cfg(not(target_os = "macos"))]
+    None
 }
 
 fn apply_for(
@@ -405,6 +444,17 @@ fn apply_for(
     }
     // The AppImage edition starts its file, never the temporary mount the process runs from.
     let exe = channel.launch_target()?;
+    // A LaunchAgent for a translocated or disk-image copy can never start Siple.
+    #[cfg(target_os = "macos")]
+    if enabled
+        && channel.kind == siple_core::config::channel::ChannelKind::Direct
+        && let Some(msg) = location_problem(&exe, |b| {
+            use siple_core::update::install::env::{Fs, RealFs};
+            RealFs.read_only_volume(b)
+        })
+    {
+        return Err(std::io::Error::other(msg));
+    }
     // A runtime option (`--appimage-extract-and-run`) must be the first argument.
     let mut extra: Vec<String> = channel
         .launch_args_prefix()
@@ -492,6 +542,23 @@ mod tests {
         assert!(!uses_service_management(&Channel::DIRECT));
         assert!(!uses_service_management(&Channel::FLATPAK));
         assert!(!uses_service_management(&Channel::msix("a_b", None)));
+    }
+
+    #[test]
+    fn a_translocated_or_disk_image_copy_has_a_location_problem() {
+        let never = |_: &Path| false;
+        let tr = Path::new(
+            "/private/var/folders/x/AppTranslocation/ABC/d/Siple.app/Contents/MacOS/siple",
+        );
+        assert!(location_problem(tr, never).is_some());
+        let app = Path::new("/Applications/Siple.app/Contents/MacOS/siple");
+        assert!(location_problem(app, never).is_none());
+        let dmg = Path::new("/Volumes/Siple/Siple.app/Contents/MacOS/siple");
+        assert!(location_problem(dmg, |b| b.starts_with("/Volumes/Siple")).is_some());
+        // The volume check gets the bundle, not the executable.
+        assert!(location_problem(dmg, |b| b == Path::new("/Volumes/Siple/Siple.app")).is_some());
+        // Not a bundle (a development build).
+        assert!(location_problem(Path::new("/x/target/debug/siple"), |_| true).is_none());
     }
 
     #[test]

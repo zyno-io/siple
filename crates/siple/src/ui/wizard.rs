@@ -580,7 +580,7 @@ fn done_step(ui: &mut egui::Ui, cx: &Cx, out: &mut Vec<UiAction>, st: &mut UiSta
         } else {
             links_automatic_note(ui, p);
         }
-        launch_at_login_row(ui, p, out, &v, false);
+        launch_at_login_row(ui, p, out, cx, &v, false);
         sec_toggle_pub(ui, p, out, "ui", "tray", "Show in the tray / menu bar", &v);
         sec_toggle_pub(
             ui,

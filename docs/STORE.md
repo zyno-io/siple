@@ -67,7 +67,7 @@ Done:
 - Settings and the first-run wizard have a launch-at-login switch (`Channel::launch_at_login_in_app`: every edition but the Microsoft Store, where a note points to Windows Settings > Apps > Startup).
 - Launch at login uses `SMAppService.mainAppService` register / unregister (`shell/autostart.rs`, `objc2-service-management`).
   It shows up in System Settings > General > Login Items. The System Settings switch wins: if the user switched it off
-  there, Siple logs it and does not register again. A non-default `--config` profile leaves it alone. Not exercised in the sandbox yet (open item 1).
+  there, Siple logs it and does not register again while the setting stays on; switching it off and on again in Siple calls `register` once more. A non-default `--config` profile leaves it alone. Not exercised in the sandbox yet (open item 1).
 - The Settings > Developer MCP snippet shows the bundled CLI's absolute path, derived from the running bundle.
 - `handle_links` is hidden in Settings and the first-run wizard in every packaged edition (`Channel::can_register_links`);
   a faint note says the edition registers the links at install time and to make Siple the default if another app opens them. Info.plist declares the schemes.
