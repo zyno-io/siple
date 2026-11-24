@@ -1858,7 +1858,13 @@ impl Actor {
                     .is_some_and(|p| Arc::ptr_eq(p, s))
             });
             if old_dead {
-                self.forget_dead_socket();
+                // `forget_dead_socket`, inline: `rt` still borrows `self.rt`.
+                if let Some(s) = self.pending_replace.take() {
+                    s.close();
+                }
+                self.replace_seq += 1;
+                self.socket_deaths = 0;
+                self.socket_replaced_at = None;
                 old_tok.cancel();
             }
             if !old_dead
