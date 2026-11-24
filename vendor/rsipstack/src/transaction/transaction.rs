@@ -495,10 +495,11 @@ impl Transaction {
     /// # Cancel safety
     ///
     /// **NOT cancel-safe.** The mutation order is: store `last_response`
-    /// (and, for a server INVITE 2xx, add its ACK route) → `await` the
-    /// transport send → transition the state machine. If the
-    /// future is dropped during the `await`, the ACK route is removed
-    /// again but `last_response` will already
+    /// (and, for a server INVITE 2xx, add its ACK route; siple: for any
+    /// server INVITE final response, move its INVITE reservation to the ACK
+    /// wait) → `await` the transport send → transition the state machine. If
+    /// the future is dropped during the `await`, the ACK route is removed
+    /// again (the reservation step is not undone) but `last_response` will already
     /// be updated while the response may have been only partially
     /// transmitted (or not at all) and the state did not advance. If it
     /// is dropped between the send completing and the transition, the
