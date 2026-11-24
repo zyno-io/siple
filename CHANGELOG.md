@@ -1,6 +1,12 @@
 <!-- siple-rename: keep (this file documents the legacy ZynoPhone names on purpose) -->
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- A re-INVITE that reached Siple right after it answered the previous one (for example a resume right after a hold) could be refused with "500 Server Internal Error". When the other party was also Siple, a failed transfer could then leave the call on hold.
+
 ## 0.2.6 (2026-11-23)
 
 ### New

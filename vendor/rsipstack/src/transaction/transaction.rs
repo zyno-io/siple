@@ -592,6 +592,22 @@ impl Transaction {
         let mut guard = AckRouteGuard(
             ack_route.map(|route| (self.endpoint_inner.clone(), route, self.key.clone())),
         );
+        // siple: likewise the peer can send its next INVITE before the transition below runs.
+        // The INVITE reservation leaves ServerPending before the final response is sent;
+        // otherwise that INVITE is refused with 500 (RFC 3261 §14.2), as if our final response
+        // were still outstanding. The transition below repeats this step as a no-op. If the
+        // send fails, the reservation stays in the ACK wait, which only blocks our own INVITEs,
+        // until the transaction ends.
+        if self.transaction_type == TransactionType::ServerInvite
+            && matches!(
+                new_state,
+                TransactionState::Completed | TransactionState::Accepted
+            )
+        {
+            if let Some(reservation) = self.invite_reservation.lock().as_mut() {
+                reservation.transition(&new_state);
+            }
+        }
         connection.send(response, self.destination.as_ref()).await?;
         let initial_dialog = self
             .initial_dialog
