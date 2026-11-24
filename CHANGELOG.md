@@ -6,7 +6,6 @@
 ### Fixed
 
 - In-app updates: an install requested the moment another one ends (for example an immediate retry through the control API) no longer fails now and then with "another Siple is installing an update".
-- An account whose SIP socket stops working (macOS can shut a program's network sockets down, for example) now gets a new socket on the same address and re-registers, instead of going deaf with one CPU core busy until Siple is restarted. When the socket can be reopened on the same address (the usual case), calls in progress and calls being set up keep going; otherwise they end and the account starts over. `account.reconnecting` reports this with the reason `transport_dead`.
 
 ## 0.2.6 (2026-11-23)
 
