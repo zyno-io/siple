@@ -1,6 +1,12 @@
 <!-- siple-rename: keep (this file documents the legacy ZynoPhone names on purpose) -->
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- In-app updates: an install requested the moment another one ends (for example an immediate retry through the control API) no longer fails now and then with "another Siple is installing an update".
+
 ## 0.2.6 (2026-11-23)
 
 ### New
