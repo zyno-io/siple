@@ -808,6 +808,15 @@ impl SipStack {
         rx.await.map_err(|_| SipError::Closed)
     }
 
+    /// Test hook: whether the account waits for a delayed replacement of a dead UDP socket,
+    /// and how many replaced sockets died right away in a row.
+    #[doc(hidden)]
+    pub async fn socket_replacement_state(&self, id: &str) -> Result<(bool, u32)> {
+        let (tx, rx) = oneshot::channel();
+        self.send(id, Cmd::SocketReplacement(tx))?;
+        rx.await.map_err(|_| SipError::Closed)
+    }
+
     /// Unregisters every account (best effort, bounded) and stops them.
     pub async fn shutdown(&self) {
         self.shared.net.shutdown();

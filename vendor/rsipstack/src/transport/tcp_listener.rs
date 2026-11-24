@@ -1,5 +1,5 @@
 use crate::platform::CancellationToken;
-use crate::transport::io_error::{classify_io, wait_or_cancelled, ErrorRun, Next};
+use crate::transport::io_error::{classify_accept_io, wait_or_cancelled, ErrorRun, Next};
 use crate::transport::tcp::TcpConnection;
 use crate::transport::transport_layer::TransportLayerInnerRef;
 use crate::transport::SipAddr;
@@ -112,7 +112,7 @@ pub(crate) async fn after_accept_error(
     listener: &SipConnection,
     transport_layer_inner: &TransportLayerInnerRef,
 ) -> bool {
-    match errors.error(classify_io(e)) {
+    match errors.error(classify_accept_io(e)) {
         Next::Stop => {
             warn!(
                 local = %listener.get_addr(),

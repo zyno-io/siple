@@ -110,6 +110,8 @@ pub(crate) enum Cmd {
     /// Test hook: make the UDP socket fail like one the OS has torn down. Replies whether there
     /// was one.
     KillUdp(oneshot::Sender<bool>),
+    /// Test hook: whether a delayed socket replacement is pending, and the quick deaths in a row.
+    SocketReplacement(oneshot::Sender<(bool, u32)>),
     /// The network changed (debounced): re-probe now and re-register.
     NetworkChanged {
         generation: u64,
@@ -144,7 +146,7 @@ enum Internal {
     /// `rsipstack::transport::io_error`).
     ListenerDead { epoch: u64, local: SipAddr },
     /// The delayed replacement of a socket that died right after it was replaced.
-    ReplaceSocket { epoch: u64 },
+    ReplaceSocket { epoch: u64, seq: u64 },
     /// Result of re-probing the next hop / local address.
     Probed {
         epoch: u64,
@@ -877,6 +879,8 @@ pub(crate) struct Actor {
     socket_deaths: u32,
     /// The dead socket a delayed replacement ([`Internal::ReplaceSocket`]) is for.
     pending_replace: Option<Arc<AccountUdp>>,
+    /// Tags the latest scheduled replacement; older timers are ignored.
+    replace_seq: u64,
 }
 
 /// How long the move of live calls waits for the re-REGISTER (the new Contact) before it goes
@@ -997,6 +1001,7 @@ pub(crate) fn spawn_account(
         socket_replaced_at: None,
         socket_deaths: 0,
         pending_replace: None,
+        replace_seq: 0,
     };
     tokio::spawn(actor.run(cmd_rx, int_rx, ready_tx));
     (handle, ready_rx)
@@ -1263,6 +1268,7 @@ impl Actor {
     fn drop_runtime(&mut self) {
         self.epoch += 1; // stale results / close events of the old runtime are ignored
         self.building = false;
+        self.forget_dead_socket();
         if let Some(rt) = self.rt.take() {
             rt.token.cancel();
             // Ended calls (and their `RtEnv`) outlive the runtime in the call table and keep the
@@ -1852,11 +1858,8 @@ impl Actor {
                     .is_some_and(|p| Arc::ptr_eq(p, s))
             });
             if old_dead {
-                self.pending_replace = None;
+                self.forget_dead_socket();
                 old_tok.cancel();
-                if let Some(s) = &old_sock {
-                    s.close();
-                }
             }
             if !old_dead
                 && let (Some(old_addr), Some(old_conn), Some(old_sock)) =
@@ -1983,7 +1986,7 @@ impl Actor {
     /// The current UDP socket is replaced in place by a new one on the same address, under the
     /// same rsipstack connection: the runtime, its dialogs, transactions in flight and the
     /// Contact stay, so live calls (and calls being set up) carry on, and the account
-    /// re-registers at once. If the address
+    /// re-registers soon (keeping a server's Retry-After). If the address
     /// cannot be bound again, the calls end and the runtime is rebuilt, as when a network change
     /// cannot move the transport in place. A new socket that dies again within
     /// [`QUICK_SOCKET_DEATH`] is replaced after [`socket_replace_delay`]. A lingering old
@@ -2031,12 +2034,25 @@ impl Actor {
         } else {
             tracing::warn!(account = %self.id, ?delay, deaths = self.socket_deaths, "the new SIP socket died right away; replacing it later");
             self.pending_replace = self.rt.as_ref().and_then(|r| r.listener_sock.clone());
-            let (tx, epoch) = (self.int_tx.clone(), self.epoch);
+            self.replace_seq += 1;
+            let (tx, epoch, seq) = (self.int_tx.clone(), self.epoch, self.replace_seq);
             tokio::spawn(async move {
                 tokio::time::sleep(delay).await;
-                let _ = tx.send(Internal::ReplaceSocket { epoch });
+                let _ = tx.send(Internal::ReplaceSocket { epoch, seq });
             });
         }
+    }
+
+    /// Forgets the dead-socket history: the runtime goes, or the transport moved to a new
+    /// socket. A dead socket still waiting for its delayed replacement is closed (its port is
+    /// free at once) and the replacement cancelled; the next death counts as a first one.
+    fn forget_dead_socket(&mut self) {
+        if let Some(s) = self.pending_replace.take() {
+            s.close();
+        }
+        self.replace_seq += 1;
+        self.socket_deaths = 0;
+        self.socket_replaced_at = None;
     }
 
     fn emit_transport_dead(&self) {
@@ -2056,12 +2072,18 @@ impl Actor {
                 self.socket_replaced_at = Some(Instant::now());
                 self.emit_transport_dead();
                 self.reset_keepalive();
-                if matches!(self.reg.state, RegState::WaitingForNetwork) {
-                    // No route: stay suspended (the next network signal or probe registers);
-                    // only forget the flow the old socket had.
-                    self.on_flow_lost();
-                } else {
-                    self.restart_registration();
+                // Same address, same Contact: only the flow learned on the old socket is
+                // forgotten (re-REGISTER soon). A REGISTER in flight carries on over the new
+                // socket; the back-off and a server's Retry-After stay (as for a network signal
+                // in `on_verdict`), and so does WaitingForNetwork.
+                let held = self
+                    .reg
+                    .retry_after_until
+                    .is_some_and(|t| t > Instant::now());
+                let timer = self.timer;
+                self.on_flow_lost();
+                if held {
+                    self.timer = timer;
                 }
             }
             Err(e) => {
@@ -2275,15 +2297,19 @@ impl Actor {
                     self.on_listener_dead(local).await;
                 }
             }
-            Internal::ReplaceSocket { epoch } => {
-                // Only for the socket that died: the transport may have moved meanwhile.
+            Internal::ReplaceSocket { epoch, seq } => {
+                // Only the latest timer of this runtime, and only for the socket that died (the
+                // transport may have moved meanwhile).
+                if epoch != self.epoch || seq != self.replace_seq {
+                    return;
+                }
                 let pending = self.pending_replace.take();
                 let current = self.rt.as_ref().and_then(|r| r.listener_sock.clone());
                 let same = pending
                     .as_ref()
                     .zip(current.as_ref())
                     .is_some_and(|(p, c)| Arc::ptr_eq(p, c));
-                if epoch == self.epoch && same {
+                if same {
                     self.replace_dead_socket().await;
                 }
             }
@@ -2699,6 +2725,9 @@ impl Actor {
                     s.simulate_death();
                 }
                 let _ = reply.send(sock.is_some());
+            }
+            Cmd::SocketReplacement(reply) => {
+                let _ = reply.send((self.pending_replace.is_some(), self.socket_deaths));
             }
             Cmd::Shutdown(_) => unreachable!("handled in run()"),
         }

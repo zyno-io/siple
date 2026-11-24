@@ -5,7 +5,7 @@
 
 ### Fixed
 
-- An account whose SIP socket stops working (macOS can shut a program's network sockets down, for example) now gets a new socket on the same address and re-registers, instead of going deaf with one CPU core busy until Siple is restarted. Calls in progress, and calls being set up, keep going. `account.reconnecting` reports this with the reason `transport_dead`.
+- An account whose SIP socket stops working (macOS can shut a program's network sockets down, for example) now gets a new socket on the same address and re-registers, instead of going deaf with one CPU core busy until Siple is restarted. When the socket can be reopened on the same address (the usual case), calls in progress and calls being set up keep going; otherwise they end and the account starts over. `account.reconnecting` reports this with the reason `transport_dead`.
 
 ## 0.2.6 (2026-11-23)
 

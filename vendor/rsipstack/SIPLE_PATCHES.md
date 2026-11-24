@@ -84,6 +84,9 @@ Reliable 18x are ordinary provisional responses sent through `InviteDialog::ring
 - `src/transport/udp.rs` `serve_loop_with_whitelist`: a receive error goes through `ErrorRun`
   (upstream: warn + `continue`). On `Stop` the loop sends `TransportEvent::Closed(SipConnection::Udp(listener))`
   and returns the error; a cancel during the backoff ends it quietly.
+- `classify_accept_io` (accept loops): also benign are the errors Linux `accept(2)` reports for
+  one pending connection (`ENETDOWN`, `EPROTO`, `ENOPROTOOPT`, `EHOSTDOWN`, `ENONET`,
+  `EHOSTUNREACH`, `EOPNOTSUPP`, `ENETUNREACH`; the man page says to treat them like `EAGAIN`).
 - `src/transport/tcp_listener.rs`: `after_accept_error` (same policy for `accept`; on `Stop` sends
   `TransportEvent::Closed(<listener>)` on the layer's `transport_tx`), used by the TCP, TLS
   (`tls.rs`) and WebSocket (`websocket.rs`) accept loops (upstream: warn + `continue`, so a

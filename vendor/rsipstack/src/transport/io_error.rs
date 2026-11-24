@@ -144,6 +144,19 @@ pub fn classify_io(e: &std::io::Error) -> ErrorClass {
     }
 }
 
+/// Classifies an error of `accept`. Like [`classify_io`], except for the errors Linux reports
+/// from `accept(2)` for one pending connection (already gone, or its network): `accept(2)` says
+/// to treat them like `EAGAIN`, so they are benign and never count toward a dead listener.
+#[cfg(feature = "std")]
+pub fn classify_accept_io(e: &std::io::Error) -> ErrorClass {
+    if e.raw_os_error()
+        .is_some_and(|code| raw::ACCEPT_BENIGN.contains(&code))
+    {
+        return ErrorClass::Benign;
+    }
+    classify_io(e)
+}
+
 /// Raw OS error codes `std::io::ErrorKind` does not name.
 #[cfg(feature = "std")]
 mod raw {
@@ -157,6 +170,20 @@ mod raw {
     ];
     #[cfg(any(target_os = "linux", target_os = "android"))]
     pub const BENIGN: &[i32] = &[90 /* EMSGSIZE */];
+    /// `accept(2)` (Linux): errors of the pending connection, to be treated like `EAGAIN`.
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    pub const ACCEPT_BENIGN: &[i32] = &[
+        100, /* ENETDOWN */
+        71,  /* EPROTO */
+        92,  /* ENOPROTOOPT */
+        112, /* EHOSTDOWN */
+        64,  /* ENONET */
+        113, /* EHOSTUNREACH */
+        95,  /* EOPNOTSUPP */
+        101, /* ENETUNREACH */
+    ];
+    #[cfg(not(any(target_os = "linux", target_os = "android")))]
+    pub const ACCEPT_BENIGN: &[i32] = &[];
 
     #[cfg(any(
         target_vendor = "apple",
@@ -383,6 +410,17 @@ mod tests {
         for &c in raw::BENIGN {
             assert_eq!(os(c), ErrorClass::Benign, "{c}");
         }
+        for &c in raw::ACCEPT_BENIGN {
+            assert_eq!(
+                classify_accept_io(&Error::from_raw_os_error(c)),
+                ErrorClass::Benign,
+                "{c}"
+            );
+        }
+        assert_eq!(
+            classify_accept_io(&Error::from(ErrorKind::NotConnected)),
+            ErrorClass::Fatal
+        );
         assert_eq!(
             classify(&crate::Error::IoError(Error::from(ErrorKind::NotConnected))),
             ErrorClass::Fatal
