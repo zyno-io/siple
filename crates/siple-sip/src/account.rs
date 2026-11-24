@@ -875,6 +875,8 @@ pub(crate) struct Actor {
     socket_replaced_at: Option<Instant>,
     /// Deaths in a row of replaced sockets within [`QUICK_SOCKET_DEATH`] of their replacement.
     socket_deaths: u32,
+    /// The dead socket a delayed replacement ([`Internal::ReplaceSocket`]) is for.
+    pending_replace: Option<Arc<AccountUdp>>,
 }
 
 /// How long the move of live calls waits for the re-REGISTER (the new Contact) before it goes
@@ -994,6 +996,7 @@ pub(crate) fn spawn_account(
         rebind_seq: 0,
         socket_replaced_at: None,
         socket_deaths: 0,
+        pending_replace: None,
     };
     tokio::spawn(actor.run(cmd_rx, int_rx, ready_tx));
     (handle, ready_rx)
@@ -1841,7 +1844,23 @@ impl Actor {
             let old_conn = rt.listener_conn.replace(conn);
             let old_sock = std::mem::replace(&mut rt.listener_sock, sock);
             rt.local_addr = Some(addr);
-            if let (Some(old_addr), Some(old_conn), Some(old_sock)) = (old_addr, old_conn, old_sock)
+            // A socket that died and waits for its delayed replacement has no receive loop any
+            // more: drop it (and the replacement) instead of keeping it as a lingering listener.
+            let old_dead = old_sock.as_ref().is_some_and(|s| {
+                self.pending_replace
+                    .as_ref()
+                    .is_some_and(|p| Arc::ptr_eq(p, s))
+            });
+            if old_dead {
+                self.pending_replace = None;
+                old_tok.cancel();
+                if let Some(s) = &old_sock {
+                    s.close();
+                }
+            }
+            if !old_dead
+                && let (Some(old_addr), Some(old_conn), Some(old_sock)) =
+                    (old_addr, old_conn, old_sock)
             {
                 let flag = Arc::new(std::sync::atomic::AtomicBool::new(true));
                 rt.lingering.push(Linger {
@@ -2011,6 +2030,7 @@ impl Actor {
             self.replace_dead_socket().await;
         } else {
             tracing::warn!(account = %self.id, ?delay, deaths = self.socket_deaths, "the new SIP socket died right away; replacing it later");
+            self.pending_replace = self.rt.as_ref().and_then(|r| r.listener_sock.clone());
             let (tx, epoch) = (self.int_tx.clone(), self.epoch);
             tokio::spawn(async move {
                 tokio::time::sleep(delay).await;
@@ -2256,7 +2276,14 @@ impl Actor {
                 }
             }
             Internal::ReplaceSocket { epoch } => {
-                if epoch == self.epoch {
+                // Only for the socket that died: the transport may have moved meanwhile.
+                let pending = self.pending_replace.take();
+                let current = self.rt.as_ref().and_then(|r| r.listener_sock.clone());
+                let same = pending
+                    .as_ref()
+                    .zip(current.as_ref())
+                    .is_some_and(|(p, c)| Arc::ptr_eq(p, c));
+                if epoch == self.epoch && same {
                     self.replace_dead_socket().await;
                 }
             }
