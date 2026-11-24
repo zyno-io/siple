@@ -495,10 +495,11 @@ impl Transaction {
     /// # Cancel safety
     ///
     /// **NOT cancel-safe.** The mutation order is: store `last_response`
-    /// (and, for a server INVITE 2xx, add its ACK route) → `await` the
-    /// transport send → transition the state machine. If the
-    /// future is dropped during the `await`, the ACK route is removed
-    /// again but `last_response` will already
+    /// (and, for a server INVITE 2xx, add its ACK route; siple: for any
+    /// server INVITE final response, move its INVITE reservation to the ACK
+    /// wait) → `await` the transport send → transition the state machine. If
+    /// the future is dropped during the `await`, the ACK route is removed
+    /// again (the reservation step is not undone) but `last_response` will already
     /// be updated while the response may have been only partially
     /// transmitted (or not at all) and the state did not advance. If it
     /// is dropped between the send completing and the transition, the
@@ -592,6 +593,22 @@ impl Transaction {
         let mut guard = AckRouteGuard(
             ack_route.map(|route| (self.endpoint_inner.clone(), route, self.key.clone())),
         );
+        // siple: likewise the peer can send its next INVITE before the transition below runs.
+        // The INVITE reservation leaves ServerPending before the final response is sent;
+        // otherwise that INVITE is refused with 500 (RFC 3261 §14.2), as if our final response
+        // were still outstanding. The transition below repeats this step as a no-op. If the
+        // send fails, the reservation stays in the ACK wait, which only blocks our own INVITEs,
+        // until the transaction ends.
+        if self.transaction_type == TransactionType::ServerInvite
+            && matches!(
+                new_state,
+                TransactionState::Completed | TransactionState::Accepted
+            )
+        {
+            if let Some(reservation) = self.invite_reservation.lock().as_mut() {
+                reservation.transition(&new_state);
+            }
+        }
         connection.send(response, self.destination.as_ref()).await?;
         let initial_dialog = self
             .initial_dialog

@@ -6,6 +6,7 @@
 ### Fixed
 
 - In-app updates: an install requested the moment another one ends (for example an immediate retry through the control API) no longer fails now and then with "another Siple is installing an update".
+- A re-INVITE that reached Siple right after it answered the previous one (for example a resume right after a hold) could be refused with "500 Server Internal Error". When the other party was also Siple, a failed transfer could then leave the call on hold.
 
 ## 0.2.6 (2026-11-23)
 

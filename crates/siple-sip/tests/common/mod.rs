@@ -210,23 +210,55 @@ pub fn to_tag(resp: &str) -> String {
     to.split("tag=").nth(1).unwrap().trim().to_string()
 }
 
+/// Whether a datagram is a SIP message (a status line or a request line), not RTP or anything
+/// else that reached a test socket.
+fn is_sip(s: &str) -> bool {
+    let line = s.lines().next().unwrap_or_default();
+    line.starts_with("SIP/2.0 ") || line.ends_with(" SIP/2.0")
+}
+
+/// Waits (10 s at most) for a `method` request on a raw test socket; returns it and its source.
+/// Anything else is skipped: a socket can be sent datagrams that were meant for an earlier owner
+/// of its port, or for a port another test only advertised.
+pub async fn recv_request(sock: &UdpSocket, method: &str) -> (String, std::net::SocketAddr) {
+    let prefix = format!("{method} ");
+    tokio::time::timeout(Duration::from_secs(10), async {
+        let mut buf = vec![0u8; 8192];
+        loop {
+            let (n, from) = sock.recv_from(&mut buf).await.unwrap();
+            let s = String::from_utf8_lossy(&buf[..n]).into_owned();
+            if s.starts_with(&prefix) && is_sip(&s) {
+                return (s, from);
+            }
+        }
+    })
+    .await
+    .unwrap_or_else(|_| panic!("no {method} request"))
+}
+
 /// A raw-UDP SIP endpoint talking to the stack account at `dest`.
 pub struct Raw {
     pub sock: UdpSocket,
     pub dest: std::net::SocketAddr,
     pub call_id: String,
     pub local: std::net::SocketAddr,
+    /// The media port its SDP names, bound (never read) so that the RTP the stack sends there
+    /// lands here. A port nobody owns is free for the next `bind(0)` of any test in this binary
+    /// (Windows hands ephemeral ports out in sequence, so `local + 1` usually is the next one).
+    rtp: UdpSocket,
 }
 
 impl Raw {
     pub async fn new(dest: &str) -> Raw {
         let sock = UdpSocket::bind("127.0.0.1:0").await.unwrap();
         let local = sock.local_addr().unwrap();
+        let rtp = UdpSocket::bind("127.0.0.1:0").await.unwrap();
         Raw {
             sock,
             dest: dest.parse().unwrap(),
             call_id: format!("raw-{}@probe", local.port()),
             local,
+            rtp,
         }
     }
 
@@ -237,7 +269,7 @@ impl Raw {
     pub fn sdp_dir(&self, dir: &str, version: u32) -> String {
         format!(
             "v=0\r\no=- 1 {version} IN IP4 127.0.0.1\r\ns=-\r\nc=IN IP4 127.0.0.1\r\nt=0 0\r\nm=audio {} RTP/AVP 0 101\r\na=rtpmap:0 PCMU/8000\r\na=rtpmap:101 telephone-event/8000\r\na=fmtp:101 0-16\r\na={dir}\r\n",
-            self.local.port() + 1
+            self.rtp.local_addr().unwrap().port()
         )
     }
 
@@ -271,11 +303,20 @@ impl Raw {
         self.sock.send_to(m.as_bytes(), self.dest).await.unwrap();
     }
 
+    /// Next SIP message within `secs`; other datagrams are skipped (see [`recv_request`]).
     pub async fn recv_any(&self, secs: u64) -> Option<String> {
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(secs);
         let mut buf = vec![0u8; 8192];
-        match tokio::time::timeout(Duration::from_secs(secs), self.sock.recv_from(&mut buf)).await {
-            Ok(Ok((n, _))) => Some(String::from_utf8_lossy(&buf[..n]).into_owned()),
-            _ => None,
+        loop {
+            match tokio::time::timeout_at(deadline, self.sock.recv_from(&mut buf)).await {
+                Ok(Ok((n, _))) => {
+                    let s = String::from_utf8_lossy(&buf[..n]).into_owned();
+                    if is_sip(&s) {
+                        return Some(s);
+                    }
+                }
+                _ => return None,
+            }
         }
     }
 

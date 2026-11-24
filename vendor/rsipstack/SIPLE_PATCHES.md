@@ -54,6 +54,11 @@ upstream tests need the `websocket` feature, so they do not build with Siple's f
 - Rationale: the CANCEL is consumed by the INVITE server transaction, so its `Reason` header (RFC 3326, `SIP;cause=200;text="Call completed elsewhere"`) never reached the application; Siple uses it to tell "answered elsewhere" from "missed".
 - Test: `src/dialog/tests/test_cancel_reason.rs`.
 
+## Server INVITE reservation leaves ServerPending before the final response is sent
+- `src/transaction/transaction.rs` `Transaction::respond` (~L595): for a server INVITE, the reservation step of a final response (ServerPending -> ServerWaitingAck, `src/transaction/invite_usage.rs`) runs before `connection.send`, like upstream's ACK-route registration just above it (the method's cancel-safety rustdoc says so too). The `transition` after the send repeats the step as a no-op. If the send fails or is cancelled, the reservation stays in the ACK wait (which only blocks our own INVITEs) until the transaction ends.
+- Rationale: the peer can get our final response and send its next INVITE before the `transition` after the send runs (the responding task or thread is preempted between the two). `admit_incoming_invite` (`src/dialog/invite_dialog.rs` ~L1031) then still saw ServerPending and answered 500 with Retry-After, the RFC 3261 §14.2 answer to an INVITE that overlaps one not answered yet. In Siple this showed up as a resume re-INVITE refused right after the hold re-INVITE was answered (a flaky transfer test). Upstream 0.8.6 has the same order.
+- Test: none in this crate (the window is between the send and the next statement); Siple's `transfer_e2e` tests run through it.
+
 ## 100rel as UAS and session timers: no vendor changes
 Reliable 18x are ordinary provisional responses sent through `InviteDialog::ringing()` (extra `Require`/`RSeq` headers; a retransmission is the same call again), and PRACK is matched on `RAck` by Siple before the dialog layer sees it (`crates/siple-sip/src/calls/reliable.rs`); session-timer refreshes use `InviteDialog::update()` / `reinvite()` (`calls/timer.rs`). rsipstack's own `handle_prack` (always 200) is therefore never reached for inbound calls.
 
