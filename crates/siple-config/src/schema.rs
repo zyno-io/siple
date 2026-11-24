@@ -114,7 +114,7 @@ macro_rules! string_enum {
 }
 
 string_enum!(
-    /// SIP signalling transport.
+    /// SIP signaling transport.
     Transport, {
         /// UDP.
         Udp,
@@ -174,7 +174,7 @@ string_enum!(
 );
 
 string_enum!(
-    /// Message-waiting-indication behaviour.
+    /// Message-waiting-indication behavior.
     MwiMode, {
         /// Subscribe to `message-summary`; unsolicited NOTIFYs are also accepted.
         Subscribe,
@@ -259,7 +259,7 @@ string_enum!(
 string_enum!(
     /// How the answerer picks the codec from an offer.
     CodecAnswerOrder, {
-        /// First codec in the offer that we support (desk-phone behaviour).
+        /// First codec in the offer that we support (desk-phone behavior).
         Offer,
         /// First codec in our own list that is present in the offer.
         Local,
@@ -267,7 +267,7 @@ string_enum!(
 );
 
 string_enum!(
-    /// Keep-alive flavour sent every `keepalive_secs`.
+    /// Keep-alive flavor sent every `keepalive_secs`.
     KeepaliveMethod, {
         /// Double-CRLF ping (CRLFCRLF).
         Crlf,
@@ -647,7 +647,7 @@ pub struct Config {
     pub media: MediaConfig,
     /// `[audio]` default audio devices.
     pub audio: AudioConfig,
-    /// `[calls]` multi-line behaviour shared by all accounts.
+    /// `[calls]` multi-line behavior shared by all accounts.
     pub calls: CallsConfig,
     /// `[ui]` desktop UI settings (hot; the GUI reads them as it learns to).
     pub ui: UiConfig,
@@ -719,7 +719,7 @@ impl Default for CallsConfig {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, default)]
 pub struct UiConfig {
-    /// Colour theme.
+    /// Color theme.
     pub theme: Theme,
     /// Row density.
     pub density: Density,
@@ -1060,7 +1060,7 @@ pub struct AccountConfig {
     pub outbound_proxy: String,
     /// Additionally add `Route: <proxy;lr>` to out-of-dialog requests and INVITE route sets.
     pub outbound_proxy_route: bool,
-    /// Signalling transport.
+    /// Signaling transport.
     pub transport: Transport,
     /// Local SIP port; 0 = ephemeral.
     pub local_port: u16,
@@ -1139,7 +1139,7 @@ pub struct AccountConfig {
     pub max_calls: u32,
     /// Reliable provisional responses (100rel/PRACK, RFC 3262) as the UAS.
     pub prack: PrackMode,
-    /// Session timers (RFC 4028): advertise `Supported: timer`, honour `Session-Expires` /
+    /// Session timers (RFC 4028): advertise `Supported: timer`, honor `Session-Expires` /
     /// `Min-SE`, refresh the session when we are the refresher, hang up when the peer does
     /// not refresh.
     pub session_timers: bool,
@@ -1163,7 +1163,7 @@ pub struct AccountConfig {
     /// Directed pickup of ringing BLF extensions: `off`, `prefix` (dial a feature code) or
     /// `replaces` (experimental). Per-entry override: `[[account.blf]] pickup`.
     pub pickup: PickupMode,
-    /// Feature-code prefix of `pickup = "prefix"`, dialled before the extension.
+    /// Feature-code prefix of `pickup = "prefix"`, dialed before the extension.
     pub pickup_prefix: String,
     /// With `pickup = "replaces"` (experimental): `caller` (default, RFC 5359) or `monitored`.
     pub pickup_replaces_target: PickupReplacesTarget,

@@ -176,7 +176,7 @@ fn run_audio(codec: AudioCodec, suite: Option<SrtpSuite>, loss_pct: f64, seed: u
         out_pcm.push(frame.clone());
         t += 20.0;
     }
-    // Analyse 1.5 s .. 4.5 s.
+    // Analyze 1.5 s .. 4.5 s.
     let seg: Vec<i16> = out_pcm[75..225].iter().flatten().copied().collect();
     let (ratio, level) = detect(&seg, rate, 1000.0);
     AudioResult {

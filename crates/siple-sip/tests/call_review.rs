@@ -432,7 +432,7 @@ async fn answer_after_cancel_is_invalid_state_without_active() {
     let active = r.buf.iter().any(|e| {
         matches!(e, SipEvent::CallState { call: c } if c.id == call.id && c.state == CallState::Active)
     });
-    assert!(!active, "Active was reported for a cancelled call");
+    assert!(!active, "Active was reported for a canceled call");
     r.stack.shutdown().await;
 }
 

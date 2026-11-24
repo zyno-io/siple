@@ -430,7 +430,7 @@ mod tests {
             plan_inbound(&cfg, &h(&[("Session-Expires", "1800")])),
             Ok(Some((1800, Refresher::Uas)))
         );
-        // Named refresher honoured.
+        // Named refresher honored.
         assert_eq!(
             plan_inbound(
                 &cfg,

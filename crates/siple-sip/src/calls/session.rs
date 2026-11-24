@@ -36,7 +36,7 @@ pub enum TransferKind {
     Blind,
     /// The original is replaced by the consult call's dialog (REFER with Replaces).
     Attended,
-    /// The consult call was cancelled while ringing and the original was referred to the party
+    /// The consult call was canceled while ringing and the original was referred to the party
     /// it rang.
     Semi,
 }
@@ -63,7 +63,7 @@ pub enum TransferPhase {
     Transferred,
     /// Terminal: the transfer failed for good.
     Failed,
-    /// Terminal: cancelled before the REFER.
+    /// Terminal: canceled before the REFER.
     Cancelled,
     /// Terminal: the original call ended before there was an outcome.
     Abandoned,
@@ -187,7 +187,7 @@ pub struct TransferSession {
     pub original: CallId,
     /// The consult call (B); none for a blind transfer.
     pub consult: Option<CallId>,
-    /// Where the original is sent: the consult party's dialled URI, or the blind target.
+    /// Where the original is sent: the consult party's dialed URI, or the blind target.
     pub target_uri: String,
     /// The call whose dialog carries the REFER (once it was sent).
     pub refer_call: Option<CallId>,
@@ -210,7 +210,7 @@ pub struct TransferSession {
 pub enum CompleteMode {
     /// REFER with Replaces; needs an answered consult call.
     Attended,
-    /// End the consult call and refer the original to the party it was dialling.
+    /// End the consult call and refer the original to the party it was dialing.
     BlindNow,
 }
 
@@ -221,7 +221,7 @@ pub(crate) struct Sessions {
     /// Terminal sessions, oldest first (at most [`KEEP_DONE`]).
     done: VecDeque<TransferSession>,
     /// Calls an operation is about to put in a session (closes the window between the checks
-    /// and the insertion while a consult is dialled).
+    /// and the insertion while a consult is dialed).
     reserved: Vec<CallId>,
     next: u64,
 }
@@ -724,7 +724,7 @@ impl CallManager {
     }
 
     /// Legacy entry points (`transfer_blind` / `transfer_attended`) keep their "last writer
-    /// wins" behaviour: sessions of the calls that are still consulting are dropped (calls
+    /// wins" behavior: sessions of the calls that are still consulting are dropped (calls
     /// untouched); one with a REFER outstanding refuses, as before.
     fn legacy_supersede(&self, ids: &[&str]) -> Result<()> {
         let hits: Vec<TransferSession> = self
@@ -931,7 +931,7 @@ impl CallManager {
             }
         };
         if a.is_ended() {
-            // The original ended while we held it and dialled: no session for a dead call.
+            // The original ended while we held it and dialed: no session for a dead call.
             if let Ok(b) = self.get(&b_id) {
                 let _ = b.hangup_now();
             }
@@ -1034,7 +1034,7 @@ impl CallManager {
         let device = a.device_bound() || b.device_bound();
         match mode {
             CompleteMode::BlindNow => {
-                // The dialled target (the dialog's To), not the identity the far end asserted.
+                // The dialed target (the dialog's To), not the identity the far end asserted.
                 let target = b.dialed_uri();
                 let held = {
                     let _line = if device {

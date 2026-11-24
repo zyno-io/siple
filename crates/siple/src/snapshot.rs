@@ -46,7 +46,7 @@ pub struct Snapshot {
     pub audio: Option<AudioStatus>,
     pub mic: MicPermission,
     pub config_error: Option<ConfigErrorView>,
-    /// The `[ui]` table of the loaded config (BLF view and click behaviour, transfer Enter, ...).
+    /// The `[ui]` table of the loaded config (BLF view and click behavior, transfer Enter, ...).
     pub ui: siple_core::config::UiConfig,
     /// The effective config (Settings shows and edits it through `config.edit`).
     pub cfg: Arc<siple_core::config::Config>,
@@ -511,7 +511,7 @@ pub fn reg_label(s: &AccountStatus) -> String {
         RegState::Registering => "registering".into(),
         RegState::WaitingForNetwork => "waiting for network".into(),
         // An unclassified failure's title is the raw text: keep "failed" in it, so the state is
-        // not conveyed by the lamp colour alone.
+        // not conveyed by the lamp color alone.
         RegState::Failed { .. } => reg_failure(s).map_or_else(
             || "failed".into(),
             |f| match f.problem {
@@ -734,7 +734,7 @@ pub fn blf_state_label(s: siple_sip::BlfState) -> &'static str {
 
 /// State text of a BLF key: the state name; a failed subscription reads `Failed` (the problem and
 /// the code are in the tooltip, the accessible value and the banner), so Busy and Failed never
-/// differ by colour alone.
+/// differ by color alone.
 pub fn blf_state_text(b: &siple_sip::BlfStatus) -> String {
     if b.state == siple_sip::BlfState::Failed {
         "Failed".into()

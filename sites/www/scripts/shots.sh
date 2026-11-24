@@ -28,7 +28,7 @@ for theme in light dark; do
   for name in incoming transfer_consult transfer_composer blf_list; do
     webp "$SRC/${name}_${theme}_narrow.png" "$OUT/${name}-${theme}-narrow.webp" -crop 840x1340+0+0 +repage
   done
-  # The setup-link review screen ([[account]]): the wide render's centred
+  # The setup-link review screen ([[account]]): the wide render's centered
   # column, the same focus the Siple docs use (setup-links guide), one size for
   # every viewport.
   webp "$SRC/setup_review_${theme}_wide.png" "$OUT/setup_review-${theme}.webp" -crop 612x480+314+0 +repage

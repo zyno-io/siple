@@ -1,5 +1,5 @@
 //! Regression tests for review fixes in the core / control layer (see the individual test
-//! names); each asserts the fixed behaviour.
+//! names); each asserts the fixed behavior.
 #![cfg(unix)]
 
 mod common;

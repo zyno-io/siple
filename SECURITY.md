@@ -11,7 +11,7 @@ Please report security problems privately. Do not open a public issue or pull re
 Include the Siple version, OS, a description of the impact and steps to reproduce. Remove passwords and
 tokens from any SIP trace you attach.
 
-You can expect an acknowledgement within 5 business days and a status update within 14 days. We
+You can expect an acknowledgment within 5 business days and a status update within 14 days. We
 will coordinate a fix and a disclosure date with you and credit you in the release notes unless you
 prefer otherwise.
 
@@ -45,7 +45,7 @@ notarization, Windows Authenticode) before it replaces anything; see `docs/CONFI
 In scope: the SIP/RTP/SRTP/TLS handling, the local control API (Unix socket, named pipe, loopback TCP
 with token), the MCP bridge, config handling, the release artifacts and the in-app updater's download and verification.
 
-Things that are deliberate, documented behaviours rather than vulnerabilities:
+Things that are deliberate, documented behaviors rather than vulnerabilities:
 
 - `tls_verify = false` disables certificate checking for that account.
 - SIP traces and logs can contain credentials unless `[logging] redact_credentials` and

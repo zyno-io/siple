@@ -486,7 +486,7 @@ impl Updater {
         // caller.
         let source = self.o.source.clone();
         let package_family = self.o.package_family.clone();
-        // Aborted if this future is dropped (shutdown, a cancelled `check_now`).
+        // Aborted if this future is dropped (shutdown, a canceled `check_now`).
         let mut task = AbortOnDrop(tokio::spawn(fetch_source(
             source,
             etag,
@@ -498,7 +498,7 @@ impl Updater {
             Ok(Err(e)) => Err(FetchError::Network(if e.is_panic() {
                 "internal error while checking for updates".into()
             } else {
-                "the check was cancelled".into()
+                "the check was canceled".into()
             })),
             Err(_) => {
                 task.0.abort();

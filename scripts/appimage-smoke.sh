@@ -64,7 +64,7 @@ for f in "$lib"/*; do
 done
 # shellcheck disable=SC2013  # package names, no spaces
 for pkg in $(awk '/^lib[^ ]*\.so/ {print $2}' "$doc/BUNDLED-LIBRARIES.txt" | sort -u); do
-  [ -s "$doc/bundled-licenses/$pkg/copyright" ] || fail "no licence file for the bundled package $pkg"
+  [ -s "$doc/bundled-licenses/$pkg/copyright" ] || fail "no license file for the bundled package $pkg"
 done
 echo "   bundled: $(find "$lib" -type f | sed 's|.*/||' | sort | tr '\n' ' ')"
 # Every soname that appears as a string in the binary (what dlopen is given) is bundled, excluded

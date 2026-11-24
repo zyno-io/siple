@@ -184,7 +184,7 @@ pub struct AccountStatus {
     pub id: String,
     /// Whether the account is enabled in the config.
     pub enabled: bool,
-    /// Configured signalling transport (`auto` when the account selects it from DNS SRV).
+    /// Configured signaling transport (`auto` when the account selects it from DNS SRV).
     pub transport: Transport,
     /// The transport actually in use: the configured one, or for `transport = "auto"` the one
     /// the last build picked. `None` for `auto` until a runtime exists (not built yet, or the

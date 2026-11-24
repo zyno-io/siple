@@ -393,7 +393,7 @@ mod tests {
             split_contact("<sip:a@b>;q=0.5"),
             Some(("sip:a@b".into(), None))
         );
-        // Default ports and case are normalised.
+        // Default ports and case are normalized.
         assert_eq!(contact_key("sip:A@Host"), contact_key("sip:a@host:5060"));
         assert_ne!(contact_key("sips:a@host"), contact_key("sip:a@host"));
         assert_eq!(contact_key("sip:a@[::1]:5070").unwrap().2, 5070);

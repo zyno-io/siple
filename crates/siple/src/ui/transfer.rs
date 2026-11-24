@@ -670,7 +670,7 @@ pub(super) fn session_panel(
                 });
             }
             Cancelled => {
-                note(ui, format!("Transfer cancelled. {a_name} is back on the line."), p.muted);
+                note(ui, format!("Transfer canceled. {a_name} is back on the line."), p.muted);
                 dismiss(ui, p, st, s);
             }
             Abandoned => {

@@ -271,7 +271,7 @@ impl Chord {
         self.cmd && !mac
     }
 
-    /// Platform-normalised form for comparing chords: `(command, ctrl, cmd, alt, shift, key)`
+    /// Platform-normalized form for comparing chords: `(command, ctrl, cmd, alt, shift, key)`
     /// where `command` merges `Mod` with the platform's own command key.
     pub fn normalised(&self, mac: bool) -> (bool, bool, bool, bool, bool, String) {
         let (command, ctrl, cmd) = if mac {

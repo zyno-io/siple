@@ -619,7 +619,7 @@ impl SeenRegister {
     }
 }
 
-/// Behaviour of one fake-registrar answer.
+/// Behavior of one fake-registrar answer.
 #[derive(Clone, Default)]
 struct Answer {
     code: u16,

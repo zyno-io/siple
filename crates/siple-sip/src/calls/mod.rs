@@ -148,7 +148,7 @@ const SRTP_MEMORY_CAP: usize = 64;
 
 /// What a final 2xx of the retry INVITE means for the OSRTP refusal memory. Only a final 2xx
 /// commits a decision: provisionals prove nothing (a late-negotiating B2BUA rings, then refuses
-/// both offers), and a call cancelled while ringing teaches nothing.
+/// both offers), and a call canceled while ringing teaches nothing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub(crate) enum SrtpProbe {
     #[default]
@@ -759,7 +759,7 @@ impl CallManager {
     /// `[calls] hold_scope`, except
     /// - `except` (the call being answered / activated) and its same-process peer leg,
     /// - one leg of every self-call (two calls of this process with the same SIP Call-ID): the
-    ///   leg of `initiator` is held (of a self-call between two other accounts, the dialling
+    ///   leg of `initiator` is held (of a self-call between two other accounts, the dialing
     ///   leg), the other leg then sits in `RemoteHeld` by itself, and
     /// - unless `explicit`, calls of accounts with `auto_hold = false`.
     ///
@@ -788,7 +788,7 @@ impl CallManager {
             .map(|c| (c.clone(), c.snapshot()))
             .collect();
         // The initiator's own calls first, so it is its leg of a self-call that gets held. Of a
-        // self-call between two other accounts the outbound (dialling) leg comes first: table
+        // self-call between two other accounts the outbound (dialing) leg comes first: table
         // order would leave it to a race, since the dialler registers its call only after
         // sending the INVITE and the callee's leg may be in the table before it.
         cands.sort_by_key(|(c, _)| {
@@ -916,9 +916,9 @@ impl CallManager {
             .map(|_| focus)
     }
 
-    /// A device-bound outbound call became active: the user dialled this party, so the other
+    /// A device-bound outbound call became active: the user dialed this party, so the other
     /// un-held device lines in scope go on hold (through the coordinator; same exemptions as
-    /// auto-hold, honouring the account's `auto_hold`).
+    /// auto-hold, honoring the account's `auto_hold`).
     pub(crate) async fn outbound_answered(self: &Arc<Self>, call: &Arc<Call>) {
         if !call.live_cfg().auto_hold {
             return;
@@ -960,7 +960,7 @@ impl CallManager {
     /// `hold_scope` are held (explicit request: `auto_hold` is ignored; non-device calls and the
     /// peer leg of a self-call are left alone), the target is resumed when we hold it, and the
     /// media focus moves to it. A failed hold aborts with its error before anything is resumed.
-    /// Idempotent; serialised with the other multi-call line operations.
+    /// Idempotent; serialized with the other multi-call line operations.
     pub(crate) async fn activate(self: &Arc<Self>, id: &str) -> Result<()> {
         let target = self.get(id)?;
         if let Some(s) = self.session_blocks_hold(id) {
@@ -1107,7 +1107,7 @@ impl CallManager {
     }
 
     /// Hold / resume requested through the stack. Single-call: it does not take the line
-    /// coordinator (the per-call `reinvite_out` guard serialises re-INVITEs of one call), so a
+    /// coordinator (the per-call `reinvite_out` guard serializes re-INVITEs of one call), so a
     /// slow peer never blocks other lines.
     pub(crate) async fn hold(self: &Arc<Self>, id: &str, held: bool) -> Result<()> {
         let call = self.get(id)?;
@@ -1552,7 +1552,7 @@ impl Call {
 
     // --- operations --------------------------------------------------------------------
 
-    /// Local mute (no signalling).
+    /// Local mute (no signaling).
     pub(crate) fn mute(&self, muted: bool) -> Result<()> {
         let mut g = self.lock();
         if g.info.state == CallState::Ended {

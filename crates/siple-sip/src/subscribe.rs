@@ -1293,7 +1293,7 @@ impl SubTask {
         }
     }
 
-    /// Forgets the current dialog (no signalling) and moves to `state`.
+    /// Forgets the current dialog (no signaling) and moves to `state`.
     fn end_dialog(&mut self, state: SubState) {
         let call_id = {
             let mut s = self.sh();

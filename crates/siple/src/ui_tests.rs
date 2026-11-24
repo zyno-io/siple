@@ -76,7 +76,7 @@ const NARROW: egui::Vec2 = egui::vec2(420.0, 980.0);
 fn click_first(h: &mut Harness<'_, State>, label: &str) {
     h.query_all_by_label_contains(label)
         .next()
-        .unwrap_or_else(|| panic!("no widget labelled {label:?}"))
+        .unwrap_or_else(|| panic!("no widget labeled {label:?}"))
         .click_accesskit();
     // Spinners keep repainting, so run a few steps instead of until idle.
     h.run_steps(4);
@@ -868,7 +868,7 @@ fn saved_panel_choices_are_restored() {
     assert!(h.query_by_label("LINES").is_some());
     assert!(h.query_by_label("EXTENSIONS").is_none());
     assert!(!h.state().ui.ext_shown);
-    // Narrow ignores the remembered extensions choice and keeps its reset-to-default behaviour.
+    // Narrow ignores the remembered extensions choice and keeps its reset-to-default behavior.
     let mut ui = UiState::default();
     ui.wizard.dismissed = true;
     ui.ext_pref = Some(true);
@@ -1328,7 +1328,7 @@ fn blf_tooltips_say_what_a_click_does_and_show_health() {
     h.run_steps(60);
     assert!(h.query_by_label_contains("Click to call").is_some());
     assert!(h.query_by_label_contains("Stale:").is_some());
-    // Failed: the key reads "Failed" (never differing from Busy by colour alone); the tooltip
+    // Failed: the key reads "Failed" (never differing from Busy by color alone); the tooltip
     // names the problem and shows the server's answer.
     h.get_by_label("Old lobby (desk-1001)").hover();
     h.run_steps(60);
@@ -1500,7 +1500,7 @@ fn blf_click_during_a_call_opens_the_in_call_menu() {
         h.query_by_label("New call (holds current)").is_none(),
         "menu closes"
     );
-    // "New call" is the old dial behaviour.
+    // "New call" is the old dial behavior.
     h.state_mut().actions.clear();
     h.get_by_label("Sales (desk-1001)").click_accesskit();
     h.run();
@@ -2512,12 +2512,12 @@ fn consult_with(phase: TransferPhase, select: &str) -> Harness<'static, State> {
 fn is_disabled(h: &Harness<'_, State>, label: &str) -> bool {
     h.query_all_by_label_contains(label)
         .next()
-        .unwrap_or_else(|| panic!("no widget labelled {label:?}"))
+        .unwrap_or_else(|| panic!("no widget labeled {label:?}"))
         .accesskit_node()
         .is_disabled()
 }
 
-/// 1: the dialing consult leg's Cancel is the session cancel, labelled like the panel's.
+/// 1: the dialing consult leg's Cancel is the session cancel, labeled like the panel's.
 #[test]
 fn dialing_consult_leg_cancel_is_the_session_cancel() {
     let mut snap = transfer_consult();
@@ -4246,7 +4246,7 @@ fn mute_and_hold_shortcuts_dispatch_the_button_actions() {
         press(&mut h, MOD_SHIFT, M),
         [UiAction::Mute("c2".into(), true)]
     );
-    // While a REFER is outstanding, Hold is unavailable (same as the greyed button).
+    // While a REFER is outstanding, Hold is unavailable (same as the grayed button).
     let mut h = consult_with(TransferPhase::Referring, "c2");
     assert!(press(&mut h, MOD_SHIFT, H).is_empty());
     // No calls: no-ops.
@@ -4916,7 +4916,7 @@ fn a_saved_open_choice_does_not_override_the_medium_stage_minimum() {
     let mut h = harness_ui(two_calls(), egui::vec2(780.0, 760.0), ui);
     h.run();
     assert!(h.query_by_label("EXTENSIONS").is_none());
-    // Wide always honours it.
+    // Wide always honors it.
     let mut ui = UiState::default();
     ui.wizard.dismissed = true;
     ui.ext_pref = Some(true);

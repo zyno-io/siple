@@ -72,7 +72,7 @@ pub enum ConfigError {
     },
 }
 
-/// Deserialises `text`, then resolves vendor profiles: the text is first parsed as-is (so errors
+/// Deserializes `text`, then resolves vendor profiles: the text is first parsed as-is (so errors
 /// keep their line/column), and only configs with a non-generic profile are re-read as a TOML
 /// table to fill in the bundled keys the file does not set (explicit config > profile > default).
 fn parse_text(text: &str) -> Result<Config, toml::de::Error> {

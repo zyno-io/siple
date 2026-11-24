@@ -743,10 +743,10 @@ async fn consult_cancel_resumes_the_original_and_its_focus() {
     assert_eq!(r.media.focus().as_deref(), Some(a_b.as_str()));
     assert_eq!(r.stack.active_line().as_deref(), Some(a_b.as_str()));
     state_of(&mut r, &b_a, CallState::Active).await;
-    // Cancelling again is a no-op.
+    // Canceling again is a no-op.
     let again = r.stack.transfer_cancel(&sid).await.unwrap();
     assert_eq!(again.phase, TransferPhase::Cancelled);
-    // A cancelled session no longer blocks a new one.
+    // A canceled session no longer blocks a new one.
     let (sid2, _) = start_consult(&mut r, &t, &a_b, Transport::Udp).await;
     assert_ne!(sid, sid2);
     r.stack.shutdown().await;
@@ -810,7 +810,7 @@ async fn busy_consult_target_fails_the_consult_and_keeps_the_original_held() {
     assert_eq!((e.stage.as_str(), e.code), ("consult", 486));
     let a = r.stack.call(&a_b).unwrap();
     assert_eq!(a.state, CallState::Held, "A stays held: {a:?}");
-    // Nothing to complete; a new consult is refused until this one is cancelled.
+    // Nothing to complete; a new consult is refused until this one is canceled.
     assert!(
         r.stack
             .transfer_complete(&sid, CompleteMode::Attended)
@@ -894,7 +894,7 @@ async fn refused_refer_returns_to_the_consult_with_an_error() {
         matches!(again, SipError::Status { code: 603, .. }),
         "{again:?}"
     );
-    // ... or cancelling.
+    // ... or canceling.
     r.stack.transfer_cancel(&sid).await.unwrap();
     state_of(&mut r, &a_b, CallState::Active).await;
     r.stack.shutdown().await;

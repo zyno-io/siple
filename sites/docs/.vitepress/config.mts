@@ -179,7 +179,7 @@ export default defineConfig({
             { text: 'Contributing', link: '/project/contributing' },
             { text: 'Roadmap', link: '/project/roadmap' },
             { text: 'Security', link: '/project/security' },
-            { text: 'Licence', link: '/project/licence' },
+            { text: 'License', link: '/project/licence' },
             { text: 'Changelog', link: '/project/changelog' }
           ]
         }

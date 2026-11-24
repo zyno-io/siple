@@ -248,7 +248,7 @@ fn test_srtp_reset_sequence_state_preserves_keys() {
 
 #[test]
 fn test_srtcp_same_key_restart_stays_rejected() {
-    // SRTCP analogue of the SRTP test: peer restarts with a fresh SRTCP
+    // SRTCP analog of the SRTP test: peer restarts with a fresh SRTCP
     // index of 0 after RTCP BYE / hold. Without reset_recv_state(), the
     // replay window rejects the restarted low-index packets.
     let key = make_test_key();
@@ -1048,7 +1048,7 @@ fn test_srtp_recv_ssrc_cap_rejects_excess() {
 
 #[test]
 fn test_srtcp_new_ssrc_accepted_without_reset() {
-    // SRTCP analogue: after one source runs its index past the window, a
+    // SRTCP analog: after one source runs its index past the window, a
     // different source at index 0 is accepted without a reset.
     let key = make_test_key();
     let mut rx = SrtcpContext::from_sdes_key(SUITE, &key).unwrap();
@@ -1279,7 +1279,7 @@ fn rfc6188_7_2_aes256_key_derivation() {
     }
 }
 
-// ── All-suite behaviour ──────────────────────────────────────────
+// ── All-suite behavior ──────────────────────────────────────────
 
 #[test]
 fn all_suites_roundtrip_and_tag_lengths() {

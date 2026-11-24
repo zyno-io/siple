@@ -75,7 +75,7 @@ pub trait ControlBackend: Send + Sync {
 #[async_trait]
 pub trait StreamSession: Send {
     /// Runs until the stream ends. `rd` keeps any bytes the client pipelined behind the request
-    /// line; `conn` is cancelled on server shutdown or endpoint retirement. Dropping `wr`
+    /// line; `conn` is canceled on server shutdown or endpoint retirement. Dropping `wr`
     /// closes the connection.
     async fn run(
         self: Box<Self>,

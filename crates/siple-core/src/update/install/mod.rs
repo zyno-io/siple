@@ -56,7 +56,7 @@ const PROGRESS_INTERVAL: Duration = Duration::from_millis(500);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ErrorKind {
-    /// Cancelled by the user, an agent or a setting.
+    /// Canceled by the user, an agent or a setting.
     Cancelled,
     /// The download failed (connect, TLS, HTTP, a refused redirect, a wrong size, time-outs).
     Network,
@@ -473,7 +473,7 @@ pub struct InstallerOptions {
     pub poll: Duration,
     /// [`CLEANUP_DELAY`].
     pub cleanup_delay: Duration,
-    /// Cancelled when the app shuts down.
+    /// Canceled when the app shuts down.
     pub shutdown: CancellationToken,
 }
 
@@ -983,7 +983,7 @@ impl Installer {
     }
 
     /// `app.cancel_update`: stops an install that did not reach the swap. Returns whether
-    /// something was cancelled.
+    /// something was canceled.
     pub fn cancel(&self) -> Result<bool, ApiError> {
         let mut st = self.st();
         match st.phase() {
@@ -1017,7 +1017,7 @@ impl Installer {
         match r {
             Ok(()) => {}
             Err(e) if e.kind == ErrorKind::Cancelled || token.is_cancelled() => {
-                tracing::info!("the update install was cancelled");
+                tracing::info!("the update install was canceled");
                 // Requested again while this run was stopping: its staging area is gone and the
                 // lock is free, so the new run starts from scratch.
                 if let Some((rel, restart)) = st.again.take()
@@ -1043,7 +1043,7 @@ impl Installer {
     }
 
     /// Waits until the calls have been over for `quiet` (zero for `restart: now`), or the restart
-    /// mode became `manual` (`Ok(false)`), or the install was cancelled.
+    /// mode became `manual` (`Ok(false)`), or the install was canceled.
     async fn wait_idle(
         &self,
         token: &CancellationToken,
@@ -1252,7 +1252,7 @@ impl Installer {
                 }
                 continue;
             }
-            // The last check before the swap: under the lock, so that cancelling and
+            // The last check before the swap: under the lock, so that canceling and
             // committing cannot both win.
             let mut st = self.st();
             if token.is_cancelled() {

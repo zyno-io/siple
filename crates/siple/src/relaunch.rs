@@ -10,7 +10,7 @@
 //!
 //! The Linux AppImage is started as the file itself (never its temporary mount); a copy that ran
 //! without FUSE restarts the new one the same way with `--appimage-extract-and-run`, which the
-//! runtime only honours as the first argument.
+//! runtime only honors as the first argument.
 //!
 //! Carried over: `--config <absolute path>` when the config is not the default one (the macOS
 //! `open -n` drops environment variables such as `SIPLE_CONFIG`) and `--no-audio`. A link argument
