@@ -6,7 +6,8 @@ use super::{
 };
 use crate::platform::CancellationToken;
 use crate::sip::SipMessage;
-use crate::transport::tcp_listener::accept_or_cancelled;
+use crate::transport::io_error::ErrorRun;
+use crate::transport::tcp_listener::{accept_or_cancelled, after_accept_error};
 use crate::{error::Error, transport::transport_layer::TransportLayerInnerRef, Result};
 use core::future::Future;
 use core::pin::Pin;
@@ -352,16 +353,26 @@ impl TlsListenerConnection {
         let (acceptor, resolver) = Self::create_acceptor(&self.inner.config).await?;
         *self.inner.cert_resolver.lock() = Some(resolver);
         let listener_local_addr = self.get_addr().clone();
+        // siple: reported as closed if its socket dies (see `after_accept_error`)
+        let this = SipConnection::TlsListener(self.clone());
 
         crate::platform::spawn(async move {
+            let mut errors = ErrorRun::default();
             loop {
                 let (stream, remote_addr) =
                     match accept_or_cancelled(&listener, &transport_layer_inner.cancel_token).await
                     {
-                        Some(Ok((stream, remote_addr))) => (stream, remote_addr),
+                        Some(Ok((stream, remote_addr))) => {
+                            errors.success();
+                            (stream, remote_addr)
+                        }
                         Some(Err(e)) => {
-                            warn!(error = ?e, "Failed to accept TLS connection");
-                            continue;
+                            if after_accept_error(&e, &mut errors, &this, &transport_layer_inner)
+                                .await
+                            {
+                                continue;
+                            }
+                            break;
                         }
                         None => {
                             debug!(local = %listener_local_addr, "TLS listener cancelled");

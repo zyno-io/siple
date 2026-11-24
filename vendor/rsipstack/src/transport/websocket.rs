@@ -1,6 +1,7 @@
 use crate::platform::CancellationToken;
 use crate::sip::SipMessage;
-use crate::transport::tcp_listener::accept_or_cancelled;
+use crate::transport::io_error::ErrorRun;
+use crate::transport::tcp_listener::{accept_or_cancelled, after_accept_error};
 use crate::{
     transport::{
         connection::{TransportSender, KEEPALIVE_REQUEST, KEEPALIVE_RESPONSE},
@@ -96,15 +97,25 @@ impl WebSocketListenerConnection {
         let listener_local_addr = self.get_addr().clone();
 
         debug!(local = %self.inner.local_addr, "Starting WebSocket listener");
+        // siple: reported as closed if its socket dies (see `after_accept_error`)
+        let this = SipConnection::WebSocketListener(self.clone());
         crate::platform::spawn(async move {
+            let mut errors = ErrorRun::default();
             loop {
                 let (stream, remote_addr) =
                     match accept_or_cancelled(&listener, &transport_layer_inner.cancel_token).await
                     {
-                        Some(Ok((stream, remote_addr))) => (stream, remote_addr),
+                        Some(Ok((stream, remote_addr))) => {
+                            errors.success();
+                            (stream, remote_addr)
+                        }
                         Some(Err(e)) => {
-                            warn!(error = ?e, "Failed to accept WebSocket connection");
-                            continue;
+                            if after_accept_error(&e, &mut errors, &this, &transport_layer_inner)
+                                .await
+                            {
+                                continue;
+                            }
+                            break;
                         }
                         None => {
                             debug!(local = %listener_local_addr, "WebSocket listener cancelled");

@@ -1,6 +1,12 @@
 <!-- siple-rename: keep (this file documents the legacy ZynoPhone names on purpose) -->
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- An account whose SIP socket stops working (macOS can shut a program's network sockets down, for example) now gets a new socket on the same address and re-registers, instead of going deaf with one CPU core busy until Siple is restarted. Calls in progress keep going. `account.reconnecting` reports this with the reason `transport_dead`.
+
 ## 0.2.6 (2026-11-23)
 
 ### New

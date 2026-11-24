@@ -798,6 +798,16 @@ impl SipStack {
         rx.await.map_err(|_| SipError::Closed)
     }
 
+    /// Test hook: makes the account's UDP SIP socket fail like one the OS has torn down (every
+    /// send `EPIPE`, every receive `ENOTCONN`, as macOS "defunct" sockets do), to exercise the
+    /// dead-socket replacement. Returns whether the account had a UDP socket.
+    #[doc(hidden)]
+    pub async fn simulate_udp_socket_death(&self, id: &str) -> Result<bool> {
+        let (tx, rx) = oneshot::channel();
+        self.send(id, Cmd::KillUdp(tx))?;
+        rx.await.map_err(|_| SipError::Closed)
+    }
+
     /// Unregisters every account (best effort, bounded) and stops them.
     pub async fn shutdown(&self) {
         self.shared.net.shutdown();

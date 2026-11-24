@@ -148,6 +148,9 @@ impl UdpConnection {
     ) -> Result<()> {
         let mut buf = BytesMut::with_capacity(MAX_UDP_BUF_SIZE);
         buf.resize(MAX_UDP_BUF_SIZE, 0);
+        // siple: receive errors are classified (see `io_error`): no hot loop on a dead socket,
+        // which is reported as `TransportEvent::Closed` once the loop gives up on it.
+        let mut errors = super::io_error::ErrorRun::default();
         loop {
             // Race cancellation against the next datagram (backend-agnostic
             // combinator; both arms cancelled cleanly when one wins). The
@@ -168,10 +171,53 @@ impl UdpConnection {
                         return Ok(());
                     }
                     crate::platform::select::Either::B(result) => match result {
-                        Ok((len, addr)) => (len, addr),
+                        Ok((len, addr)) => {
+                            let run = errors.success();
+                            if run > 1 {
+                                debug!(local = %self.get_addr(), errors = run, "UDP receive works again");
+                            }
+                            (len, addr)
+                        }
                         Err(e) => {
-                            warn!(error = %e, "error receiving UDP packet");
-                            continue;
+                            use super::io_error::{classify, Next};
+                            let class = classify(&e);
+                            match errors.error(class) {
+                                Next::Stop => {
+                                    warn!(
+                                        local = %self.get_addr(),
+                                        error = %e,
+                                        errors = errors.consecutive(),
+                                        "UDP socket is dead; stopping its receive loop"
+                                    );
+                                    let _ = sender.send(TransportEvent::Closed(
+                                        SipConnection::Udp(self.clone()),
+                                    ));
+                                    return Err(e);
+                                }
+                                Next::Retry(delay) => {
+                                    if errors.should_log() {
+                                        warn!(
+                                            local = %self.get_addr(),
+                                            error = %e,
+                                            ?class,
+                                            errors = errors.consecutive(),
+                                            "error receiving UDP packet"
+                                        );
+                                    } else {
+                                        debug!(local = %self.get_addr(), error = %e, errors = errors.consecutive(), "error receiving UDP packet");
+                                    }
+                                    if !super::io_error::wait_or_cancelled(
+                                        delay,
+                                        self.cancel_token.as_ref(),
+                                    )
+                                    .await
+                                    {
+                                        debug!(local = %self.get_addr(), "UDP serve_loop cancelled");
+                                        return Ok(());
+                                    }
+                                    continue;
+                                }
+                            }
                         }
                     },
                 }

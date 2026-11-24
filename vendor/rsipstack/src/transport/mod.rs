@@ -1,5 +1,7 @@
 pub mod channel;
 pub mod connection;
+// siple: receive / accept error policy (no hot loop on a dead socket)
+pub mod io_error;
 pub mod sip_addr;
 #[cfg(feature = "platform-tokio")]
 pub mod stream;
