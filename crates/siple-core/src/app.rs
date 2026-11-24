@@ -6,7 +6,7 @@
 //! App::start ─ lock ─ logging ─ state.toml ─ audio ─ media engine ─ SipStack(+trace sink)
 //!            ─ accounts ─ control server + runtime.json ─ tasks:
 //!                 sip→events bridge · media→events bridge · audio poll (1 s)
-//!                 reload actor (serialises every config apply) · config file watcher
+//!                 reload actor (serializes every config apply) · config file watcher
 //! ```
 
 use std::any::Any;
@@ -54,7 +54,7 @@ pub enum LoggingMode {
     /// Build the pipeline but do not install it (tests; the subscriber is kept alive so
     /// `set_filter` still works).
     Detached,
-    /// Use an already-initialised handle (the GUI sets logging up before the app starts).
+    /// Use an already-initialized handle (the GUI sets logging up before the app starts).
     Provided(Arc<LoggingHandle>),
 }
 

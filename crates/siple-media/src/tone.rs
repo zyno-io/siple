@@ -161,7 +161,7 @@ impl ToneGenerator {
                     }
                 }
                 let ramp = RAMP.min(len / 2).max(1);
-                // No edge ramp where the neighbouring segment is also "on"
+                // No edge ramp where the neighboring segment is also "on"
                 // (same frequencies), including across the cadence wrap of a
                 // continuous tone; that would modulate the tone every cycle.
                 let n = self.spec.segments.len();
@@ -246,7 +246,7 @@ mod tests {
                 assert!(overall <= peak_amp);
             }
         }
-        // Dual tone: compare second-boundary neighbourhood to its neighbours.
+        // Dual tone: compare second-boundary neighborhood to its neighbors.
         let mut g = ToneGenerator::new(ToneSpec::dual(350.0, 440.0), 10000);
         let s = g.next_frame(48000 * 2);
         let rms = |x: &[i16]| {

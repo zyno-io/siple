@@ -31,7 +31,7 @@ see [CONFIG.md](CONFIG.md#location)); neither is published yet. Since 0.2.0 the 
   `--config` stays multi-instance.
 - **Cross-edition CLI discovery.** `siple-cli` reads `runtime.json` from its own default config dir only. It should also try
   the other editions' locations and report what it found (`siple-cli instances`); see the findings below for what each OS
-  allows. An explicit `--config` / `SIPLE_CONFIG` keeps today's behaviour.
+  allows. An explicit `--config` / `SIPLE_CONFIG` keeps today's behavior.
 - **Import.** Moving from a direct install to a store edition starts with an empty config. Generalize the one-time copy in
   `crates/siple-config/src/migrate.rs` into an import: automatic on first MSIX start (`%APPDATA%\Siple`, and the legacy
   `ZynoPhone` dir), user-assisted in the Mac App Store edition (open panel), and `siple-cli config import --from DIR`.
@@ -85,7 +85,7 @@ Findings from the App Sandbox spike (macOS 27, Developer ID signature with the s
 - An unsandboxed process without Full Disk Access can `connect()` to the control socket in the group container, with no
   prompt, but cannot read files there (silent `EPERM`). The token is optional on the Unix socket, so outside discovery
   must connect to the socket path directly and must not read `runtime.json` first. Probe only when the MAS receipt
-  (`/Applications/Siple.app/Contents/_MASReceipt/receipt`) exists or the user asks. This relies on behaviour Apple could
+  (`/Applications/Siple.app/Contents/_MASReceipt/receipt`) exists or the user asks. This relies on behavior Apple could
   tighten. Untested: a terminal without Full Disk Access reading the group container (a prompt attributed to the
   terminal is possible).
 - A Developer ID CLI that carries the app-group entitlement still gets `EPERM` without a provisioning profile

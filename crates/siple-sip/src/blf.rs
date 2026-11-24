@@ -690,7 +690,7 @@ pub(crate) mod fixtures {
 </dialog-info>
 "#;
 
-    /// Prefixed, partial, Yealink / Polycom flavoured.
+    /// Prefixed, partial, Yealink / Polycom flavored.
     pub const PREFIXED_PARTIAL: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 <d:dialog-info xmlns:d="urn:ietf:params:xml:ns:dialog-info" xmlns:sa="urn:ietf:params:xml:ns:sa" version="9" state="partial" entity="sip:2001@pbx.example.com">
   <d:dialog id="call-7" call-id="7@10.1.1.5" local-tag="lt" remote-tag="rt" direction="initiator">

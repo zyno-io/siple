@@ -4,7 +4,7 @@ import { withBase } from 'vitepress'
 
 // Theme-aware screenshot of the real app: <Shot name="idle" alt="..." caption="..." />.
 // Files come from scripts/copy-screenshots.mjs (public/screenshots/<name>-light|dark.png, 1240x760).
-// `focus="x,y,w,h"` (in those image pixels) shows only that part, for screens with a small centred
+// `focus="x,y,w,h"` (in those image pixels) shows only that part, for screens with a small centered
 // panel such as the setup.
 const props = defineProps<{ name: string; alt: string; caption?: string; focus?: string }>()
 const W = 1240

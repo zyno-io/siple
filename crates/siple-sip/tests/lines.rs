@@ -246,7 +246,7 @@ async fn end_cause_missed_and_cancelled_elsewhere() {
         .unwrap();
     assert!(end.missed);
     assert_eq!(end.cause, EndCause::Missed);
-    // Answered elsewhere: cancelled, not missed.
+    // Answered elsewhere: canceled, not missed.
     let raw = Raw::new(&b).await;
     raw.send(&raw.msg("INVITE", None, 1, "", &raw.sdp())).await;
     let call = incoming(&mut r).await;
@@ -626,7 +626,7 @@ async fn activate_aborts_when_a_hold_fails() {
     r.stack.shutdown().await;
 }
 
-/// Concurrent activations are serialised: no re-INVITE overlap, exactly one live line at the end.
+/// Concurrent activations are serialized: no re-INVITE overlap, exactly one live line at the end.
 #[tokio::test]
 async fn concurrent_activations_never_leave_two_live_lines() {
     let mut r = rig();
@@ -1135,7 +1135,7 @@ async fn end_others_without_ack_leaves_the_other_call() {
 }
 
 /// An outbound device call that becomes active holds the lines that were switched on while it
-/// rang (the user dialled this party).
+/// rang (the user dialed this party).
 #[tokio::test]
 async fn outbound_answer_holds_lines_activated_while_ringing() {
     let mut r = rig();
@@ -1398,7 +1398,7 @@ async fn outbound_answered_rechecks_after_waiting_for_the_coordinator() {
 
 /// `consult_start` on a call that uses no audio device (agent): the original is held, as a
 /// phone does for a transfer, the consult call inherits the agent's audio binding, and the
-/// user's un-held device call is never touched. Cancelling resumes the agent call.
+/// user's un-held device call is never touched. Canceling resumes the agent call.
 #[tokio::test]
 async fn non_device_consult_never_holds_the_users_device_call() {
     let mut r = rig();
@@ -1587,7 +1587,7 @@ async fn unhold_right_after_a_failed_transfer_is_ok() {
     let _ = server.await;
 }
 
-/// Cancelling a consult resumes the original only after the other un-held device lines went on
+/// Canceling a consult resumes the original only after the other un-held device lines went on
 /// hold: never two live lines.
 #[tokio::test]
 async fn cancel_holds_other_lines_before_resuming_the_original() {

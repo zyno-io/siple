@@ -62,7 +62,7 @@ pub(super) fn line_summary(cx: &Cx, st: &UiState, c: &CallInfo) -> (&'static str
 }
 
 /// End cause as the rail shows it: the problem's title ("Busy", "Not allowed") for a failure, else
-/// "Transferred", "Missed", "Cancelled", "Declined" (we rejected it) or "Ended".
+/// "Transferred", "Missed", "Canceled", "Declined" (we rejected it) or "Ended".
 fn ended_text(c: &CallInfo) -> String {
     let Some(e) = &c.end else {
         return "Ended".into();
@@ -73,7 +73,7 @@ fn ended_text(c: &CallInfo) -> String {
     match e.cause {
         EndCause::Transferred => "Transferred".into(),
         EndCause::Missed => "Missed".into(),
-        EndCause::Cancelled => "Cancelled".into(),
+        EndCause::Cancelled => "Canceled".into(),
         EndCause::Rejected => "Declined".into(),
         _ => "Ended".into(),
     }

@@ -885,7 +885,7 @@ fn dial_row(ui: &mut egui::Ui, cx: &Cx, st: &mut UiState, large: bool, out: &mut
             egui::TextEdit::singleline(&mut st.dial_target)
                 .id_salt("dial_target")
                 // egui pins the hint to the top-left in the default font; at the field's size it
-                // fills the row and so sits centred like the typed text.
+                // fills the row and so sits centered like the typed text.
                 .hint_text(RichText::new(hint).font(egui::FontId::proportional(field_font.size)))
                 .font(field_font)
                 .margin(Margin::symmetric(10, v_margin))

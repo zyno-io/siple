@@ -20,7 +20,7 @@ use crate::media::CallMediaRequest;
 use crate::router::AccountCtx;
 use crate::types::{ALLOW, SipEvent};
 
-/// `Require` option tags the account can honour: `replaces` always, `100rel` unless
+/// `Require` option tags the account can honor: `replaces` always, `100rel` unless
 /// `prack = disabled`, `timer` with `session_timers`.
 fn honoured_require(cfg: &siple_config::AccountConfig) -> Vec<&'static str> {
     let mut v = vec!["replaces"];
@@ -404,7 +404,7 @@ impl Call {
             dialog.state(),
             rsipstack::dialog::dialog::DialogState::Terminated(..)
         ) {
-            return Err(self.state_err("call was cancelled"));
+            return Err(self.state_err("call was canceled"));
         }
         let rt = g.rt.clone().ok_or_else(|| self.state_err("call is over"))?;
         // RFC 3262 §3: no 2xx while a reliable provisional response is unacknowledged; the

@@ -1702,7 +1702,7 @@ async fn pickup_refused_when_not_ringing_or_not_configured() {
         r.stack.pickup("a", "1004").await.unwrap_err(),
         "not ringing",
     );
-    // A ringing call that *we* see as the monitored phone dialling out is not pickable either.
+    // A ringing call that *we* see as the monitored phone dialing out is not pickable either.
     f.notify_ok(
         &mut d,
         "dialog",
@@ -1813,7 +1813,7 @@ async fn pickup_replaces_refuses_injected_call_id() {
     r.stack.shutdown().await;
 }
 
-/// `blf.dial`: the entry's URI is dialled on its account; unknown entries are refused.
+/// `blf.dial`: the entry's URI is dialed on its account; unknown entries are refused.
 #[tokio::test]
 async fn blf_dial_calls_the_entry() {
     let mut f = Fake::start().await;

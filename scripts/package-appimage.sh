@@ -9,7 +9,7 @@
 # the host (scripts/linux-needed-check.sh), but winit, wgpu and egui dlopen the X11, Wayland and xkb
 # libraries, which minimal desktops lack. So the script copies those from the build container into
 # usr/lib (the AppImage convention: everything except the AppImageCommunity excludelist and glibc; the
-# list and how it is derived are in scripts/appimage-libs.sh), with their licences and a generated
+# list and how it is derived are in scripts/appimage-libs.sh), with their licenses and a generated
 # BUNDLED-LIBRARIES.txt. linuxdeploy would do the same by guessing; appimagetool would be a second
 # pinned binary that is itself an AppImage and downloads the runtime unless given one. AppRun puts
 # usr/lib on LD_LIBRARY_PATH for Siple only and saves the host value, which every child process Siple
@@ -108,7 +108,7 @@ fetch_runtime() {
 
 # bundle_gui_libs APPDIR: copies GUI_DLOPEN_SONAMES and their transitive NEEDED libraries (minus the
 # excludelist, which includes glibc) from this machine's multiarch library directory into
-# APPDIR/usr/lib, their Debian licences into usr/share/doc/siple/bundled-licenses/<package>/, and
+# APPDIR/usr/lib, their Debian licenses into usr/share/doc/siple/bundled-licenses/<package>/, and
 # writes usr/share/doc/siple/BUNDLED-LIBRARIES.txt. Fails if a bundled library needs a library that is
 # neither bundled nor excluded, or if a wanted library is missing from the container.
 bundle_gui_libs() {
@@ -152,7 +152,7 @@ bundle_gui_libs() {
         die "bundled $(basename "$f") needs $n, which is neither bundled nor on the excludelist"
     done
   done
-  # Provenance and licences.
+  # Provenance and licenses.
   local out="$doc/BUNDLED-LIBRARIES.txt" pkg ver pkgs=""
   {
     echo "Libraries bundled in this AppImage (usr/lib)"
@@ -161,7 +161,7 @@ bundle_gui_libs() {
     echo "Siple loads the X11, Wayland and xkb libraries at run time. They are copied unmodified from the"
     echo "Debian 12 (bookworm) build image so minimal desktops that lack them work. Everything on the"
     echo "AppImageCommunity excludelist (libX11, libxcb, libGL/EGL, libwayland-client, ALSA, glibc, ...) comes"
-    echo "from the host instead. Licences: bundled-licenses/<package>/copyright (MIT/X11 style)."
+    echo "from the host instead. Licenses: bundled-licenses/<package>/copyright (MIT/X11 style)."
     echo
     printf '%-28s %-24s %s\n' "library" "Debian package" "version"
   } >"$out"

@@ -2,7 +2,7 @@
 //! effective config against the applied one, and applying the difference.
 //!
 //! Every apply runs inside the single reload actor task ([`run_reload_actor`]), so file-watcher,
-//! SIGHUP and `config.reload` triggers are serialised and an apply is never cut short by a
+//! SIGHUP and `config.reload` triggers are serialized and an apply is never cut short by a
 //! disconnecting API client.
 
 use std::path::Path;
@@ -1335,7 +1335,7 @@ impl Inner {
     }
 }
 
-/// The ConfigActor: serialises every reload request and typed edit.
+/// The ConfigActor: serializes every reload request and typed edit.
 pub(crate) async fn run_reload_actor(
     inner: Arc<Inner>,
     mut rx: UnboundedReceiver<ReloadRequest>,

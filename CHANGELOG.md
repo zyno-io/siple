@@ -5,6 +5,7 @@
 
 ### Fixed
 
+- In-app updates: an install requested the moment another one ends (for example an immediate retry through the control API) no longer fails now and then with "another Siple is installing an update".
 - A re-INVITE that reached Siple right after it answered the previous one (for example a resume right after a hold) could be refused with "500 Server Internal Error". When the other party was also Siple, a failed transfer could then leave the call on hold.
 
 ## 0.2.6 (2026-11-23)
@@ -38,7 +39,7 @@
 
 ### Fixed
 
-- Auto-hold in a call between two of your own accounts holds the leg that dialled. It could hold the receiving leg instead,
+- Auto-hold in a call between two of your own accounts holds the leg that dialed. It could hold the receiving leg instead,
   depending on which leg was registered first.
 - Windows: the restart after an in-place update waits the full time for the old process to exit (a wait could end a moment
   early).
@@ -137,7 +138,7 @@ Plain-language errors, `siple:` setup links and a Flatpak edition.
   - Registering over TCP or TLS works with Kamailio registrars that put the observed flow in the Contact as
     `received="sip:IP:port;transport=tls"` (the quoted `;` split the parameter, and rsipstack 0.8.6 refused the answer).
   - Hanging up an outgoing call while it rings now sends the CANCEL to the same next hop as the INVITE (outbound
-    proxy or registrar). Before, it went wherever the dialled address resolved, so with an outbound proxy, or a
+    proxy or registrar). Before, it went wherever the dialed address resolved, so with an outbound proxy, or a
     registrar host other than the domain, the other side could keep ringing.
 
 ### API
@@ -179,7 +180,7 @@ Plain-language errors, `siple:` setup links and a Flatpak edition.
 - API: `app.install_update`, `app.cancel_update`, the events `app.update_progress` and `app.updated`, the `install` object of
   `app.update_status` and `install_state` in `status.update`; `action` can now be `install`. See `docs/CONFIG.md`, "In-place install".
 - Privacy: the direct downloads download the new version from GitHub when you, or a script or agent you run, chooses to install it.
-- New app icon: the same handset the app uses on its Call and Answer buttons, centred on a lit teal-to-blue tile with a
+- New app icon: the same handset the app uses on its Call and Answer buttons, centered on a lit teal-to-blue tile with a
   status lamp; the small sizes (16 to 40 px, tray, header) use a simplified mark. The header brand mark is now the icon itself.
 - Interface polish: text fields share the 32 pt height of the drop-downs and buttons beside them; the Extensions view switch is
   one segmented control; panels are divided by single lines (no doubled borders); icons replace the text arrows and plus
@@ -232,9 +233,9 @@ gains `-StageOnly` / `-ZipOnly -RequireSigned`. See `docs/RELEASING.md`.
 
 The GUI has the keyboard map: answer, hang up, mute, hold, transfer, line select (`Mod+1`-`9`, `Mod+[` / `]`), focus dial, filter extensions and Settings, plus DTMF typing on an active line. `[ui.shortcuts]` overrides each chord (hot); unknown actions and malformed chords are config errors. See `docs/CONFIG.md`.
 
-### Licence changed to FSL-1.1-ALv2
+### License changed to FSL-1.1-ALv2
 
-Siple is now source-available under the Functional Source License 1.1 with an Apache-2.0 future licence
+Siple is now source-available under the Functional Source License 1.1 with an Apache-2.0 future license
 (FSL-1.1-ALv2), replacing MIT. Each release converts to Apache-2.0 two years after publication. See `LICENSE`.
 Packages now ship `LICENSE` and `THIRD-PARTY-NOTICES.html`. The one-shot ZynoPhone-to-Siple rename script and the
 internal planning documents were removed from the repository.

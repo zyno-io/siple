@@ -155,13 +155,16 @@ async fn finished_events(c: &mut ControlClient, call: &str, since: u64, n: usize
     panic!("only {} play_finished events", out.len());
 }
 
-/// Polls `call.get` (on any client) until the call has a current play.
-async fn wait_playing(c: &mut ControlClient, call: &str) {
+/// Polls `call.get` (on any client) until the call has a current play; returns its id.
+/// `audio.play.current` comes from the media thread's stats snapshot, refreshed about every
+/// 50 ms once that thread has taken the clip, so on a loaded machine it can trail the
+/// `call.play` that issued the clip by far more than a fixed delay.
+async fn wait_playing(c: &mut ControlClient, call: &str) -> u64 {
     let deadline = tokio::time::Instant::now() + Duration::from_secs(30);
     loop {
         let g = c.call("call.get", json!({"call_id": call})).await.unwrap();
-        if !g["audio"]["play"]["current"].is_null() {
-            return;
+        if let Some(id) = g["audio"]["play"]["current"].as_u64() {
+            return id;
         }
         assert!(
             tokio::time::Instant::now() < deadline,
@@ -622,9 +625,19 @@ async fn wait_timeout_keeps_playing_and_reports_the_play_id() {
         .await
         .unwrap_err();
     assert_eq!(kind(&e), ErrorKind::Timeout, "{e}");
-    let id = api(&e).extra.as_ref().unwrap()["play_id"].as_u64().unwrap();
-    let g = r.a.call("call.get", json!({"call_id":a})).await.unwrap();
-    assert_eq!(g["audio"]["play"]["current"], id, "{g}");
+    let extra = api(&e).extra.as_ref().unwrap();
+    let id = extra["play_id"].as_u64().unwrap();
+    // The play outlives the wait: it is (or, when the media thread has not taken the clip
+    // yet, becomes) the current play, and it has not finished.
+    assert_eq!(wait_playing(&mut r.a, &a).await, id);
+    let fin =
+        r.a.call(
+            "events.poll",
+            json!({"since":extra["event_seq"],"kinds":["call.play_finished"],"call_id":a,"timeout_ms":1000}),
+        )
+        .await
+        .unwrap();
+    assert_eq!(fin["events"], json!([]), "{fin}");
     r.a.call("call.stop_play", json!({"call_id":a}))
         .await
         .unwrap();
@@ -633,10 +646,12 @@ async fn wait_timeout_keeps_playing_and_reports_the_play_id() {
 #[tokio::test(flavor = "multi_thread")]
 async fn wait_ends_with_the_call() {
     let mut r = rig_with("").await;
-    let (a, b) = establish_silent(&mut r).await;
+    let (a, _b) = establish_silent(&mut r).await;
+    // The default wait limit (clip + 30 s): a limit equal to the clip's length races the clip's
+    // own end, which on a slow machine (media time falling behind the wall clock) comes later.
     let play = r.a.call(
         "call.play",
-        json!({"call_id":a,"wav_base64":wav_b64(600.0, 20_000),"wait":true,"timeout_ms":20_000}),
+        json!({"call_id":a,"wav_base64":wav_b64(600.0, 20_000),"wait":true}),
     );
     let hang = async {
         // Hang up once the play is really running: on a loaded machine the 20 s WAV can take
@@ -644,7 +659,11 @@ async fn wait_ends_with_the_call() {
         // `call.play` fail with "call has ended" instead of finishing with `call_ended`.
         wait_playing(&mut r.b, &a).await;
         tokio::time::sleep(Duration::from_millis(500)).await;
-        r.b.call("call.hangup", json!({"call_id":b})).await.unwrap();
+        // End the agent's own call (from the other client, as `call.play` is still waiting):
+        // what is tested is the wait ending with the call, not the far end's BYE reaching us.
+        // On hosted macOS runners the test process's UDP sockets were seen going dead mid-test
+        // (send: EPIPE, receive: ENOTCONN), so that BYE never arrived and the play ran on.
+        r.b.call("call.hangup", json!({"call_id":a})).await.unwrap();
     };
     let (play, _) = tokio::join!(play, hang);
     let play = play.unwrap();
@@ -1010,7 +1029,7 @@ async fn play_wait_before_the_answer_completes_only_after_it() {
     let _ = a_call;
 }
 
-/// Documented behaviour (docs/API-intro.md): answering with a different source/sink recreates
+/// Documented behavior (docs/API-intro.md): answering with a different source/sink recreates
 /// the call's media. A play and a listen issued before the answer end with `call_ended`, and
 /// the RX timeline (`rx_ms`) restarts near 0.
 #[tokio::test(flavor = "multi_thread")]

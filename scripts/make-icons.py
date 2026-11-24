@@ -3,9 +3,9 @@
 
 The artwork: a white handset on a teal-to-blue tile with continuous (superellipse) corners, and
 one green status lamp (the lamp every Siple screen uses for "registered / live"). Geometry is
-computed, not hand placed: the handset is built from a centre line, filleted, and then centred
-on the tile by measurement (70 % bounding box, 30 % centre of mass: the handset is heavy at its
-bow, so pure box centring reads low-left).
+computed, not hand placed: the handset is built from a center line, filleted, and then centered
+on the tile by measurement (70 % bounding box, 30 % center of mass: the handset is heavy at its
+bow, so pure box centering reads low-left).
 
 Outputs (all checked in, so CI needs no Pillow; `pip install pillow` only to change the art):
   packaging/icons/siple-1024.png      macOS / Linux icon: 824 px tile on a 1024 canvas (Apple grid)
@@ -36,9 +36,9 @@ GLYPH_FONT = ROOT / "crates" / "siple" / "assets" / "fonts" / "Phosphor-Fill.ttf
 PHONE = "\ue3b8"  # Phosphor "phone"; theme::icon::PHONE
 
 S = 4096  # supersampled working canvas
-TILE = 824 / 1024  # Apple macOS icon grid: 824 pt tile centred on a 1024 canvas
+TILE = 824 / 1024  # Apple macOS icon grid: 824 pt tile centered on a 1024 canvas
 
-# Brand colours. The gradient runs from the top-left (teal) to the bottom-right (deep blue);
+# Brand colors. The gradient runs from the top-left (teal) to the bottom-right (deep blue);
 # the in-app accent (#17769A light / #3FB2D4 dark) sits inside this range.
 TEAL = (40, 204, 178)
 MID = (22, 142, 186)
@@ -81,15 +81,15 @@ def handset(size, bold=False):
 
 
 def centre_on(mask, size, frac, offset=(0.0, 0.0)):
-    """Scales `mask` so its bounding box spans `frac` of `size` (larger side) and centres it
-    by 70 % bounding box, 30 % centre of mass. Returns an L canvas of `size`."""
+    """Scales `mask` so its bounding box spans `frac` of `size` (larger side) and centers it
+    by 70 % bounding box, 30 % center of mass. Returns an L canvas of `size`."""
     bbox = mask.getbbox()
     crop = mask.crop(bbox)
     bw, bh = crop.size
     s = frac * size / max(bw, bh)
     crop = crop.resize((max(1, round(bw * s)), max(1, round(bh * s))), Image.LANCZOS)
     bw, bh = crop.size
-    # centre of mass of the scaled crop
+    # center of mass of the scaled crop
     hist_x = [0.0] * bw
     hist_y = [0.0] * bh
     px = crop.load()

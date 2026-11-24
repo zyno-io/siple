@@ -294,7 +294,7 @@ impl CallMediaSpec {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum EchoPhase {
-    /// Never run (or cancelled).
+    /// Never run (or canceled).
     Idle,
     /// Recording the microphone.
     Recording,

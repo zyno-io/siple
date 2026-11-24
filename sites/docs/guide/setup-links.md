@@ -14,7 +14,7 @@ A link carries these nine account fields and nothing else. `username` and `domai
 |---|---|---|
 | `username` | SIP user name or extension | 1 to 64 characters; letters, digits and `-_.!~*'()&=+$,` |
 | `domain` | SIP domain | a host name, a full IPv4 address (`192.0.2.10`) or `[IPv6]`, no port; stored in lowercase. IPv4 shorthand such as `127.1`, `10.1`, `2130706433` or `0x7f.1` is refused |
-| `display_name` | Name shown to the other party | up to 64 characters; no quotes (`"`), backslashes or angle brackets (`<` `>`), and no control, invisible or text-direction characters (this includes emoji variation selectors such as U+FE0F, so a few emoji lose their colour form) |
+| `display_name` | Name shown to the other party | up to 64 characters; no quotes (`"`), backslashes or angle brackets (`<` `>`), and no control, invisible or text-direction characters (this includes emoji variation selectors such as U+FE0F, so a few emoji lose their color form) |
 | `auth_username` | Sign-in name, when it differs from `username` | same rules as `username` |
 | `registrar` | Registrar server | `host` or `host:port`, without `sip:`; same host rules as `domain` |
 | `outbound_proxy` | Outbound proxy | `host` or `host:port`; same host rules as `domain` |

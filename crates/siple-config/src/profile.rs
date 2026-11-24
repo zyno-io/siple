@@ -2,11 +2,11 @@
 //!
 //! Precedence: explicit config value > profile value > built-in default. Explicitness is known
 //! only while parsing (a key present in the TOML text), so profiles are resolved there: before
-//! deserialising into [`crate::Config`], every `[[account]]` table with `profile = "<vendor>"`
+//! deserializing into [`crate::Config`], every `[[account]]` table with `profile = "<vendor>"`
 //! gets the vendor's value for each bundled key it does not contain itself. A config that is
-//! serialised again therefore carries the resolved values; they then count as explicit.
+//! serialized again therefore carries the resolved values; they then count as explicit.
 //!
-//! The bundles approximate typical factory behaviour of each family (User-Agent strings are
+//! The bundles approximate typical factory behavior of each family (User-Agent strings are
 //! realistic, protocol details are best-effort); every value can be overridden per account.
 
 use toml::Value;

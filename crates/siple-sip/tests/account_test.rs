@@ -23,7 +23,7 @@ enum Reply {
     Code(u16, &'static str),
 }
 
-/// Registrar behaviour: 401 digest challenge for a request without `Authorization`, then `reply`.
+/// Registrar behavior: 401 digest challenge for a request without `Authorization`, then `reply`.
 struct Behaviour {
     reply: Reply,
     /// Requests seen: (authenticated, expires).
@@ -228,7 +228,7 @@ fn tls_registrar(reply: Reply) -> (Fake, String) {
 
 // --- the stack under test --------------------------------------------------------------------------------
 
-/// DNS / route behaviour tests switch; `127.0.0.1` literals resolve to themselves.
+/// DNS / route behavior tests switch; `127.0.0.1` literals resolve to themselves.
 #[derive(Default)]
 struct Probe {
     dns_fail: AtomicBool,
