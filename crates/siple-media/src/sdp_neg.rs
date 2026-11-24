@@ -323,7 +323,7 @@ fn tx_ptime(codec: AudioCodec, want: u32, m: &MediaDescription, pt: u8) -> u32 {
     snap_ptime(codec, want, max)
 }
 
-/// Whether we can honour every SDES session parameter on `c`. Only `KDR=0`
+/// Whether we can honor every SDES session parameter on `c`. Only `KDR=0`
 /// (equivalent to none) is accepted; UNENCRYPTED_SRTP/SRTCP,
 /// UNAUTHENTICATED_SRTP, non-zero KDR, FEC_* and WSH are not implemented.
 fn crypto_params_supported(c: &CryptoLine) -> bool {

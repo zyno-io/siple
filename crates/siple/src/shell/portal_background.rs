@@ -260,7 +260,7 @@ async fn request_inner(
 
 /// Whether the login entry is on after a `Response(code, {autostart})`.
 ///
-/// Code 1 (denied or cancelled) to a *disable* request is an error: the portal then skips
+/// Code 1 (denied or canceled) to a *disable* request is an error: the portal then skips
 /// writing the entry, so an existing one stays, and the caller must keep its marker to retry.
 fn interpret(code: u32, granted: Option<bool>, autostart: bool) -> std::io::Result<bool> {
     match code {

@@ -98,7 +98,7 @@ const PSEUDO_PCM_PREFIXES: &[&str] = &[
 ];
 
 /// Whether `name` (an ALSA PCM id such as `dmix:CARD=PCH,DEV=0`) is a pseudo-PCM that must
-/// not be listed or chosen as a fallback. Also recognises the description of `null`.
+/// not be listed or chosen as a fallback. Also recognizes the description of `null`.
 pub(crate) fn is_pseudo_pcm(name: &str) -> bool {
     let id = name.split(':').next().unwrap_or(name);
     PSEUDO_PCM_PREFIXES.iter().any(|p| id.starts_with(p)) || name.starts_with("Discard all samples")

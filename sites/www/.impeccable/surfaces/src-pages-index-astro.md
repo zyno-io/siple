@@ -41,7 +41,7 @@ live. The page is that file: each feature section is one real config table, and 
 (`[ui] theme`) is live on the page. Refuses the category default of a headline over a feature-card
 grid with a fake device mockup.
 
-OWN-WORLD: Review Desk: cool grey desk (#f6f7f9 / #0c0d10), white hairline cards, 12px radius,
+OWN-WORLD: Review Desk: cool gray desk (#f6f7f9 / #0c0d10), white hairline cards, 12px radius,
 resting shadows, Inter for people's words, monospace only for machine text (table names, keys,
 commands, filenames, versions). One accent: Siple teal-blue (#17769A light / #3FB2D4 dark, dark
 ink on it), used for the one primary action, selection and focus. Status as tag triplets; the
@@ -50,10 +50,10 @@ app's round lamp (LED dot with halo) for live state. Real screenshots on a Scree
 STORY: understand (a native SIP softphone with real desk-phone features) → believe (the real app,
 real transfers and lamps; agents drive the same calls with real commands; any PBX) → act
 (download the detected build, or GitHub while unreleased) → trust (signed builds, checksums,
-plain licence) → sibling (ZynoTalk if you need a line).
+plain license) → sibling (ZynoTalk if you need a line).
 
 FIRST VIEWPORT (1440x900): sticky 60px header (icon + Siple wordmark, Features, AI agents,
-Licence, Docs, GitHub, theme, Download). Left-aligned H1 across ~8 of 12 columns, lede beneath,
+License, Docs, GitHub, theme, Download). Left-aligned H1 across ~8 of 12 columns, lede beneath,
 then the download console in one row: primary button for the detected platform (label names the
 OS), "All platforms" and GitHub secondary, and a lamp line with the released version and date
 (baked in at build time). Beside the copy (right ~540px) a code-rendered terminal card

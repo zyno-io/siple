@@ -295,7 +295,7 @@ pub struct ControlServer {
     endpoints: ControlEndpoints,
     listeners: Vec<Listener>,
     ctx: Arc<ControlContext>,
-    /// Child of the token given to `start`; cancelled by `shutdown` and `Drop`.
+    /// Child of the token given to `start`; canceled by `shutdown` and `Drop`.
     cancel: CancellationToken,
 }
 
@@ -706,7 +706,7 @@ fn check_hello(
 
 /// Queues `line` for the writer. `false` when the connection is gone, or when
 /// the client has not consumed output for [`SEND_TIMEOUT`] (the connection is
-/// then cancelled). Never blocks past cancellation.
+/// then canceled). Never blocks past cancellation.
 async fn send_line(tx: &mpsc::Sender<String>, conn: &CancellationToken, line: String) -> bool {
     tokio::select! {
         _ = conn.cancelled() => false,
@@ -835,7 +835,7 @@ async fn serve_connection<S>(
         if authed && text.iter().all(u8::is_ascii_whitespace) {
             continue;
         }
-        // Anything that is not JSON is dropped without a reply (cross-protocol defence).
+        // Anything that is not JSON is dropped without a reply (cross-protocol defense).
         let Ok(value) = serde_json::from_slice::<Value>(text) else {
             break;
         };
@@ -961,7 +961,7 @@ async fn serve_connection<S>(
                     }
                 };
                 if !send_line(&tx, &conn, encode_result(&id, result)).await {
-                    // The call's stream slot is released (and `hangup_on_close` honoured).
+                    // The call's stream slot is released (and `hangup_on_close` honored).
                     session.abort(abort_reason(&conn)).await;
                     break;
                 }

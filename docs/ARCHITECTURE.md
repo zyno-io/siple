@@ -1,6 +1,6 @@
 # Architecture
 
-How Siple is put together. For user-facing behaviour see [CONFIG.md](CONFIG.md) and [API.md](API.md).
+How Siple is put together. For user-facing behavior see [CONFIG.md](CONFIG.md) and [API.md](API.md).
 
 ## Crate map
 
@@ -53,7 +53,7 @@ channel, consumed by long-poll (`events.poll`, the primary path for MCP) and str
 
 ## Configuration and hot reload
 
-`config.toml` is the single home of settings (UI choices are written back into it). Reload is serialised by one task, the
+`config.toml` is the single home of settings (UI choices are written back into it). Reload is serialized by one task, the
 **ConfigActor** (`run_reload_actor` in `crates/siple-core/src/reconfig.rs`):
 
 - Triggers: the file watcher (`config_watch.rs`: non-recursive watch of the parent directory so write-temp-then-rename saves
@@ -83,7 +83,7 @@ The class table is in [CONFIG.md](CONFIG.md#reload-classes).
   3. the method reference in `docs/API.md` (`scripts/gen-api-docs.sh`).
 - **`AppBackend`** implements `ControlBackend` over `App`. Method families live next to their feature (`calls.rs`,
   `subscriptions.rs`, `agent/methods.rs`, `reconfig.rs`).
-- **Parity rule.** The GUI, JSON-RPC and MCP must reach the same behaviour, so behaviour lives in the engine and a new feature
+- **Parity rule.** The GUI, JSON-RPC and MCP must reach the same behavior, so behavior lives in the engine and a new feature
   ships with its method, events and MCP tool (see [CONTRIBUTING.md](../CONTRIBUTING.md)).
 - **MCP bridge** (`siple-cli/src/mcp.rs`): requests run concurrently on their own control connection with time limits; only
   idempotent reads are retried after a lost connection; if the instance restarted (`instance_id` changed) the next result says so.
@@ -97,7 +97,7 @@ and the stack retries once with plain RTP on 488/415/606). `siple-core/src/call_
 `MediaProvider`: it allocates one engine call per SIP call from the *current* `[media]` settings and records the handle in a
 registry keyed by call id, which the API uses for `call.play`, recording and tone detection. Per call, a rx task feeds the media
 thread; the thread mixes sources (device, tone, file, agent stream, silence) and sinks (device, null, recorder, agent hub).
-Port allocation honours `[media] rtp_port_range`.
+Port allocation honors `[media] rtp_port_range`.
 
 ## Network-change handling
 

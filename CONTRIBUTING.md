@@ -81,11 +81,11 @@ cargo fmt -p siple-problem -p siple-media -p siple-config -p siple-core -p siple
 
 cargo clippy --workspace --all-targets -- -D warnings
 
-cargo deny check          # licences, advisories, sources (install: cargo install cargo-deny --locked)
+cargo deny check          # licenses, advisories, sources (install: cargo install cargo-deny --locked)
 ```
 
-Dependencies must have an OSI-approved permissive licence from the allow list in `deny.toml`
-(no OpenSSL; TLS is rustls). Adding a new licence or an advisory exception needs a reason in the PR.
+Dependencies must have an OSI-approved permissive license from the allow list in `deny.toml`
+(no OpenSSL; TLS is rustls). Adding a new license or an advisory exception needs a reason in the PR.
 
 `vendor/rsipstack` is a patched upstream copy. Every change there is marked `// siple:` and listed in
 `vendor/rsipstack/SIPLE_PATCHES.md`. Prefer fixing things in `siple-sip` when you can.
@@ -94,11 +94,11 @@ Dependencies must have an OSI-approved permissive licence from the allow list in
 
 Siple is driven by a GUI, a JSON-RPC control API and an MCP server. **Every new feature must ship
 with its JSON-RPC method, any events it needs, and the matching MCP tool in the same change.**
-GUI-only behaviour is not accepted.
+GUI-only behavior is not accepted.
 
 In practice:
 
-1. Put the behaviour in the engine (`siple-core`, `siple-sip`), not in the GUI crate.
+1. Put the behavior in the engine (`siple-core`, `siple-sip`), not in the GUI crate.
 2. Register the method and its JSON schema in `crates/siple-core/src/backend.rs`
    (`backend_methods`). The MCP tools and `docs/API.md` are generated from that catalog.
 3. Regenerate the API reference: `scripts/gen-api-docs.sh`. Edit prose in `docs/API-intro.md`, never the
@@ -118,8 +118,8 @@ In practice:
 
 Before your first pull request can be merged, sign the [Siple Contributor License Agreement](CLA.md)
 (CLA). You keep the copyright in your work; the CLA gives Signal24 LLC dba Zyno Consulting a
-licence to use your contribution, including under other licences than FSL-1.1-ALv2 (for example a
-commercial licence, or a future change of the project licence).
+license to use your contribution, including under other licenses than FSL-1.1-ALv2 (for example a
+commercial license, or a future change of the project license).
 
 Signing takes one comment: the CLA bot replies on your first pull request with the exact sentence to
 post. It records your signature once for all your future contributions. If you contribute on behalf
@@ -129,6 +129,6 @@ Cryptographic commit signing is welcome but optional, and `Signed-off-by` lines 
 
 ## Reporting bugs
 
-Use the bug template. Include your OS, Siple version, PBX type and, for signalling problems, the SIP
+Use the bug template. Include your OS, Siple version, PBX type and, for signaling problems, the SIP
 trace of the failing call (`siple-cli ctl call.sip_trace` or the `logs/sip/<account>/` files) with
 passwords, `Authorization` headers and SRTP `a=crypto` keys removed.

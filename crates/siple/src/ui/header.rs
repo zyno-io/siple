@@ -199,8 +199,8 @@ fn stage_of(offer: &crate::snapshot::UpdateOffer<'_>) -> Stage {
 /// - Mac App Store: Open App Store, Skip this version. Microsoft Store (no version known): Open
 ///   Microsoft Store, Not now (this session only; absent for a mandatory update).
 ///
-/// An install that this window did not ask for (an agent called `app.install_update`) is labelled
-/// as such and can be cancelled from here.
+/// An install that this window did not ask for (an agent called `app.install_update`) is labeled
+/// as such and can be canceled from here.
 fn update_pill(ui: &mut egui::Ui, cx: &Cx, st: &mut UiState, out: &mut Vec<UiAction>) {
     let Some(offer) = cx.vm.snap.update_offer() else {
         return;

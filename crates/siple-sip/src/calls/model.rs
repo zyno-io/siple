@@ -68,12 +68,12 @@ pub enum EndCause {
     /// Declined: we rejected an incoming call, or the remote refused ours with a final
     /// 4xx (not 408 / 487) or 6xx response (486 Busy, 603 Decline, ...).
     Rejected,
-    /// An unanswered call was cancelled (our CANCEL, a 487, or a remote CANCEL that is not a
+    /// An unanswered call was canceled (our CANCEL, a 487, or a remote CANCEL that is not a
     /// miss, e.g. "call completed elsewhere").
     Cancelled,
     /// An incoming call that the caller abandoned while it was ringing.
     Missed,
-    /// Setup or signalling failed: 408 / 5xx, no answer to a request, dialog lost, unusable
+    /// Setup or signaling failed: 408 / 5xx, no answer to a request, dialog lost, unusable
     /// answer SDP, transport error.
     Failed,
     /// The RFC 4028 session timer expired (the remote stopped refreshing).
@@ -112,7 +112,7 @@ pub enum AnswerOutcome {
 /// What `answer` does with the other live lines.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum AnswerMode {
-    /// Today's behaviour: the account's `auto_hold` decides whether the other calls in
+    /// Today's behavior: the account's `auto_hold` decides whether the other calls in
     /// `hold_scope` are put on hold first.
     #[default]
     Default,

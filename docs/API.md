@@ -383,7 +383,7 @@ the original call A with its consult call B (blind transfers have no B). `call.t
 device, which never cause holds of other calls), dials `target` on A's account (source and sink default to A's) and
 returns `{session_id, consult_call_id}`; `call.consult_link {call_id, consult_call_id}` pairs two existing calls of one
 account. Then `transfer.complete {session_id, mode}` (`attended`: REFER with Replaces, needs an answered consult;
-`blind_now`: end the consult, refer A to its dialled URI), `transfer.swap` (hold the leg you talk to, resume the other,
+`blind_now`: end the consult, refer A to its dialed URI), `transfer.swap` (hold the leg you talk to, resume the other,
 move the audio focus) or `transfer.cancel` (hang up B, resume A). `transfer.get` / `transfer.list` read sessions;
 `status.transfers` and `call.transfer {session_id, role}` carry them too. `last_error` is `{stage, code, reason, problem}`.
 
@@ -625,7 +625,7 @@ stt_command = ["whisper-cli", "-m", "/opt/whisper/ggml-base.en.bin", "-f", "{in}
 stt_language = "en"
 ```
 
-espeak-ng and piper are GPL programs run as separate processes; that does not affect Siple's FSL-1.1-ALv2 licence.
+espeak-ng and piper are GPL programs run as separate processes; that does not affect Siple's FSL-1.1-ALv2 license.
 
 ### New event kinds
 
@@ -2181,7 +2181,7 @@ Start an attended transfer: put `call_id` (established) on hold, dial `target` o
 
 ### `call.consult_link`
 
-Pair two existing calls of the same account into a transfer session: `call_id` is the original (established), `consult_call_id` the consult call (dialing, early or established). Nothing is held or dialled. Returns {ok, session_id, consult_call_id, session, event_seq}. Errors: not_found, invalid_state (not established, already in a session), invalid_params (same call / different accounts: "both calls must belong to the same account").
+Pair two existing calls of the same account into a transfer session: `call_id` is the original (established), `consult_call_id` the consult call (dialing, early or established). Nothing is held or dialed. Returns {ok, session_id, consult_call_id, session, event_seq}. Errors: not_found, invalid_state (not established, already in a session), invalid_params (same call / different accounts: "both calls must belong to the same account").
 
 | Param | Type | Required | Description |
 |---|---|---|---|
@@ -2215,7 +2215,7 @@ Pair two existing calls of the same account into a transfer session: `call_id` i
 
 ### `transfer.complete`
 
-Finish a consult. `mode` attended: REFER with Replaces connects the original to the consult party (needs consult_connected; while the consult still rings it fails with invalid_state "consult not answered; use blind_now"). `blind_now`: end the consult call (CANCEL / BYE) and REFER the original to the consult's dialled URI (semi-attended). Returns once the REFER was accepted: {ok, session_id, session, event_seq}; the phase is then transferring and ends in transferred, failed or unconfirmed (watch `transfer.session` events or poll transfer.get). A refused REFER (or a local error) fails with sip_error; the session returns to consult_connected with `last_error` (attended with the consult alive), or becomes failed and the original is resumed ([calls] resume_after_failed_transfer). Idempotent: completing a session whose REFER is already sent returns the session and sends no second REFER. Errors: not_found, invalid_state, invalid_params (mode), sip_error.
+Finish a consult. `mode` attended: REFER with Replaces connects the original to the consult party (needs consult_connected; while the consult still rings it fails with invalid_state "consult not answered; use blind_now"). `blind_now`: end the consult call (CANCEL / BYE) and REFER the original to the consult's dialed URI (semi-attended). Returns once the REFER was accepted: {ok, session_id, session, event_seq}; the phase is then transferring and ends in transferred, failed or unconfirmed (watch `transfer.session` events or poll transfer.get). A refused REFER (or a local error) fails with sip_error; the session returns to consult_connected with `last_error` (attended with the consult alive), or becomes failed and the original is resumed ([calls] resume_after_failed_transfer). Idempotent: completing a session whose REFER is already sent returns the session and sends no second REFER. Errors: not_found, invalid_state, invalid_params (mode), sip_error.
 
 | Param | Type | Required | Description |
 |---|---|---|---|
@@ -3212,7 +3212,7 @@ Speak `text` into the call with the configured text-to-speech command ([speech] 
 
 ### `call.listen`
 
-Wait for the far end to say something and return it. Voice activity detection finds the utterance on the call's receive timeline. Returns {speech, reason: end_of_speech|max_duration|no_speech|call_ended|timeout, start_rx_ms, end_rx_ms, speech_start_rx_ms, speech_end_rx_ms, speech_ms, level_dbfs{peak,mean}, noise_floor_dbfs, truncated, dtmf (digits received in the window), transcript?, stt_ms?, audio?{format:wav, sample_rate, channels, duration_ms, base64|path}, event_seq}. After you speak (call.say/call.play with wait), pass its finished.barge_in_rx_ms if present (the caller interrupted: where they began), else finished.rx_ms (end of your own audio), as since_rx_ms; when listening again without speaking in between, pass the previous end_rx_ms. since_rx_ms in the past (up to rx_history_secs, at least 5 s) is analysed from recorded audio, so thinking time between turns loses nothing, and start_timeout_ms counts only from the moment of the request. rx_ms restarts if the call media is recreated at answer with a different source/sink; a listen issued before that ends with call_ended (see call.answer). With transcribe:true the audio is returned only if audio is set explicitly. Tones count as speech.
+Wait for the far end to say something and return it. Voice activity detection finds the utterance on the call's receive timeline. Returns {speech, reason: end_of_speech|max_duration|no_speech|call_ended|timeout, start_rx_ms, end_rx_ms, speech_start_rx_ms, speech_end_rx_ms, speech_ms, level_dbfs{peak,mean}, noise_floor_dbfs, truncated, dtmf (digits received in the window), transcript?, stt_ms?, audio?{format:wav, sample_rate, channels, duration_ms, base64|path}, event_seq}. After you speak (call.say/call.play with wait), pass its finished.barge_in_rx_ms if present (the caller interrupted: where they began), else finished.rx_ms (end of your own audio), as since_rx_ms; when listening again without speaking in between, pass the previous end_rx_ms. since_rx_ms in the past (up to rx_history_secs, at least 5 s) is analyzed from recorded audio, so thinking time between turns loses nothing, and start_timeout_ms counts only from the moment of the request. rx_ms restarts if the call media is recreated at answer with a different source/sink; a listen issued before that ends with call_ended (see call.answer). With transcribe:true the audio is returned only if audio is set explicitly. Tones count as speech.
 
 | Param | Type | Required | Description |
 |---|---|---|---|

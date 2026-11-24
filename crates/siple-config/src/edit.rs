@@ -24,7 +24,7 @@ use crate::{AccountConfig, BlfConfig, Config, EXAMPLE_CONFIG, OrInherit, PickupM
 /// A typed scalar value of an edit.
 ///
 /// Anything else (an object such as the `{"set": true}` mask of `config.view`, an array, a
-/// float, `null`) fails to deserialise, so masked values can never be written back.
+/// float, `null`) fails to deserialize, so masked values can never be written back.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum EditValue {
@@ -714,15 +714,15 @@ fn section_table<'a>(
     }
 }
 
-// ---- removal keeps the neighbours' comments ----------------------------------------------------
+// ---- removal keeps the neighbors' comments ----------------------------------------------------
 
 /// What `toml_edit` stores as an item's prefix is everything since the previous item: the
 /// previous item's trailing comments and blank lines, then the comment block directly above this
-/// one. Splits at the last blank line into (what may belong to the neighbours, the removed item's own
+/// one. Splits at the last blank line into (what may belong to the neighbors, the removed item's own
 /// directly adjacent comment block).
 fn split_prefix(prefix: &str) -> (String, String) {
     // Only the block directly adjacent to the header (no blank line between) is the item's
-    // own. Anything above a blank line may belong to a neighbour and is never deleted.
+    // own. Anything above a blank line may belong to a neighbor and is never deleted.
     let mut end = 0;
     let mut pos = 0;
     for line in prefix.split_inclusive('\n') {
@@ -935,7 +935,7 @@ fn apply_one(doc: &mut DocumentMut, edit: &ConfigEdit, stash: &mut Stash) -> Res
             if from == to {
                 return Ok(());
             }
-            // Slots keep their blank-line separation and neighbours' comments; only the comment
+            // Slots keep their blank-line separation and neighbors' comments; only the comment
             // block directly above each account moves with it. Tables print by `position`: the
             // positions of every account-owned table (accounts and their sub-tables) are
             // collected, sorted and handed out again in the new depth-first order, so the
@@ -1406,7 +1406,7 @@ domain = "pbx.example.com"
             let e = err(DOC, &[set("desk", AccountField::Password, mask)]);
             assert!(e.message.contains("mask"), "{e}");
         }
-        // The `{"set": true}` object of config.view does not even deserialise as a value.
+        // The `{"set": true}` object of config.view does not even deserialize as a value.
         let bad = r#"{"op":"set_account","id":"desk","field":"password","value":{"set":true}}"#;
         assert!(serde_json::from_str::<ConfigEdit>(bad).is_err());
         let ok = r#"{"op":"set_account","id":"desk","field":"password","value":"s3cret"}"#;
@@ -2220,7 +2220,7 @@ domain = "pbx.example.com"
         );
         assert!(out.contains("[ui]"), "{out}");
         // Reset then set the same key: its doc comment goes back above it, not above the
-        // neighbour.
+        // neighbor.
         let out = run(
             crate::EXAMPLE_CONFIG,
             &[reset("hold_scope"), sec("calls", "hold_scope", "account")],

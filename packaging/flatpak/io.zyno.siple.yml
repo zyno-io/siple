@@ -9,7 +9,7 @@ sdk-extensions:
   - org.freedesktop.Sdk.Extension.rust-stable
 command: siple
 finish-args:
-  # SIP signalling (UDP/TCP/TLS), RTP media, DNS SRV, the route monitor (netlink).
+  # SIP signaling (UDP/TCP/TLS), RTP media, DNS SRV, the route monitor (netlink).
   - --share=network
   # X11 shared memory (with fallback-x11).
   - --share=ipc

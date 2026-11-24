@@ -16,7 +16,7 @@
 //! Direct builds check about every hour (a static feed has no rate limit, and an ETag makes an
 //! unchanged answer a 304); the store sources about every 24 hours. `Siple/<version>` is the only
 //! identifying header of the HTTPS ones. The checker ([`Updater`]) is an async task owned by the app; its status is served by
-//! `app.update_status` / `app.check_updates`, summarised in `status`, and a newly found version is
+//! `app.update_status` / `app.check_updates`, summarized in `status`, and a newly found version is
 //! announced once as the event `app.update_available`.
 //!
 //! The cargo feature `store` (Mac App Store, Microsoft Store and Flatpak builds) only removes code: the

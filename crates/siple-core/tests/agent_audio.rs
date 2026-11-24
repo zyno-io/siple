@@ -1010,7 +1010,7 @@ async fn play_wait_before_the_answer_completes_only_after_it() {
     let _ = a_call;
 }
 
-/// Documented behaviour (docs/API-intro.md): answering with a different source/sink recreates
+/// Documented behavior (docs/API-intro.md): answering with a different source/sink recreates
 /// the call's media. A play and a listen issued before the answer end with `call_ended`, and
 /// the RX timeline (`rx_ms`) restarts near 0.
 #[tokio::test(flavor = "multi_thread")]

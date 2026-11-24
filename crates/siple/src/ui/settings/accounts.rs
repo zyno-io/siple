@@ -320,7 +320,7 @@ pub(super) fn show(ui: &mut egui::Ui, cx: &Cx, st: &mut UiState, out: &mut Vec<U
         hint_line(ui, p, "0 = pick a free port");
     });
     security(ui, cx, st, &f, a, out);
-    group(ui, p, "Behaviour", |ui| {
+    group(ui, p, "Behavior", |ui| {
         let dnd = snap
             .accounts
             .iter()

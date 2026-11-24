@@ -11,7 +11,7 @@ and is built to be driven by scripts and AI agents as well as by hand.
   (`call.listen`, `call.say`, `call.stream`), tone and DTMF detection, play/record, SIP traces and
   vendor-profile emulation (Yealink, Polycom, Cisco, Grandstream). Whatever the GUI can do, an agent can do.
 
-Status: pre-1.0 (see [CHANGELOG.md](CHANGELOG.md)). Repository: `https://github.com/zyno-io/siple`. Licence: [FSL-1.1-ALv2](#license) (source-available, not OSI open source).
+Status: pre-1.0 (see [CHANGELOG.md](CHANGELOG.md)). Repository: `https://github.com/zyno-io/siple`. License: [FSL-1.1-ALv2](#license) (source-available, not OSI open source).
 
 **Documentation: https://zyno-io.github.io/siple/** (user guide, AI-agent quick start, full configuration and API reference; sources in [`sites/docs/`](sites/docs/) and [`docs/`](docs/)).
 
@@ -265,7 +265,7 @@ vendor/rsipstack      vendored rsipstack 0.7.3 with Siple patches (see its SIPLE
 docs/                 ARCHITECTURE.md, CONFIG.md, API.md (generated from API-intro.md + the code), RELEASING.md,
                       ROADMAP.md, STORE.md
 packaging/, scripts/  icons, Info.plist, entitlements, manifest; package-*.sh, gen-api-docs.sh, gen-licenses.sh
-deny.toml, about.toml dependency licence policy and licence bundle config
+deny.toml, about.toml dependency license policy and license bundle config
 ```
 
 ## Contributing and security
@@ -276,16 +276,16 @@ Pull requests are welcome: read [CONTRIBUTING.md](CONTRIBUTING.md) (CLA, API par
 ## License
 
 Siple is **source-available** under the [Functional Source License, Version 1.1, ALv2 Future License](LICENSE)
-(FSL-1.1-ALv2), Copyright 2026 Signal24 LLC dba Zyno Consulting. This is a Fair Source licence, not an OSI-approved
-open-source licence.
+(FSL-1.1-ALv2), Copyright 2026 Signal24 LLC dba Zyno Consulting. This is a Fair Source license, not an OSI-approved
+open-source license.
 
 - **Allowed:** use it, run it, self-host it, modify it, redistribute it, and contribute to it, for any purpose except a
   competing one. Internal use, education, research and building your own products on top of the control API are all fine.
 - **Not allowed:** a competing commercial use, such as selling Siple or a modified copy, offering it as a product or
-  service that substitutes for Siple, or re-branding (white-labelling) it. See the full text for the exact terms.
+  service that substitutes for Siple, or re-branding (white-labeling) it. See the full text for the exact terms.
 - **Becomes Apache-2.0:** each release converts to the Apache License 2.0 two years after that release was made available.
 
-The vendored `vendor/rsipstack` stays under its upstream MIT licence (it has its own `LICENSE`) with a small set of patches
+The vendored `vendor/rsipstack` stays under its upstream MIT license (it has its own `LICENSE`) with a small set of patches
 documented in `vendor/rsipstack/SIPLE_PATCHES.md`. Dependency licenses are checked by `cargo deny` (`deny.toml`);
 they are permissive (MIT/Apache-2.0/BSD/ISC/Zlib/Unicode), with MPL-2.0 for `audio_thread_priority` and font licenses for
 egui's bundled fonts. There is no OpenSSL anywhere. G.711 is our own implementation (`crates/siple-media/src/g711.rs`); there are no copyleft

@@ -581,7 +581,7 @@ fn show_start_error(e: &AppError) -> ExitCode {
     ExitCode::from(1)
 }
 
-// ---- headless (same behaviour as `siple-cli run --headless`) -----------------------------
+// ---- headless (same behavior as `siple-cli run --headless`) -----------------------------
 
 async fn headless(
     config_path: PathBuf,

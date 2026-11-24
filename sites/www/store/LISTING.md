@@ -52,7 +52,7 @@ FOR YOUR DESK
 • Busy lamps (BLF) for your colleagues' extensions, with one-click pickup when one is ringing.
 • Voicemail lamps.
 • Opus HD audio, G.722 and G.711, with DTMF.
-• Encrypted calls: TLS for signalling and SRTP for audio.
+• Encrypted calls: TLS for signaling and SRTP for audio.
 • Light and dark themes that follow macOS.
 • Opens sip:, tel: and callto: links.
 
@@ -97,7 +97,7 @@ Calls are encrypted (TLS and SRTP).
 
 PERMISSIONS AND ENTITLEMENTS
 • Microphone: used only to send your voice to the other party during a call.
-• Outgoing network: SIP signalling and call audio to the server the user configures.
+• Outgoing network: SIP signaling and call audio to the server the user configures.
 • Incoming network: call audio (RTP) arrives on local UDP ports. There is also an optional TCP control listener, off by default and protected by a token.
 • App group: the bundled siple-cli helper reaches the running app through a socket in the shared group container.
 
@@ -139,7 +139,7 @@ FOR YOUR DESK
 • Busy lamps (BLF) for your colleagues' extensions, with one-click pickup when one is ringing.
 • Voicemail lamps.
 • Opus HD audio, G.722 and G.711, with DTMF.
-• Encrypted calls: TLS for signalling and SRTP for audio.
+• Encrypted calls: TLS for signaling and SRTP for audio.
 • Light and dark themes that follow Windows.
 • Opens sip:, tel: and callto: links, and can start with Windows.
 
