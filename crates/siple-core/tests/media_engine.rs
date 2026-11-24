@@ -365,6 +365,14 @@ async fn record_stereo_one_second() {
     // One second by the engine's RX timeline (`rx_ms`: 20 ms per RX frame the media thread
     // pulls), not by the wall clock: a loaded machine stretches a fixed sleep, and the media
     // thread then drops the frames it is too far behind on.
+    //
+    // Jitter buffer counters from 240 ms of RX timeline before the start: a loss is counted
+    // when it is handled but can fill up to ~220 ms of the frames after it (200 ms of loss plus
+    // a frame), so counters read right at the start could miss silence already queued.
+    // Counting from earlier only loosens the bound on silent frames below.
+    let jitter0 = r.b.stats().jitter;
+    let lead_in = r.b.rx_ms();
+    until("an RX lead-in", 10, || r.b.rx_ms() >= lead_in + 240).await;
     let t0 = r.b.rx_ms();
     r.b.record_start(&path, true);
     // The media thread creates the file when it handles the command; every later RX frame is
@@ -379,6 +387,12 @@ async fn record_stereo_one_second() {
     r.b.record_stop();
     record_finished(&mut r.events, "B", &path).await;
     let t1 = r.b.rx_ms();
+    // ... and from a snapshot taken after the stop.
+    until("a stats snapshot after the stop", 10, || {
+        r.b.stats().rx_ms >= t1
+    })
+    .await;
+    let jitter1 = r.b.stats().jitter;
     let (spec, samples) = read_wav(&path);
     assert_eq!(
         (spec.channels, spec.sample_rate, spec.bits_per_sample),
@@ -397,8 +411,37 @@ async fn record_stereo_one_second() {
     );
     let left: Vec<i16> = samples.iter().step_by(2).copied().collect();
     let right: Vec<i16> = samples.iter().skip(1).step_by(2).copied().collect();
-    let (ratio, level) = detect(&left[left.len() / 4..], 48000, 1000.0);
-    assert!(ratio > 0.8 && level > -25.0, "RX channel: {ratio} {level}");
+    // An RX frame the jitter buffer had no packet for in time (A's or B's media work fell
+    // behind, as on a loaded machine) is concealed, and silent once the 60 ms concealment runs
+    // out. Such frames are not RX audio missing from the recording, and the tone stays
+    // phase-coherent across them (1 kHz is 20 whole periods per 20 ms frame): judge the tone
+    // on the frames that carry audio, and allow at most one silent frame per frame the jitter
+    // buffer concealed or lost.
+    let silent = |f: &&[i16]| f.iter().all(|&s| s.unsigned_abs() < 33); // below -60 dBFS
+    let silent_frames = left.chunks(960).filter(silent).count() as u64;
+    // (`lost` drops again when a packet declared lost arrives late, hence `late` too.)
+    let gaps = jitter1.concealed.saturating_sub(jitter0.concealed)
+        + jitter1.lost.saturating_sub(jitter0.lost)
+        + jitter1.late.saturating_sub(jitter0.late);
+    assert!(
+        silent_frames <= gaps,
+        "{silent_frames} silent RX frames of {}; jitter buffer before {jitter0:?}, after \
+         {jitter1:?}",
+        frames / 960
+    );
+    let audible: Vec<i16> = left
+        .chunks(960)
+        .skip(frames / 960 / 4)
+        .filter(|f| !silent(f))
+        .flatten()
+        .copied()
+        .collect();
+    let (ratio, level) = detect(&audible, 48000, 1000.0);
+    assert!(
+        ratio > 0.8 && level > -25.0,
+        "RX channel: {ratio} {level} over {} audible frames",
+        audible.len() / 960
+    );
     let (_, rlevel) = detect(&right, 48000, 1000.0);
     assert!(rlevel < -60.0, "TX channel should be silent: {rlevel}");
 }
