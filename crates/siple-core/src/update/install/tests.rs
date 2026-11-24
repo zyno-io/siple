@@ -160,6 +160,9 @@ impl Platform for Plat {
 struct Assets {
     sig: Vec<u8>,
     paused: AtomicBool,
+    /// A canceled download of the archive does not return while set (and sets `held`).
+    hold: AtomicBool,
+    held: AtomicBool,
     fetched: Mutex<Vec<String>>,
 }
 #[async_trait]
@@ -180,6 +183,10 @@ impl AssetFetcher for Assets {
             n if n == ARCHIVE => {
                 while self.paused.load(Ordering::SeqCst) {
                     if cancel.is_cancelled() {
+                        while self.hold.load(Ordering::SeqCst) {
+                            self.held.store(true, Ordering::SeqCst);
+                            tokio::time::sleep(Duration::from_millis(50)).await;
+                        }
                         return Err(InstallError::cancelled());
                     }
                     tokio::time::sleep(Duration::from_millis(50)).await;
@@ -258,6 +265,8 @@ async fn rig_keyed(sig: &[u8], with_sig: bool, state: bool, key: &str) -> Rig {
     let assets = Arc::new(Assets {
         sig: sig.to_vec(),
         paused: AtomicBool::new(false),
+        hold: AtomicBool::new(false),
+        held: AtomicBool::new(false),
         fetched: Mutex::default(),
     });
     let mut o = InstallerOptions::new(
@@ -312,6 +321,30 @@ impl Rig {
             self.phase(),
             self.u.status().install
         );
+    }
+
+    /// Waits until a canceled download is held by `Assets::hold`.
+    async fn until_held(&self) {
+        for _ in 0..400 {
+            if self.assets.held.load(Ordering::SeqCst) {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        panic!("the canceled download never stopped at the hold");
+    }
+
+    /// Starts an install, cancels it and leaves the canceled run held before it stops.
+    async fn canceled_and_held(&self) {
+        self.assets.paused.store(true, Ordering::SeqCst);
+        self.assets.hold.store(true, Ordering::SeqCst);
+        self.i.install("0.2.0", Restart::WhenIdle).unwrap();
+        self.until(InstallPhase::Downloading).await;
+        assert!(self.i.cancel().unwrap());
+        self.until_held().await;
+        // Still stopping: the state is the canceled run's, its staging area is still there.
+        assert_eq!(self.phase(), InstallPhase::Downloading);
+        assert_eq!(self.plat.count("discard"), 0);
     }
 
     fn states(&self) -> Vec<String> {
@@ -480,6 +513,55 @@ async fn cancel_before_the_swap_leaves_nothing_and_after_it_is_too_late() {
     r.until(InstallPhase::Restarting).await;
     let e = r.i.cancel().unwrap_err();
     assert_eq!(Rig::reason(&e), "too_late");
+}
+
+#[tokio::test(start_paused = true)]
+async fn an_install_asked_for_while_a_cancel_winds_down_starts_once_it_has_stopped() {
+    let r = rig().await;
+    r.canceled_and_held().await;
+    r.i.install("0.2.0", Restart::WhenIdle).unwrap();
+    // Let the canceled run stop; the new run's download goes through.
+    r.assets.paused.store(false, Ordering::SeqCst);
+    r.assets.hold.store(false, Ordering::SeqCst);
+    r.until(InstallPhase::Restarting).await;
+    assert_eq!(r.plat.count("stage_dir"), 2, "a fresh run");
+    assert_eq!(r.plat.count("discard"), 1, "the canceled run's");
+    assert_eq!(r.plat.count("commit"), 1);
+    assert_eq!(r.rl.calls.lock().unwrap().len(), 1);
+}
+
+#[tokio::test(start_paused = true)]
+async fn the_install_asked_for_while_a_cancel_winds_down_keeps_its_own_restart_mode() {
+    let r = rig().await;
+    r.canceled_and_held().await;
+    // The canceled run was `when_idle`; the new request is `manual`.
+    r.i.install("0.2.0", Restart::Manual).unwrap();
+    r.assets.paused.store(false, Ordering::SeqCst);
+    r.assets.hold.store(false, Ordering::SeqCst);
+    r.until(InstallPhase::Ready).await;
+    tokio::time::sleep(Duration::from_secs(600)).await;
+    assert_eq!(r.phase(), InstallPhase::Ready);
+    assert_eq!(
+        r.u.status().install.unwrap().restart.as_deref(),
+        Some("manual")
+    );
+    assert_eq!(r.plat.count("stage_dir"), 2, "a fresh run");
+    assert_eq!(r.plat.count("commit"), 0);
+    assert!(r.rl.calls.lock().unwrap().is_empty());
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_cancel_also_drops_an_install_asked_for_while_the_last_one_wound_down() {
+    let r = rig().await;
+    r.canceled_and_held().await;
+    r.i.install("0.2.0", Restart::WhenIdle).unwrap();
+    assert!(r.i.cancel().unwrap());
+    r.assets.hold.store(false, Ordering::SeqCst);
+    // A new run would replace `idle` (and wait at the still paused download).
+    r.until(InstallPhase::Idle).await;
+    assert_eq!(r.plat.count("stage_dir"), 1);
+    assert_eq!(r.plat.count("discard"), 1);
+    assert_eq!(r.plat.count("commit"), 0);
 }
 
 #[tokio::test(start_paused = true)]

@@ -522,11 +522,28 @@ struct St {
     error: Option<InstallError>,
     token: Option<CancellationToken>,
     last_progress: Option<Instant>,
+    /// An install requested while a canceled run winds down: it starts once that run has stopped.
+    again: Option<(Release, Restart)>,
 }
 
 impl St {
     fn phase(&self) -> InstallPhase {
         self.phase.unwrap_or(InstallPhase::Idle)
+    }
+
+    /// The run was canceled before the swap and has not stopped yet (it still holds the lock and
+    /// its staging area).
+    fn winding_down(&self) -> bool {
+        matches!(
+            self.phase(),
+            InstallPhase::Downloading
+                | InstallPhase::Verifying
+                | InstallPhase::Ready
+                | InstallPhase::Waiting
+        ) && self
+            .token
+            .as_ref()
+            .is_some_and(CancellationToken::is_cancelled)
     }
 }
 
@@ -682,7 +699,7 @@ impl Installer {
         if cfg.check && cfg.install {
             return;
         }
-        let st = self.st();
+        let mut st = self.st();
         if matches!(
             st.phase(),
             InstallPhase::Downloading
@@ -692,6 +709,7 @@ impl Installer {
         ) && let Some(t) = &st.token
         {
             t.cancel();
+            st.again = None;
         }
     }
 
@@ -856,7 +874,8 @@ impl Installer {
     }
 
     /// `app.install_update`. Starts the install of `version` (or, when it is already running,
-    /// updates its restart mode); the work runs in the background.
+    /// updates its restart mode; right after a cancel, once the canceled run has stopped); the
+    /// work runs in the background.
     pub fn install(self: &Arc<Self>, version: &str, restart: Restart) -> Result<(), ApiError> {
         let cfg = (self.o.settings)();
         if !cfg.check || !cfg.install {
@@ -868,7 +887,9 @@ impl Installer {
         }
         let s = self.o.updater.status();
         let busy_check = |st: &St| -> Option<Result<(), ApiError>> {
-            if matches!(st.phase(), InstallPhase::Idle | InstallPhase::Failed) {
+            // A canceled run that is still stopping counts as over: this request starts anew.
+            if matches!(st.phase(), InstallPhase::Idle | InstallPhase::Failed) || st.winding_down()
+            {
                 return None;
             }
             if st.version.as_ref().map(ToString::to_string).as_deref() != Some(version) {
@@ -925,37 +946,46 @@ impl Installer {
                 json!({"latest": s.latest}),
             ));
         };
-        let token = self.o.shutdown.child_token();
-        {
-            let mut st = self.st();
-            if let Some(r) = busy_check(&st) {
-                // Lost a race with another caller.
-                if r.is_ok() {
-                    st.restart = Some(restart);
-                    self.wake.notify_waiters();
-                }
-                return r;
+        let mut st = self.st();
+        if let Some(r) = busy_check(&st) {
+            // Lost a race with another caller.
+            if r.is_ok() {
+                st.restart = Some(restart);
+                self.wake.notify_waiters();
             }
-            *st = St {
-                phase: Some(InstallPhase::Downloading),
-                version: Some(rel.version.clone()),
-                total: 0,
-                restart: Some(restart),
-                token: Some(token.clone()),
-                ..St::default()
-            };
-            self.event(&st);
+            return r;
         }
+        if st.winding_down() {
+            // The canceled run still holds the lock and its staging area: it starts this one
+            // when it has stopped (see `run`).
+            st.again = Some((rel, restart));
+            return Ok(());
+        }
+        self.start(&mut st, rel, restart);
+        Ok(())
+    }
+
+    /// Starts a run of `rel` in the background.
+    fn start(self: &Arc<Self>, st: &mut St, rel: Release, restart: Restart) {
+        let token = self.o.shutdown.child_token();
+        *st = St {
+            phase: Some(InstallPhase::Downloading),
+            version: Some(rel.version.clone()),
+            total: 0,
+            restart: Some(restart),
+            token: Some(token.clone()),
+            ..St::default()
+        };
+        self.event(st);
         self.runs.fetch_add(1, Ordering::SeqCst);
         let this = self.clone();
         tokio::spawn(async move { this.run(rel, token).await });
-        Ok(())
     }
 
     /// `app.cancel_update`: stops an install that did not reach the swap. Returns whether
     /// something was canceled.
     pub fn cancel(&self) -> Result<bool, ApiError> {
-        let st = self.st();
+        let mut st = self.st();
         match st.phase() {
             InstallPhase::Idle | InstallPhase::Failed => Ok(false),
             InstallPhase::Downloading
@@ -965,6 +995,8 @@ impl Installer {
                 if let Some(t) = &st.token {
                     t.cancel();
                 }
+                // Also an install requested again since an earlier cancel.
+                st.again = None;
                 Ok(true)
             }
             _ => Err(Self::api_err(
@@ -986,6 +1018,15 @@ impl Installer {
             Ok(()) => {}
             Err(e) if e.kind == ErrorKind::Cancelled || token.is_cancelled() => {
                 tracing::info!("the update install was canceled");
+                // Requested again while this run was stopping: its staging area is gone and the
+                // lock is free, so the new run starts from scratch.
+                if let Some((rel, restart)) = st.again.take()
+                    && !self.o.shutdown.is_cancelled()
+                {
+                    tracing::info!("the update install starts again");
+                    self.start(&mut st, rel, restart);
+                    return;
+                }
                 st.phase = Some(InstallPhase::Idle);
                 st.error = None;
                 st.token = None;
