@@ -817,6 +817,15 @@ impl SipStack {
         rx.await.map_err(|_| SipError::Closed)
     }
 
+    /// Test hook: the delay of the account's delayed socket replacements from now on (`None`:
+    /// the normal 0.5 s doubling schedule). While set, every death after a replacement counts
+    /// as a quick one (however long after it), so it is delayed; the first death of a runtime is
+    /// always replaced at once.
+    #[doc(hidden)]
+    pub fn set_socket_replace_delay(&self, id: &str, delay: Option<Duration>) -> Result<()> {
+        self.send(id, Cmd::SetReplaceDelay(delay))
+    }
+
     /// Unregisters every account (best effort, bounded) and stops them.
     pub async fn shutdown(&self) {
         self.shared.net.shutdown();

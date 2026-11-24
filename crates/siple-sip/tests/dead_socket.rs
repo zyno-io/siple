@@ -7,14 +7,31 @@ mod common;
 
 use std::time::Duration;
 
-use common::{active_pair, add, free_udp_port, incoming_on, peer, rig, state_of, until};
+use common::{Rig, active_pair, add, free_udp_port, incoming_on, peer, rig, state_of, until};
 use siple_sip::{AnswerOptions, CallState, EndedBy, SipEvent, UpdateOutcome};
 
-async fn wait_replaced(r: &mut common::Rig, account: &str) {
-    let account = account.to_string();
+fn is_transport_dead(e: &SipEvent, account: &str) -> bool {
+    matches!(e, SipEvent::AccountReconnecting { account: a, reason }
+        if a == account && reason == "transport_dead")
+}
+
+/// Kills the account's UDP socket, after dropping any `transport_dead` event already received
+/// for it, so the next [`wait_replaced`] reads the one this death causes.
+async fn kill(r: &mut Rig, account: &str) {
+    while let Ok(e) = r.events.try_recv() {
+        r.buf.push(e);
+    }
+    r.buf.retain(|e| !is_transport_dead(e, account));
+    assert!(
+        r.stack.simulate_udp_socket_death(account).await.unwrap(),
+        "{account} has no UDP socket"
+    );
+}
+
+/// Waits for the `transport_dead` event, which is sent once the new socket is in place.
+async fn wait_replaced(r: &mut Rig, account: &str) {
     until(r, "transport_dead reconnect", |e| {
-        matches!(e, SipEvent::AccountReconnecting { account: a, reason }
-            if *a == account && reason == "transport_dead")
+        is_transport_dead(e, account)
     })
     .await;
 }
@@ -26,11 +43,10 @@ async fn dead_udp_socket_is_replaced_and_the_call_and_account_keep_working() {
     let a_addr = r.stack.account_status("a").unwrap().local_addr.unwrap();
     let b_addr = r.stack.account_status("b").unwrap().local_addr.unwrap();
 
-    assert!(r.stack.simulate_udp_socket_death("a").await.unwrap());
+    kill(&mut r, "a").await;
     wait_replaced(&mut r, "a").await;
 
-    // The event is sent once the new socket is in place: `a` sends from it and receives the
-    // answer.
+    // `a` sends from the new socket and receives the answer.
     let resp = r
         .stack
         .send_options("a", &format!("sip:b@{b_addr}"))
@@ -73,7 +89,7 @@ async fn a_call_being_set_up_survives_the_socket_death() {
         .unwrap();
     let b_call = incoming_on(&mut r, "b").await;
     // The callee's socket dies while its INVITE server transaction is open.
-    assert!(r.stack.simulate_udp_socket_death("b").await.unwrap());
+    kill(&mut r, "b").await;
     wait_replaced(&mut r, "b").await;
     // The 200 OK leaves through that transaction (on the new socket), the ACK comes back on it.
     r.stack
@@ -87,17 +103,15 @@ async fn a_call_being_set_up_survives_the_socket_death() {
     r.stack.shutdown().await;
 }
 
-/// Each replacement dies again right away: replaced every time, later and later (0.5 s, 1 s).
+/// Each replacement dies again right away: replaced every time, later and later (the normal
+/// 0.5 s and 1 s delays; nothing here depends on how long they take).
 #[tokio::test]
 async fn dead_udp_socket_of_an_idle_account_is_replaced_more_than_once() {
     let mut r = rig();
     let a = add(&r, peer("a")).await;
     let b = add(&r, peer("b")).await;
     for round in 0..3 {
-        assert!(
-            r.stack.simulate_udp_socket_death("a").await.unwrap(),
-            "round {round}"
-        );
+        kill(&mut r, "a").await;
         wait_replaced(&mut r, "a").await;
         let resp = r
             .stack
@@ -115,38 +129,42 @@ async fn dead_udp_socket_of_an_idle_account_is_replaced_more_than_once() {
     r.stack.shutdown().await;
 }
 
-/// Waits until the account reports a delayed socket replacement as pending (or not); returns
-/// the quick deaths in a row.
-async fn until_pending(r: &common::Rig, account: &str, pending: bool) -> u32 {
+/// Waits until the account reports a delayed socket replacement as pending; returns the quick
+/// deaths in a row. The death was just caused, so the account handles it within moments; the
+/// replacement it schedules waits for an hour (test hook), so the window cannot close here.
+async fn until_pending(r: &Rig, account: &str) -> u32 {
     let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
     loop {
-        let (p, deaths) = r.stack.socket_replacement_state(account).await.unwrap();
-        if p == pending {
+        let (pending, deaths) = r.stack.socket_replacement_state(account).await.unwrap();
+        if pending {
             return deaths;
         }
         assert!(
             tokio::time::Instant::now() < deadline,
-            "{account}: replacement pending never became {pending}"
+            "{account}: no delayed replacement was scheduled"
         );
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
 }
 
 /// A delayed replacement is pending when the runtime is rebuilt: the rebuild drops it (and the
-/// dead socket), the new runtime's first death is replaced at once, and the old runtime's timer
-/// firing later does not cancel the new runtime's own delayed replacement.
+/// dead socket) and forgets the deaths, so the new runtime's first death is replaced at once
+/// and its next quick one is delayed afresh.
 #[tokio::test]
 async fn a_rebuild_while_a_replacement_is_pending_starts_afresh() {
     let mut r = rig();
     let mut cfg = peer("a");
     add(&r, cfg.clone()).await;
     let b = add(&r, peer("b")).await;
+    r.stack
+        .set_socket_replace_delay("a", Some(Duration::from_secs(3600)))
+        .unwrap();
 
-    // First death: replaced at once. Second, right after: delayed (0.5 s).
-    assert!(r.stack.simulate_udp_socket_death("a").await.unwrap());
+    // First death: replaced at once. Second, right after: delayed (by an hour).
+    kill(&mut r, "a").await;
     wait_replaced(&mut r, "a").await;
-    assert!(r.stack.simulate_udp_socket_death("a").await.unwrap());
-    assert_eq!(until_pending(&r, "a", true).await, 1);
+    kill(&mut r, "a").await;
+    assert_eq!(until_pending(&r, "a").await, 1);
 
     // Rebuild the runtime while that replacement waits (a rebuild-only field changes).
     cfg.local_port = free_udp_port();
@@ -163,20 +181,26 @@ async fn a_rebuild_while_a_replacement_is_pending_starts_afresh() {
     assert_eq!(
         r.stack.socket_replacement_state("a").await.unwrap(),
         (false, 0),
-        "the rebuild forgets the pending replacement and the deaths"
+        "the rebuild drops the pending replacement and forgets the deaths"
     );
 
     // The new runtime's first death is a first one again: replaced at once.
-    assert!(r.stack.simulate_udp_socket_death("a").await.unwrap());
+    kill(&mut r, "a").await;
     wait_replaced(&mut r, "a").await;
     assert_eq!(
         r.stack.socket_replacement_state("a").await.unwrap(),
         (false, 0)
     );
-    // A quick second death is delayed; the old runtime's timer (due about now) must not
-    // cancel it.
-    assert!(r.stack.simulate_udp_socket_death("a").await.unwrap());
+    // Its next quick death is delayed afresh (shortened here so the test can wait for it).
+    r.stack
+        .set_socket_replace_delay("a", Some(Duration::from_millis(100)))
+        .unwrap();
+    kill(&mut r, "a").await;
     wait_replaced(&mut r, "a").await;
+    assert_eq!(
+        r.stack.socket_replacement_state("a").await.unwrap(),
+        (false, 1)
+    );
 
     let resp = r
         .stack
