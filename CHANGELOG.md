@@ -1,12 +1,18 @@
 <!-- siple-rename: keep (this file documents the legacy ZynoPhone names on purpose) -->
 # Changelog
 
-## Unreleased
+## 0.2.7 (2026-11-24)
 
 ### Fixed
 
-- In-app updates: an install requested the moment another one ends (for example an immediate retry through the control API) no longer fails now and then with "another Siple is installing an update".
+- An account whose SIP socket stops working (macOS can shut a program's network sockets down, for example) now gets a new socket on the same address and re-registers, instead of going deaf with one CPU core busy until Siple is restarted. When the socket can be reopened on the same address (the usual case), calls in progress and calls being set up keep going; otherwise they end and the account starts over. `account.reconnecting` reports this with the reason `transport_dead`.
 - A re-INVITE that reached Siple right after it answered the previous one (for example a resume right after a hold) could be refused with "500 Server Internal Error". When the other party was also Siple, a failed transfer could then leave the call on hold.
+- In-app updates: an install requested the moment another one ends (for example an immediate retry through the control API) no longer fails now and then with "another Siple is installing an update".
+- In-app updates: installing again right after canceling an install (before the canceled download had stopped) reported success but installed nothing. The install now starts over as soon as the canceled one has stopped.
+
+### Changed
+
+- Siple's text uses American spelling ("Behavior", "Canceled", "license") in the app, the docs and siple.app. API values and config keys are unchanged (for example the `cancelled` end cause).
 
 ## 0.2.6 (2026-11-23)
 
