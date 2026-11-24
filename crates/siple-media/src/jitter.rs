@@ -8,7 +8,7 @@
 //!   into an internal PCM queue (so any sender ptime of 10-60 ms works) and
 //!   returns exactly one 20 ms PCM frame at the codec's PCM rate.
 //! * Packet-to-packet RTP timestamps define the timeline: a missing packet
-//!   with a later neighbour is concealed (Opus FEC from the next packet when
+//!   with a later neighbor is concealed (Opus FEC from the next packet when
 //!   possible, otherwise PLC) for exactly the timestamp gap; an *empty*
 //!   buffer (underrun) conceals one frame and the inserted audio permanently
 //!   adds that much playout delay (the "grow quickly" path).

@@ -73,7 +73,7 @@ for bin in siple siple-cli; do
   fi
 done
 
-# --- licence + third-party notices (fatal when SIPLE_RELEASE=1 and cargo-about is missing) -----
+# --- license + third-party notices (fatal when SIPLE_RELEASE=1 and cargo-about is missing) -----
 cp "$ROOT/LICENSE" "$APP/Contents/Resources/LICENSE"
 "$ROOT/scripts/gen-licenses.sh" --if-available "$APP/Contents/Resources/THIRD-PARTY-NOTICES.html"
 
@@ -110,7 +110,7 @@ rm -rf "$(dirname "$ICONSET")"
 
 if [ "$MAS" = "1" ]; then
   cp "$PKG/PrivacyInfo.xcprivacy" "$APP/Contents/Resources/PrivacyInfo.xcprivacy"
-  # Strip quarantine / resource-fork xattrs and normalise modes: the App Store rejects stray attributes.
+  # Strip quarantine / resource-fork xattrs and normalize modes: the App Store rejects stray attributes.
   find "$APP" -print0 | xargs -0 xattr -c   # not `xattr -cr`: some xattr builds lack -r
   chmod -R u+rwX,go+rX "$APP"
 fi

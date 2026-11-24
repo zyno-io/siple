@@ -2,7 +2,7 @@
 //!
 //! A link arrives from outside the app (browser, OS URL handler, another instance), so it is
 //! untrusted. [`parse_link`] keeps only what a dial field needs: `user@host[:port]` for SIP URIs
-//! plus a `transport` parameter, and a normalised number for `tel:`. URI headers (`?Replaces=`,
+//! plus a `transport` parameter, and a normalized number for `tel:`. URI headers (`?Replaces=`,
 //! `?Call-Info=`, `?body=`) and every other parameter are dropped. Control characters, spaces
 //! and percent-escapes that decode to them are refused. The result only ever prefills the dial
 //! field; nothing here dials.

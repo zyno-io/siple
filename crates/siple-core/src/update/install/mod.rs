@@ -56,7 +56,7 @@ const PROGRESS_INTERVAL: Duration = Duration::from_millis(500);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ErrorKind {
-    /// Cancelled by the user, an agent or a setting.
+    /// Canceled by the user, an agent or a setting.
     Cancelled,
     /// The download failed (connect, TLS, HTTP, a refused redirect, a wrong size, time-outs).
     Network,
@@ -473,7 +473,7 @@ pub struct InstallerOptions {
     pub poll: Duration,
     /// [`CLEANUP_DELAY`].
     pub cleanup_delay: Duration,
-    /// Cancelled when the app shuts down.
+    /// Canceled when the app shuts down.
     pub shutdown: CancellationToken,
 }
 
@@ -576,6 +576,18 @@ impl Drop for Staging {
         if let Some(d) = self.dir.take() {
             self.platform.discard(&d);
         }
+    }
+}
+
+/// The per-target install lock, held until dropped.
+struct InstallLock(std::fs::File);
+
+impl Drop for InstallLock {
+    fn drop(&mut self) {
+        // Unlock before the close. A child process that another thread is starting holds a copy of
+        // every open file until its exec closes it, and a lock left to the close lasts as long as
+        // any copy: the next install would find it still held for a moment.
+        let _ = self.0.unlock();
     }
 }
 
@@ -941,7 +953,7 @@ impl Installer {
     }
 
     /// `app.cancel_update`: stops an install that did not reach the swap. Returns whether
-    /// something was cancelled.
+    /// something was canceled.
     pub fn cancel(&self) -> Result<bool, ApiError> {
         let st = self.st();
         match st.phase() {
@@ -973,7 +985,7 @@ impl Installer {
         match r {
             Ok(()) => {}
             Err(e) if e.kind == ErrorKind::Cancelled || token.is_cancelled() => {
-                tracing::info!("the update install was cancelled");
+                tracing::info!("the update install was canceled");
                 st.phase = Some(InstallPhase::Idle);
                 st.error = None;
                 st.token = None;
@@ -990,7 +1002,7 @@ impl Installer {
     }
 
     /// Waits until the calls have been over for `quiet` (zero for `restart: now`), or the restart
-    /// mode became `manual` (`Ok(false)`), or the install was cancelled.
+    /// mode became `manual` (`Ok(false)`), or the install was canceled.
     async fn wait_idle(
         &self,
         token: &CancellationToken,
@@ -1029,7 +1041,7 @@ impl Installer {
         }
     }
 
-    fn lock_target(&self, target: &Target) -> Result<std::fs::File, InstallError> {
+    fn lock_target(&self, target: &Target) -> Result<InstallLock, InstallError> {
         use std::hash::{Hash, Hasher};
         let mut h = std::collections::hash_map::DefaultHasher::new();
         target.root.hash(&mut h);
@@ -1068,7 +1080,7 @@ impl Installer {
                 "another Siple is installing an update",
             )
         })?;
-        Ok(f)
+        Ok(InstallLock(f))
     }
 
     async fn run_inner(
@@ -1199,7 +1211,7 @@ impl Installer {
                 }
                 continue;
             }
-            // The last check before the swap: under the lock, so that cancelling and
+            // The last check before the swap: under the lock, so that canceling and
             // committing cannot both win.
             let mut st = self.st();
             if token.is_cancelled() {

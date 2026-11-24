@@ -221,7 +221,7 @@ impl SipStack {
     /// device calls within `[calls] hold_scope` are put on hold, the call is resumed when we hold
     /// it, and the media focus moves to it. If any hold fails the whole operation aborts with
     /// that error and nothing is resumed. Idempotent (an already active line is a no-op), and
-    /// serialised with the other line operations (answer, hold / resume, auto-hold of a dial) in
+    /// serialized with the other line operations (answer, hold / resume, auto-hold of a dial) in
     /// the order they were issued.
     pub async fn activate(&self, call_id: &str) -> Result<()> {
         self.shared.calls.activate(call_id).await
@@ -262,7 +262,7 @@ impl SipStack {
             .await
     }
 
-    /// Local mute (no signalling).
+    /// Local mute (no signaling).
     pub async fn mute(&self, call_id: &str, muted: bool) -> Result<()> {
         self.shared.calls.mute(call_id, muted).await
     }

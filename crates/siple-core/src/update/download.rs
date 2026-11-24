@@ -8,7 +8,7 @@
 //!   [`ALLOWED_HOSTS`].
 //! - `Content-Length` is required and must equal the expected size; chunked and unframed
 //!   responses are refused; the size is capped; every read has an idle limit and the whole
-//!   transfer a total limit; the transfer can be cancelled.
+//!   transfer a total limit; the transfer can be canceled.
 //! - The body is streamed into a new file (created exclusively, mode 0600 on Unix) while a
 //!   SHA-256 is computed; a failure removes the partial file.
 //! - The request carries `User-Agent: Siple/<version>` and nothing else that identifies the

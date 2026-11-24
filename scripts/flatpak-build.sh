@@ -50,7 +50,7 @@ echo "::group::flatpak-builder ($ARCH)"
 # directory (this manifest's source is the checkout, `../..`), so the in-repo build leaves it out. Builds
 # never have network access either way (the cargo sources are offline); the rendered Flathub manifest
 # (scripts/flathub-manifest.sh) uses a git source and is built with --sandbox there.
-# --compose-url-policy=full: absolute screenshot and icon URLs in the AppStream catalogue (the linter
+# --compose-url-policy=full: absolute screenshot and icon URLs in the AppStream catalog (the linter
 # fails appstream-external-screenshot-url / appstream-remote-icon-not-mirrored on the default partial URLs).
 flatpak-builder --arch="$ARCH" --compose-url-policy=full --force-clean --disable-rofiles-fuse \
   --install-deps-from=flathub --state-dir="$WORK/state" \

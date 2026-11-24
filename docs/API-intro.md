@@ -352,7 +352,7 @@ the original call A with its consult call B (blind transfers have no B). `call.t
 device, which never cause holds of other calls), dials `target` on A's account (source and sink default to A's) and
 returns `{session_id, consult_call_id}`; `call.consult_link {call_id, consult_call_id}` pairs two existing calls of one
 account. Then `transfer.complete {session_id, mode}` (`attended`: REFER with Replaces, needs an answered consult;
-`blind_now`: end the consult, refer A to its dialled URI), `transfer.swap` (hold the leg you talk to, resume the other,
+`blind_now`: end the consult, refer A to its dialed URI), `transfer.swap` (hold the leg you talk to, resume the other,
 move the audio focus) or `transfer.cancel` (hang up B, resume A). `transfer.get` / `transfer.list` read sessions;
 `status.transfers` and `call.transfer {session_id, role}` carry them too. `last_error` is `{stage, code, reason, problem}`.
 
@@ -594,7 +594,7 @@ stt_command = ["whisper-cli", "-m", "/opt/whisper/ggml-base.en.bin", "-f", "{in}
 stt_language = "en"
 ```
 
-espeak-ng and piper are GPL programs run as separate processes; that does not affect Siple's FSL-1.1-ALv2 licence.
+espeak-ng and piper are GPL programs run as separate processes; that does not affect Siple's FSL-1.1-ALv2 license.
 
 ### New event kinds
 

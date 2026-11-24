@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Generates THIRD-PARTY-NOTICES.html (all dependency licence texts) for binary distributions.
+# Generates THIRD-PARTY-NOTICES.html (all dependency license texts) for binary distributions.
 #
 #   scripts/gen-licenses.sh [--if-available] [output-file]   default: dist/THIRD-PARTY-NOTICES.html
 #
 # Needs cargo-about:  cargo install cargo-about --locked
-# Configuration: about.toml (accepted licences, must match deny.toml) and about.hbs (template).
+# Configuration: about.toml (accepted licenses, must match deny.toml) and about.hbs (template).
 # The output is a build artifact: it is not committed. The package-*.sh scripts call this with
 # --if-available and ship the result inside the package.
 #

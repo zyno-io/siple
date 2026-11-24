@@ -38,7 +38,7 @@ const MAX_UDP_INVITE: usize = 65_507;
 /// Headroom for the headers the stack adds (Via, From, To, Call-ID, CSeq, Contact, auth, ...).
 const INVITE_OVERHEAD: usize = 1_500;
 
-/// Percent-encodes the characters of a dialled string that are not legal in a URI user part.
+/// Percent-encodes the characters of a dialed string that are not legal in a URI user part.
 fn escape_user(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for c in s.chars() {
@@ -69,7 +69,7 @@ pub(crate) fn target_uri(cfg: &AccountConfig, target: &str) -> Result<Uri> {
     } else {
         if cfg.domain.is_empty() {
             return Err(SipError::Config(
-                "dialling an extension needs the account's domain".into(),
+                "dialing an extension needs the account's domain".into(),
             ));
         }
         format!("sip:{}@{}", escape_user(t), cfg.domain)
@@ -824,7 +824,7 @@ impl Call {
                         {
                             m.set_focus();
                             self.mgr.set_active(&self.id);
-                            // The user dialled this party: other un-held device lines go on
+                            // The user dialed this party: other un-held device lines go on
                             // hold (through the coordinator, off this task's lock).
                             let call = self.clone();
                             tokio::spawn(async move {

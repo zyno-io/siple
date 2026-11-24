@@ -85,7 +85,7 @@ pub enum Chevron {
     Right,
 }
 
-/// A stroked chevron centred on `c` (the embedded Phosphor subset has only the caret-down and
+/// A stroked chevron centered on `c` (the embedded Phosphor subset has only the caret-down and
 /// caret-right glyphs, so all four directions are drawn the same way).
 pub fn paint_chevron(
     painter: &egui::Painter,

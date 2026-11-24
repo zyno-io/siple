@@ -191,7 +191,7 @@ mwi = "subscribe"                     # subscribe | unsolicited | off
 mwi_uri = ""                          # "" = own AOR
 blf_expires = 600
 # pickup = "off"                      # directed pickup of ringing BLF extensions: off | prefix | replaces (experimental)
-# pickup_prefix = "**"                # feature code dialled before the extension with pickup = "prefix"
+# pickup_prefix = "**"                # feature code dialed before the extension with pickup = "prefix"
 # pickup_replaces_target = "caller"   # pickup = "replaces" (experimental): INVITE the caller (RFC 5359) or the "monitored" phone
 sip_trace = true
 audio_source = "device"               # device | silence | tone:<hz> | file:<path.wav>

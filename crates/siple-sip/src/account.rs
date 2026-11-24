@@ -183,8 +183,8 @@ enum NetKind {
     Signal,
     /// `account.reregister` / `register_now`: the user asked; `Retry-After` is overridden.
     Manual,
-    /// A flow proven dead (keep-alive threshold, unreachable send error): it may be redialled
-    /// even with live calls, since their signalling over it is already broken.
+    /// A flow proven dead (keep-alive threshold, unreachable send error): it may be redialed
+    /// even with live calls, since their signaling over it is already broken.
     Dead,
 }
 
@@ -240,7 +240,7 @@ pub(crate) enum KaOutcome {
 
 // --- rsipstack glue -----------------------------------------------------------------------------
 
-/// Forwards wire events to the stack's sink, labelled with the account.
+/// Forwards wire events to the stack's sink, labeled with the account.
 struct TapProxy {
     account: String,
     sink: Arc<dyn WireSink>,
@@ -353,7 +353,7 @@ pub(crate) struct Runtime {
     stream_gen: u64,
     /// Old UDP listeners still receiving after a move. A flap back to their address re-installs
     /// them (same socket, same port: calls bound to their Contact stay reachable, a fixed
-    /// `local_port` is not bound twice); otherwise they are cancelled once no call uses them.
+    /// `local_port` is not bound twice); otherwise they are canceled once no call uses them.
     lingering: Vec<Linger>,
     /// Router context (dialog layer, dialog-state sender) for calls.
     ctx: AccountCtx,
@@ -643,7 +643,7 @@ async fn build_inner(
     // Since 0.7.7 rsipstack closes a TCP / TLS connection after 5 min without inbound bytes.
     // The registrar flow can legitimately be that quiet (servers that ignore CRLF pings, long
     // re-REGISTER intervals); losing it would drop incoming calls. Liveness is ours to judge
-    // (keep-alive + flow watcher), so keep the old "never idle out" behaviour.
+    // (keep-alive + flow watcher), so keep the old "never idle out" behavior.
     tl.set_stream_idle_timeout(Duration::ZERO);
     let tap = Arc::new(TapProxy {
         account: cfg.id.clone(),
@@ -1659,7 +1659,7 @@ impl Actor {
         if self.stream_transport() && self.flow.is_some() {
             if self.calls > 0 && kind != NetKind::Dead {
                 // The registrar connection also carries the calls' dialogs (connections are keyed
-                // by peer): closing it would break in-dialog signalling. Re-REGISTER on it and
+                // by peer): closing it would break in-dialog signaling. Re-REGISTER on it and
                 // redial when the last call ends.
                 self.reg.redial_pending = true;
             } else {
@@ -1713,7 +1713,7 @@ impl Actor {
 
     /// The flow is dead (keep-alives unanswered): forget what was learned over it, re-probe and
     /// re-register at once. Unlike a plain network signal this redials even with live calls: a
-    /// flow proven dead has already broken their signalling.
+    /// flow proven dead has already broken their signaling.
     async fn on_flow_dead(&mut self, reason: &str) {
         if !self.want_registered() {
             return;
@@ -1786,7 +1786,7 @@ impl Actor {
             };
             rt.lingering.retain(|l| !l.tok.is_cancelled());
             // The expiry task and this path race for a lingering listener: whoever flips the
-            // flag first owns it (a listener the expiry task won is being cancelled: bind anew).
+            // flag first owns it (a listener the expiry task won is being canceled: bind anew).
             let mut reuse = None;
             while let Some(i) = rt.lingering.iter().position(|l| {
                 l.ip == now.local_ip && (cfg.local_port == 0 || l.addr.port() == cfg.local_port)

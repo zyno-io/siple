@@ -164,7 +164,7 @@ impl Router {
     }
 
     /// Spawns the dialog-state drain and the transaction loop. Both stop when `token` (the
-    /// account runtime's token) is cancelled: the channels they drain are fed by senders owned
+    /// account runtime's token) is canceled: the channels they drain are fed by senders owned
     /// by the endpoint, which this router itself keeps alive (router -> dialog layer ->
     /// endpoint), so closure alone would never end them and the whole runtime (UDP socket
     /// included) would leak.

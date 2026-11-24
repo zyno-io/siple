@@ -154,7 +154,7 @@ impl Channel {
     }
 
     /// Arguments that must come first when the file is started again: `--appimage-extract-and-run`
-    /// for an AppImage that runs from an extraction directory (the runtime honours it only as the
+    /// for an AppImage that runs from an extraction directory (the runtime honors it only as the
     /// first argument), nothing otherwise.
     pub fn launch_args_prefix(&self) -> &'static [&'static str] {
         if self.appimage.is_some() && self.appimage_extracted {
@@ -484,7 +484,7 @@ pub fn apply_host_env(cmd: &mut std::process::Command) {
 pub fn config_dir_for_channel(channel: &Channel) -> Option<PathBuf> {
     match channel.kind {
         // The AppImage uses the same config as the tarball; the runtime's portable `<file>.config`
-        // arrives as `XDG_CONFIG_HOME`, which `direct_config_dir()` honours.
+        // arrives as `XDG_CONFIG_HOME`, which `direct_config_dir()` honors.
         ChannelKind::Direct | ChannelKind::AppImage => crate::paths::direct_config_dir(),
         ChannelKind::MacAppStore => real_home().map(|h| mas_dir_in(&h)),
         ChannelKind::Msix => {

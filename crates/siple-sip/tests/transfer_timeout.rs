@@ -105,7 +105,7 @@ async fn progress_notifies_extend_the_timeout_and_late_success_counts() {
     state_of(&mut r, &call, siple_sip::CallState::Ended).await;
     r.buf.clear();
 
-    // Case 2: silence -> 408; a late final 200 is still honoured; NOTIFYs of an older REFER
+    // Case 2: silence -> 408; a late final 200 is still honored; NOTIFYs of an older REFER
     // (lower id) are ignored.
     let (raw, call, tag) = established(&mut r, &c).await;
     let cseq = start(&raw, &r, &call).await;

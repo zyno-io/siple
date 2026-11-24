@@ -35,7 +35,7 @@ pub enum HubError {
     /// More than [`super::MAX_LISTENS_PER_CALL`] concurrent listens.
     #[error("too many concurrent listens on this call")]
     TooManyListens,
-    /// A position or range the hub cannot honour.
+    /// A position or range the hub cannot honor.
     #[error("{0}")]
     BadRange(String),
     /// The hub task failed or is not implemented.

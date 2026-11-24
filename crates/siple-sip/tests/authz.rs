@@ -386,7 +386,7 @@ async fn in_dialog_reinvite_challenged_by_foreign_peer_is_not_answered() {
     assert!(err.contains("Authentication refused"), "{err}");
 }
 
-/// REPRO: a directly dialled foreign peer Record-Routes itself and sets its Contact host to the
+/// REPRO: a directly dialed foreign peer Record-Routes itself and sets its Contact host to the
 /// account's domain; the BYE (sent to the foreign peer) is challenged.
 async fn spoof_call(r: &mut Rig, foreign: &mut Srv, cfg: AccountConfig) -> (String, SocketAddr) {
     add(r, cfg).await;

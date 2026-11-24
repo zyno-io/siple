@@ -58,7 +58,7 @@ pub fn legacy_config_dir() -> Option<PathBuf> {
     dirs::config_dir().map(|d| d.join(LEGACY_APP_DIR))
 }
 
-/// Deprecated alias of `SIPLE_CONFIG`; honoured through 0.3.x.
+/// Deprecated alias of `SIPLE_CONFIG`; honored through 0.3.x.
 const LEGACY_CONFIG_ENV: &str = "ZYNOPHONE_CONFIG";
 
 /// Result of [`resolve_config_path`].

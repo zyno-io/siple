@@ -3,14 +3,14 @@ Siple AppImage: the runtime and what it contains
 
 Siple's AppImage is one file: the AppImage type 2 runtime followed by a squashfs image of Siple.
 This notice covers the runtime, which is not Siple's own code. Siple itself is FSL-1.1-ALv2
-(see LICENSE); the licences of its Rust dependencies are in THIRD-PARTY-NOTICES.html.
+(see LICENSE); the licenses of its Rust dependencies are in THIRD-PARTY-NOTICES.html.
 The AppImage also bundles GUI libraries (X11, xkbcommon, Wayland): they are listed with their Debian
-packages and versions in usr/share/doc/siple/BUNDLED-LIBRARIES.txt, and their licences are in
+packages and versions in usr/share/doc/siple/BUNDLED-LIBRARIES.txt, and their licenses are in
 usr/share/doc/siple/bundled-licenses/.
 
 Runtime
   Project:  AppImage/type2-runtime, https://github.com/AppImage/type2-runtime
-  Licence:  MIT
+  License:  MIT
   Release:  20251108 (commit dd6cebedcbddde9c82f89b011e8e1d40b6e43868, "dd6cebe")
   Files:    runtime-x86_64 (944632 bytes, sha256
             2fca8b443c92510f1483a883f60061ad09b46b978b2631c807cd873a47ec260d) and
@@ -29,7 +29,7 @@ Statically linked into the runtime (built on Alpine Linux 3.21, musl libc)
   squashfuse 0.5.2     BSD-2-Clause
                        https://github.com/vasi/squashfuse/archive/0.5.2.tar.gz
                        sha256 db0238c5981dabbd80ee09ae15387f390091668ca060a7bc38047912491443d3
-  zstd, zlib           BSD-3-Clause / zlib licence, Alpine 3.21 packages zstd-static, zlib-static
+  zstd, zlib           BSD-3-Clause / zlib license, Alpine 3.21 packages zstd-static, zlib-static
   mimalloc             MIT, Alpine 3.21 package mimalloc-dev
   musl libc            MIT, Alpine 3.21 package musl-dev
 

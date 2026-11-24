@@ -1016,7 +1016,7 @@ async fn rx_loop(
     }
 }
 
-/// Close reasons that honour `hangup_on_close`; `server_shutdown` and `call_ended` do not.
+/// Close reasons that honor `hangup_on_close`; `server_shutdown` and `call_ended` do not.
 fn reason_hangs_up(reason: &str) -> bool {
     matches!(
         reason,

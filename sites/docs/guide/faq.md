@@ -72,12 +72,12 @@ Siple downloads the new version, checks it and installs it, and never restarts d
 Yes. Siple has a control API and an MCP server, and whatever the window can do, a script or an agent can do. See
 [AI agents](/agents/).
 
-### What does Siple cost, and what is the licence?
+### What does Siple cost, and what is the license?
 
 Siple is free to use at work, to self-host and to modify for your own needs. It is source-available under the Functional
 Source License (FSL-1.1-ALv2), not open source in the OSI sense. You cannot sell it or offer it as a competing product or
 service. Each version also becomes Apache-2.0 two years after it is released. The summary is on the
-[Licence](/project/licence) page; the licence text is what applies.
+[License](/project/licence) page; the license text is what applies.
 
 ## Getting help
 

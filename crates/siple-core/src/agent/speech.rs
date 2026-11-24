@@ -343,7 +343,7 @@ async fn run(job: Job<'_>) -> Result<Output, SpeechError> {
     let ms = job.timeout_ms;
     match tokio::time::timeout(job.timeout, io).await {
         Err(_) => {
-            // `guard` kills the whole group on return; `child` died with the cancelled future.
+            // `guard` kills the whole group on return; `child` died with the canceled future.
             Err(SpeechError::Timeout { what: job.what, ms })
         }
         Ok(((stdout, over), err, status)) => {

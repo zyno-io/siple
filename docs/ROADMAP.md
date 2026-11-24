@@ -140,7 +140,7 @@ builds keep everything), and a CI `cargo check` of `siple-sip` and `siple-media`
 
 - **Toolkit.** The desktop GUI stays on egui/eframe. Revisit only if the screen-reader audit hits structural problems
   AccessKit labels cannot fix, if right-to-left or complex-script locales are needed, or if Wayland multi-window
-  behaviour is required. The fallback is a UI-only shell (system webview) over the same engine; the media stack stays in
+  behavior is required. The fallback is a UI-only shell (system webview) over the same engine; the media stack stays in
   Rust.
 - **Linux linkage.** No GTK, libappindicator or libdbus: tray, notifications and keyring use pure-Rust D-Bus (zbus), GUI
   libraries are loaded at run time, and `siple --headless` / `siple-cli` must run without them.
