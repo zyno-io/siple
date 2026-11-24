@@ -58,6 +58,7 @@ async fn dead_udp_socket_is_replaced_and_the_call_and_account_keep_working() {
     r.stack.shutdown().await;
 }
 
+/// Each replacement dies again right away: replaced every time, later and later (0.5 s, 1 s).
 #[tokio::test]
 async fn dead_udp_socket_of_an_idle_account_is_replaced_more_than_once() {
     let mut r = rig();

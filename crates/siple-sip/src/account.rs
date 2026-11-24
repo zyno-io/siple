@@ -48,6 +48,20 @@ const UNREGISTER_TIMEOUT: Duration = Duration::from_secs(3);
 const REBIND_TRIES: u32 = 20;
 const REBIND_RETRY: Duration = Duration::from_millis(50);
 
+/// A replaced UDP socket that dies within this long counts as dying right away.
+const QUICK_SOCKET_DEATH: Duration = Duration::from_secs(10);
+
+/// Wait before replacing a socket that died for the `deaths`-th time in a row right after a
+/// replacement: none for the first death, then 0.5 s doubling up to 30 s.
+fn socket_replace_delay(deaths: u32) -> Duration {
+    if deaths == 0 {
+        return Duration::ZERO;
+    }
+    Duration::from_millis(500)
+        .saturating_mul(1 << (deaths - 1).min(6))
+        .min(Duration::from_secs(30))
+}
+
 /// Test hook: give up on a REGISTER after this long (0 = the transaction's own 32 s).
 static REGISTER_TIMEOUT_MS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
@@ -129,6 +143,8 @@ enum Internal {
     /// A listener's socket died: rsipstack ended its receive / accept loop (see
     /// `rsipstack::transport::io_error`).
     ListenerDead { epoch: u64, local: SipAddr },
+    /// The delayed replacement of a socket that died right after it was replaced.
+    ReplaceSocket { epoch: u64 },
     /// Result of re-probing the next hop / local address.
     Probed {
         epoch: u64,
@@ -855,6 +871,10 @@ pub(crate) struct Actor {
     reg_unreg: bool,
     /// Bumped on every address-changing rebind; tags the pending moves of the calls.
     rebind_seq: u64,
+    /// When the UDP socket was last replaced after it died.
+    socket_replaced_at: Option<Instant>,
+    /// Deaths in a row of replaced sockets within [`QUICK_SOCKET_DEATH`] of their replacement.
+    socket_deaths: u32,
 }
 
 /// How long the move of live calls waits for the re-REGISTER (the new Contact) before it goes
@@ -972,6 +992,8 @@ pub(crate) fn spawn_account(
         reg_seq: 0,
         reg_unreg: false,
         rebind_seq: 0,
+        socket_replaced_at: None,
+        socket_deaths: 0,
     };
     tokio::spawn(actor.run(cmd_rx, int_rx, ready_tx));
     (handle, ready_rx)
@@ -1943,8 +1965,10 @@ impl Actor {
     /// runtime, its dialogs and the Contact stay, so live calls carry on (only requests in
     /// flight on the dead socket are lost), and the account re-registers at once. If the address
     /// cannot be bound again, the calls end and the runtime is rebuilt, as when a network change
-    /// cannot move the transport in place. A lingering old socket is just dropped. A dead TCP /
-    /// TLS listener (fixed `local_port`) rebuilds the runtime.
+    /// cannot move the transport in place. A new socket that dies again within
+    /// [`QUICK_SOCKET_DEATH`] is replaced after [`socket_replace_delay`]. A lingering old
+    /// socket is just dropped. A dead TCP / TLS listener (fixed `local_port`) rebuilds the
+    /// runtime.
     async fn on_listener_dead(&mut self, local: SipAddr) {
         let Some(rt) = self.rt.as_mut() else { return };
         if let Some(i) = rt
@@ -1969,19 +1993,54 @@ impl Actor {
             tracing::debug!(account = %self.id, %local, "a closed listener that is not ours; ignored");
             return;
         }
-        tracing::warn!(account = %self.id, %local, "the SIP socket died; replacing it");
+        tracing::warn!(account = %self.id, %local, "the SIP socket died");
+        if stream_listener {
+            self.emit_transport_dead();
+            self.rebuild_no_unregister().await;
+            return;
+        }
+        // A socket that dies again right after being replaced is replaced later and later, so
+        // a socket that never works cannot turn this into a loop of its own.
+        let quick = self
+            .socket_replaced_at
+            .is_some_and(|t| t.elapsed() < QUICK_SOCKET_DEATH);
+        self.socket_deaths = if quick { self.socket_deaths + 1 } else { 0 };
+        let delay = socket_replace_delay(self.socket_deaths);
+        if delay.is_zero() {
+            self.replace_dead_socket().await;
+        } else {
+            tracing::warn!(account = %self.id, ?delay, deaths = self.socket_deaths, "the new SIP socket died right away; replacing it later");
+            let (tx, epoch) = (self.int_tx.clone(), self.epoch);
+            tokio::spawn(async move {
+                tokio::time::sleep(delay).await;
+                let _ = tx.send(Internal::ReplaceSocket { epoch });
+            });
+        }
+    }
+
+    fn emit_transport_dead(&self) {
         let _ = self.shared.events.send(SipEvent::AccountReconnecting {
             account: self.id.clone(),
             reason: "transport_dead".into(),
         });
-        if stream_listener {
-            self.rebuild_no_unregister().await;
-            return;
-        }
+    }
+
+    /// Replaces the dead UDP socket now (see [`Self::on_listener_dead`]). The
+    /// `account.reconnecting` event comes first; the replacement follows within this call.
+    async fn replace_dead_socket(&mut self) {
+        tracing::info!(account = %self.id, "replacing the dead SIP socket");
+        self.emit_transport_dead();
         match self.replace_udp_socket().await {
             Ok(()) => {
+                self.socket_replaced_at = Some(Instant::now());
                 self.reset_keepalive();
-                self.restart_registration();
+                if matches!(self.reg.state, RegState::WaitingForNetwork) {
+                    // No route: stay suspended (the next network signal or probe registers);
+                    // only forget the flow the old socket had.
+                    self.on_flow_lost();
+                } else {
+                    self.restart_registration();
+                }
             }
             Err(e) => {
                 tracing::warn!(account = %self.id, error = %e, "cannot replace the dead SIP socket; ending the calls and rebuilding");
@@ -2207,6 +2266,11 @@ impl Actor {
             Internal::ListenerDead { epoch, local } => {
                 if epoch == self.epoch {
                     self.on_listener_dead(local).await;
+                }
+            }
+            Internal::ReplaceSocket { epoch } => {
+                if epoch == self.epoch {
+                    self.replace_dead_socket().await;
                 }
             }
             Internal::Probed {
@@ -3150,6 +3214,16 @@ mod tests {
             probe(&pinned, &src, None).await,
             Err(SipError::Dns(_))
         ));
+    }
+
+    #[test]
+    fn a_socket_that_keeps_dying_is_replaced_later_and_later() {
+        assert_eq!(socket_replace_delay(0), Duration::ZERO);
+        assert_eq!(socket_replace_delay(1), Duration::from_millis(500));
+        assert_eq!(socket_replace_delay(2), Duration::from_secs(1));
+        assert_eq!(socket_replace_delay(3), Duration::from_secs(2));
+        assert_eq!(socket_replace_delay(7), Duration::from_secs(30));
+        assert_eq!(socket_replace_delay(u32::MAX), Duration::from_secs(30));
     }
 
     #[test]

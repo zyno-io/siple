@@ -12,12 +12,15 @@
 //!   fatal.
 //! - [`ErrorClass::Resource`]: the system is short of descriptors / buffers / memory. Retry;
 //!   never fatal (it recovers when the shortage ends).
-//! - [`ErrorClass::Unknown`]: retry, but a run of [`FATAL_AFTER`] in a row counts as a dead
-//!   socket.
+//! - [`ErrorClass::Unknown`]: retry, but [`FATAL_AFTER`] of them in a row (no success and no
+//!   error of another class in between) count as a dead socket.
 //!
 //! The first [`BACKOFF_AFTER`] errors of a run are retried at once (a burst of queued ICMP
 //! errors must not delay the next datagram); after that the loop waits
-//! [`BACKOFF_STEP`] · 2ⁿ, at most [`MAX_BACKOFF`], before each retry.
+//! [`BACKOFF_STEP`] · 2ⁿ before each retry, at most [`MAX_BACKOFF`] (at most
+//! [`MAX_BENIGN_BACKOFF`] for benign errors: each one is consumed by the call that reports it,
+//! so they cannot spin by themselves, and a peer that keeps drawing ICMP errors must not slow
+//! down the datagrams in between).
 
 use core::time::Duration;
 
@@ -27,6 +30,8 @@ pub const BACKOFF_AFTER: u32 = 8;
 pub const BACKOFF_STEP: Duration = Duration::from_millis(10);
 /// Longest wait between two retries.
 pub const MAX_BACKOFF: Duration = Duration::from_secs(1);
+/// Longest wait between two retries after a benign error.
+pub const MAX_BENIGN_BACKOFF: Duration = Duration::from_millis(10);
 /// [`ErrorClass::Unknown`] errors in a row after which the socket counts as dead.
 pub const FATAL_AFTER: u32 = 64;
 
@@ -52,11 +57,14 @@ pub enum Next {
 #[derive(Debug, Default)]
 pub struct ErrorRun {
     consecutive: u32,
+    /// [`ErrorClass::Unknown`] errors in a row.
+    unknown: u32,
 }
 
 impl ErrorRun {
     /// A receive / accept succeeded; returns the length of the run that just ended.
     pub fn success(&mut self) -> u32 {
+        self.unknown = 0;
         core::mem::take(&mut self.consecutive)
     }
 
@@ -68,9 +76,14 @@ impl ErrorRun {
     /// Records an error of `class` and says what to do.
     pub fn error(&mut self, class: ErrorClass) -> Next {
         self.consecutive = self.consecutive.saturating_add(1);
+        self.unknown = match class {
+            ErrorClass::Unknown => self.unknown.saturating_add(1),
+            _ => 0,
+        };
         match class {
             ErrorClass::Fatal => Next::Stop,
-            ErrorClass::Unknown if self.consecutive >= FATAL_AFTER => Next::Stop,
+            ErrorClass::Unknown if self.unknown >= FATAL_AFTER => Next::Stop,
+            ErrorClass::Benign => Next::Retry(backoff(self.consecutive).min(MAX_BENIGN_BACKOFF)),
             _ => Next::Retry(backoff(self.consecutive)),
         }
     }
@@ -134,26 +147,44 @@ pub fn classify_io(e: &std::io::Error) -> ErrorClass {
 /// Raw OS error codes `std::io::ErrorKind` does not name.
 #[cfg(feature = "std")]
 mod raw {
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "android"))]
     pub const BAD_SOCKET: &[i32] = &[9 /* EBADF */, 88 /* ENOTSOCK */];
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "android"))]
     pub const RESOURCE: &[i32] = &[
         23,  /* ENFILE */
         24,  /* EMFILE */
         105, /* ENOBUFS */
     ];
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "android"))]
     pub const BENIGN: &[i32] = &[90 /* EMSGSIZE */];
 
-    #[cfg(all(unix, not(target_os = "linux")))]
+    #[cfg(any(
+        target_vendor = "apple",
+        target_os = "freebsd",
+        target_os = "netbsd",
+        target_os = "openbsd",
+        target_os = "dragonfly"
+    ))]
     pub const BAD_SOCKET: &[i32] = &[9 /* EBADF */, 38 /* ENOTSOCK */];
-    #[cfg(all(unix, not(target_os = "linux")))]
+    #[cfg(any(
+        target_vendor = "apple",
+        target_os = "freebsd",
+        target_os = "netbsd",
+        target_os = "openbsd",
+        target_os = "dragonfly"
+    ))]
     pub const RESOURCE: &[i32] = &[
         23, /* ENFILE */
         24, /* EMFILE */
         55, /* ENOBUFS */
     ];
-    #[cfg(all(unix, not(target_os = "linux")))]
+    #[cfg(any(
+        target_vendor = "apple",
+        target_os = "freebsd",
+        target_os = "netbsd",
+        target_os = "openbsd",
+        target_os = "dragonfly"
+    ))]
     pub const BENIGN: &[i32] = &[40 /* EMSGSIZE */];
 
     #[cfg(windows)]
@@ -163,11 +194,39 @@ mod raw {
     #[cfg(windows)]
     pub const BENIGN: &[i32] = &[10040 /* WSAEMSGSIZE */, 10052 /* WSAENETRESET */];
 
-    #[cfg(not(any(unix, windows)))]
+    // Elsewhere only the `ErrorKind`s are used (raw numbers differ, e.g. on illumos).
+    #[cfg(not(any(
+        target_os = "linux",
+        target_os = "android",
+        target_vendor = "apple",
+        target_os = "freebsd",
+        target_os = "netbsd",
+        target_os = "openbsd",
+        target_os = "dragonfly",
+        windows
+    )))]
     pub const BAD_SOCKET: &[i32] = &[];
-    #[cfg(not(any(unix, windows)))]
+    #[cfg(not(any(
+        target_os = "linux",
+        target_os = "android",
+        target_vendor = "apple",
+        target_os = "freebsd",
+        target_os = "netbsd",
+        target_os = "openbsd",
+        target_os = "dragonfly",
+        windows
+    )))]
     pub const RESOURCE: &[i32] = &[];
-    #[cfg(not(any(unix, windows)))]
+    #[cfg(not(any(
+        target_os = "linux",
+        target_os = "android",
+        target_vendor = "apple",
+        target_os = "freebsd",
+        target_os = "netbsd",
+        target_os = "openbsd",
+        target_os = "dragonfly",
+        windows
+    )))]
     pub const BENIGN: &[i32] = &[];
 }
 
@@ -228,18 +287,51 @@ mod tests {
 
     #[test]
     fn benign_and_resource_errors_never_stop_the_loop_but_back_off() {
-        for class in [ErrorClass::Benign, ErrorClass::Resource] {
+        for (class, cap) in [
+            (ErrorClass::Benign, MAX_BENIGN_BACKOFF),
+            (ErrorClass::Resource, MAX_BACKOFF),
+        ] {
             let mut run = ErrorRun::default();
-            let mut waited = Duration::ZERO;
             for _ in 0..10 * FATAL_AFTER {
-                match run.error(class) {
-                    Next::Retry(d) => waited += d,
-                    Next::Stop => panic!("{class:?} stopped the loop"),
+                if let Next::Stop = run.error(class) {
+                    panic!("{class:?} stopped the loop");
                 }
             }
-            assert_eq!(run.error(class), Next::Retry(MAX_BACKOFF));
-            assert!(waited > Duration::from_secs(60), "{class:?}: {waited:?}");
+            assert_eq!(run.error(class), Next::Retry(cap), "{class:?}");
         }
+        let mut run = ErrorRun::default();
+        for _ in 0..=BACKOFF_AFTER {
+            let _ = run.error(ErrorClass::Benign);
+        }
+        assert_eq!(
+            run.error(ErrorClass::Benign),
+            Next::Retry(MAX_BENIGN_BACKOFF)
+        );
+    }
+
+    #[test]
+    fn only_unknown_errors_in_a_row_count_toward_a_dead_socket() {
+        // A long run of benign errors (a peer that keeps drawing ICMP errors) followed by
+        // unknown ones: only the unknown ones count.
+        let mut run = ErrorRun::default();
+        for _ in 0..10 * FATAL_AFTER {
+            let _ = run.error(ErrorClass::Benign);
+        }
+        for n in 1..FATAL_AFTER {
+            assert!(
+                matches!(run.error(ErrorClass::Unknown), Next::Retry(_)),
+                "n = {n}"
+            );
+        }
+        // Another class in between restarts the count.
+        let _ = run.error(ErrorClass::Resource);
+        for n in 1..FATAL_AFTER {
+            assert!(
+                matches!(run.error(ErrorClass::Unknown), Next::Retry(_)),
+                "n = {n}"
+            );
+        }
+        assert_eq!(run.error(ErrorClass::Unknown), Next::Stop);
     }
 
     #[test]

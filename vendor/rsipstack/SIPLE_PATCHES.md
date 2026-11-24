@@ -76,9 +76,11 @@ Reliable 18x are ordinary provisional responses sent through `InviteDialog::ring
   `WSAEMFILE`/`WSAENOBUFS`, out of memory: resource; connection reset / refused / aborted,
   unreachable, `EINTR`, would-block, timed out, `EMSGSIZE`/`WSAEMSGSIZE`/`WSAENETRESET`: benign),
   `ErrorRun` (errors since the last success: the first 8 of a run retried at once, then a wait
-  of 10 ms doubling up to 1 s; `Fatal` stops at once, 64 `Unknown` in a row stop; `Benign` and
-  `Resource` never stop; logged at warn for the first error of a run and when the backoff starts,
-  debug otherwise), `wait_or_cancelled`.
+  of 10 ms doubling up to 1 s, at most 10 ms after a benign error; `Fatal` stops at once, 64
+  `Unknown` in a row (no other class in between) stop; `Benign` and `Resource` never stop;
+  logged at warn for the first error of a run and when the backoff starts, debug otherwise),
+  `wait_or_cancelled`. Raw codes per OS family (Linux/Android, Apple/BSD, Windows; elsewhere
+  only the `ErrorKind`s).
 - `src/transport/udp.rs` `serve_loop_with_whitelist`: a receive error goes through `ErrorRun`
   (upstream: warn + `continue`). On `Stop` the loop sends `TransportEvent::Closed(SipConnection::Udp(listener))`
   and returns the error; a cancel during the backoff ends it quietly.
