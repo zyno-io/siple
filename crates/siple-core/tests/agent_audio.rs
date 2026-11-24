@@ -633,7 +633,7 @@ async fn wait_timeout_keeps_playing_and_reports_the_play_id() {
     let fin =
         r.a.call(
             "events.poll",
-            json!({"since":extra["event_seq"],"kinds":["call.play_finished"],"call_id":a,"timeout_ms":0}),
+            json!({"since":extra["event_seq"],"kinds":["call.play_finished"],"call_id":a,"timeout_ms":1000}),
         )
         .await
         .unwrap();

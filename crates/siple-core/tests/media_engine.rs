@@ -436,6 +436,13 @@ async fn record_stereo_one_second() {
         .flatten()
         .copied()
         .collect();
+    // Enough audio left to judge the tone on (200 ms), however many frames were concealed.
+    assert!(
+        audible.len() / 960 >= 10,
+        "only {} audible RX frames of {}",
+        audible.len() / 960,
+        frames / 960
+    );
     let (ratio, level) = detect(&audible, 48000, 1000.0);
     assert!(
         ratio > 0.8 && level > -25.0,
