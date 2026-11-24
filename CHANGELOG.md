@@ -6,6 +6,7 @@
 ### Fixed
 
 - In-app updates: an install requested the moment another one ends (for example an immediate retry through the control API) no longer fails now and then with "another Siple is installing an update".
+- In-app updates: installing again right after canceling an install (before the canceled download had stopped) reported success but installed nothing. The install now starts over as soon as the canceled one has stopped.
 
 ## 0.2.6 (2026-11-23)
 
