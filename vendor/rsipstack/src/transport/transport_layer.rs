@@ -249,6 +249,14 @@ impl TransportLayer {
         Ok(())
     }
 
+    /// siple: starts the receive loop of a listener that is still in the lookup list but whose
+    /// loop ended: its socket died (reported as `TransportEvent::Closed`, see `io_error`) and
+    /// the owner put a new socket under the same connection, so transactions and dialogs that
+    /// hold the connection carry on over it.
+    pub async fn restart_listener(&self, listener: SipConnection) -> Result<()> {
+        TransportLayerInner::serve_listener(self.inner.clone(), listener).await
+    }
+
     /// siple: like [`Self::swap_listener`] for a listener whose receive loop is **still running**
     /// (it was swapped out earlier and its token not cancelled yet): only the lookup list
     /// changes, no second loop is started. Used when the network flaps back to an address whose

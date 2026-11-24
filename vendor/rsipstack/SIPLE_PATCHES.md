@@ -93,6 +93,9 @@ Reliable 18x are ordinary provisional responses sent through `InviteDialog::ring
   and nobody learned that the socket was dead, so the account never received another request.
   Siple replaces a listener reported this way (`crates/siple-sip/src/account.rs`
   `on_listener_dead`).
+- `src/transport/transport_layer.rs`: `TransportLayer::restart_listener(listener)` starts the receive
+  loop of a listener still in the lookup list whose loop ended (Siple puts a new socket under the
+  same `UdpConnection`, so transactions and dialogs holding it carry on).
 - `Cargo.toml`: dev-dependency `tokio` with `test-util` (paused-clock tests of the backoff).
 - Tests: `src/transport/io_error.rs` (policy, classification) and
   `src/transport/tests/test_udp_dead_socket.rs` (a scripted socket: a dead socket ends the loop

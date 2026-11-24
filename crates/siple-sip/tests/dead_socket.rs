@@ -1,11 +1,12 @@
 //! An account's UDP SIP socket that the OS tears down mid-call (macOS "defunct" sockets: every
 //! send `EPIPE`, every receive `ENOTCONN`) is replaced by a new socket on the same address: the
-//! account sends and receives again, and a live call keeps working.
+//! account sends and receives again, a live call keeps working, and so does a call being set
+//! up (its transactions hold the connection, which now has the new socket under it).
 
 mod common;
 
-use common::{active_pair, rig, state_of, until};
-use siple_sip::{CallState, EndedBy, SipEvent};
+use common::{active_pair, add, incoming_on, peer, rig, state_of, until};
+use siple_sip::{AnswerOptions, CallState, EndedBy, SipEvent};
 
 async fn wait_replaced(r: &mut common::Rig, account: &str) {
     let account = account.to_string();
@@ -26,8 +27,8 @@ async fn dead_udp_socket_is_replaced_and_the_call_and_account_keep_working() {
     assert!(r.stack.simulate_udp_socket_death("a").await.unwrap());
     wait_replaced(&mut r, "a").await;
 
-    // The account actor handles one message at a time: a command sent after the event runs
-    // once the socket has been replaced. `a` sends from the new socket and receives the answer.
+    // The event is sent once the new socket is in place: `a` sends from it and receives the
+    // answer.
     let resp = r
         .stack
         .send_options("a", &format!("sip:b@{b_addr}"))
@@ -58,19 +59,44 @@ async fn dead_udp_socket_is_replaced_and_the_call_and_account_keep_working() {
     r.stack.shutdown().await;
 }
 
+#[tokio::test]
+async fn a_call_being_set_up_survives_the_socket_death() {
+    let mut r = rig();
+    add(&r, peer("a")).await;
+    let b = add(&r, peer("b")).await;
+    let a_call = r
+        .stack
+        .dial("a", &format!("sip:b@{b}"), Default::default())
+        .await
+        .unwrap();
+    let b_call = incoming_on(&mut r, "b").await;
+    // The callee's socket dies while its INVITE server transaction is open.
+    assert!(r.stack.simulate_udp_socket_death("b").await.unwrap());
+    wait_replaced(&mut r, "b").await;
+    // The 200 OK leaves through that transaction (on the new socket), the ACK comes back on it.
+    r.stack
+        .answer(&b_call.id, AnswerOptions::default())
+        .await
+        .unwrap();
+    state_of(&mut r, &a_call, CallState::Active).await;
+    state_of(&mut r, &b_call.id, CallState::Active).await;
+    r.stack.hangup(&a_call).await.unwrap();
+    state_of(&mut r, &b_call.id, CallState::Ended).await;
+    r.stack.shutdown().await;
+}
+
 /// Each replacement dies again right away: replaced every time, later and later (0.5 s, 1 s).
 #[tokio::test]
 async fn dead_udp_socket_of_an_idle_account_is_replaced_more_than_once() {
     let mut r = rig();
-    let a = common::add(&r, common::peer("a")).await;
-    let b = common::add(&r, common::peer("b")).await;
+    let a = add(&r, peer("a")).await;
+    let b = add(&r, peer("b")).await;
     for round in 0..3 {
         assert!(
             r.stack.simulate_udp_socket_death("a").await.unwrap(),
             "round {round}"
         );
         wait_replaced(&mut r, "a").await;
-        // A command to `a` first: it runs after the replacement (see above).
         let resp = r
             .stack
             .send_options("a", &format!("sip:b@{b}"))

@@ -101,6 +101,21 @@ impl AccountUdp {
         self.wake.notify_waiters();
     }
 
+    /// Replaces a dead socket by a new one bound to the same address. The old descriptor is
+    /// released first (still held for a moment by a send in progress on it: then this fails
+    /// with `AddrInUse` and can be retried). Until it succeeds, calls fail with `NotConnected`.
+    pub(crate) fn rebind(&self) -> std::io::Result<()> {
+        let mut slot = self
+            .sock
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        drop(slot.take());
+        let sock = bind_udp(self.local)?;
+        *slot = Some(Arc::new(sock));
+        self.dead.store(false, std::sync::atomic::Ordering::SeqCst);
+        Ok(())
+    }
+
     /// Test hook: from now on every call fails as on a socket the OS has torn down.
     pub(crate) fn simulate_death(&self) {
         self.dead.store(true, std::sync::atomic::Ordering::SeqCst);

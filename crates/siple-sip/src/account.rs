@@ -345,7 +345,7 @@ pub(crate) struct Runtime {
     listener_token: CancellationToken,
     /// The current UDP listener (kept so it can linger after a move and be re-used on a flap back).
     listener_conn: Option<SipConnection>,
-    /// Its socket (closed explicitly when it dies, so a new one can take its port).
+    /// Its socket (re-bound on the same address when it dies: `Actor::on_listener_dead`).
     listener_sock: Option<Arc<AccountUdp>>,
     /// Bumped when the stream connections are retired (see `RtEnv::stream_gen`).
     stream_gen: u64,
@@ -1961,9 +1961,10 @@ impl Actor {
     /// A listener's socket died (rsipstack ended its receive / accept loop; seen with macOS
     /// "defunct" sockets: every send `EPIPE`, every receive `ENOTCONN`).
     ///
-    /// The current UDP socket is replaced in place by a new one on the same address: the
-    /// runtime, its dialogs and the Contact stay, so live calls carry on (only requests in
-    /// flight on the dead socket are lost), and the account re-registers at once. If the address
+    /// The current UDP socket is replaced in place by a new one on the same address, under the
+    /// same rsipstack connection: the runtime, its dialogs, transactions in flight and the
+    /// Contact stay, so live calls (and calls being set up) carry on, and the account
+    /// re-registers at once. If the address
     /// cannot be bound again, the calls end and the runtime is rebuilt, as when a network change
     /// cannot move the transport in place. A new socket that dies again within
     /// [`QUICK_SOCKET_DEATH`] is replaced after [`socket_replace_delay`]. A lingering old
@@ -2026,13 +2027,14 @@ impl Actor {
     }
 
     /// Replaces the dead UDP socket now (see [`Self::on_listener_dead`]). The
-    /// `account.reconnecting` event comes first; the replacement follows within this call.
+    /// `account.reconnecting` event is sent once the new socket is in place (or, when it cannot
+    /// be, before the rebuild).
     async fn replace_dead_socket(&mut self) {
         tracing::info!(account = %self.id, "replacing the dead SIP socket");
-        self.emit_transport_dead();
         match self.replace_udp_socket().await {
             Ok(()) => {
                 self.socket_replaced_at = Some(Instant::now());
+                self.emit_transport_dead();
                 self.reset_keepalive();
                 if matches!(self.reg.state, RegState::WaitingForNetwork) {
                     // No route: stay suspended (the next network signal or probe registers);
@@ -2044,6 +2046,7 @@ impl Actor {
             }
             Err(e) => {
                 tracing::warn!(account = %self.id, error = %e, "cannot replace the dead SIP socket; ending the calls and rebuilding");
+                self.emit_transport_dead();
                 self.shared
                     .calls
                     .end_live_network_lost(&self.id, "transport died");
@@ -2055,46 +2058,30 @@ impl Actor {
     /// Replaces the current UDP listener by a new socket on the same address (see
     /// [`Self::on_listener_dead`]).
     async fn replace_udp_socket(&mut self) -> Result<()> {
-        let Some(rt) = self.rt.as_mut() else {
+        let Some(rt) = self.rt.as_ref() else {
             return Err(SipError::Transport("no runtime".into()));
         };
-        let (Some(addr), Some(old)) = (rt.local_addr, rt.listener_conn.take()) else {
+        let (Some(sock), Some(conn)) = (rt.listener_sock.clone(), rt.listener_conn.clone()) else {
             return Err(SipError::Transport("no UDP listener".into()));
         };
-        // The dead socket's receive loop has ended. Close it so its port is free for the new
-        // one, although transactions and dialogs still hold the old connection (their sends
-        // now fail at once), and take it out of the lookup list.
-        rt.listener_token.cancel();
-        if let Some(s) = rt.listener_sock.take() {
-            s.close();
-        }
-        rt.tl().del_transport(old.get_addr());
-        // A send that was in progress on the old socket returns within moments and releases
-        // the descriptor: retry the bind briefly.
+        // The new socket goes under the same connection: the transactions and dialogs that
+        // hold it (a call being set up, a BYE being retransmitted) carry on over the new
+        // socket. The dead one's descriptor is released first; a send that was in progress on
+        // it may hold it for a moment, so the bind is retried briefly.
         let mut tries = 0;
-        let sock = loop {
-            match AccountUdp::bind(addr) {
-                Ok(s) => break s,
+        loop {
+            match sock.rebind() {
+                Ok(()) => break,
                 Err(e) if e.kind() == std::io::ErrorKind::AddrInUse && tries < REBIND_TRIES => {
                     tries += 1;
                     tokio::time::sleep(REBIND_RETRY).await;
                 }
                 Err(e) => return Err(e.into()),
             }
-        };
-        let tok = rt.token.child_token();
-        let conn = SipConnection::Udp(
-            UdpConnection::from_socket(sock.clone(), None, Some(tok.clone())).await?,
-        );
-        if let Err(e) = rt.tl().swap_listener(None, conn.clone()).await {
-            tok.cancel();
-            sock.close();
-            return Err(e.into());
         }
-        rt.listener_token = tok;
-        rt.listener_conn = Some(conn);
-        rt.listener_sock = Some(sock);
-        tracing::info!(account = %self.id, %addr, "new SIP socket bound");
+        // Its receive loop ended when the socket died: start it again.
+        rt.tl().restart_listener(conn).await?;
+        tracing::info!(account = %self.id, addr = %sock.local(), "new SIP socket bound");
         Ok(())
     }
 
