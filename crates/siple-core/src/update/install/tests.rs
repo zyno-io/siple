@@ -531,6 +531,26 @@ async fn an_install_asked_for_while_a_cancel_winds_down_starts_once_it_has_stopp
 }
 
 #[tokio::test(start_paused = true)]
+async fn the_install_asked_for_while_a_cancel_winds_down_keeps_its_own_restart_mode() {
+    let r = rig().await;
+    r.canceled_and_held().await;
+    // The canceled run was `when_idle`; the new request is `manual`.
+    r.i.install("0.2.0", Restart::Manual).unwrap();
+    r.assets.paused.store(false, Ordering::SeqCst);
+    r.assets.hold.store(false, Ordering::SeqCst);
+    r.until(InstallPhase::Ready).await;
+    tokio::time::sleep(Duration::from_secs(600)).await;
+    assert_eq!(r.phase(), InstallPhase::Ready);
+    assert_eq!(
+        r.u.status().install.unwrap().restart.as_deref(),
+        Some("manual")
+    );
+    assert_eq!(r.plat.count("stage_dir"), 2, "a fresh run");
+    assert_eq!(r.plat.count("commit"), 0);
+    assert!(r.rl.calls.lock().unwrap().is_empty());
+}
+
+#[tokio::test(start_paused = true)]
 async fn a_cancel_also_drops_an_install_asked_for_while_the_last_one_wound_down() {
     let r = rig().await;
     r.canceled_and_held().await;
