@@ -2069,7 +2069,7 @@ impl Actor {
 
     /// Forgets the dead-socket history: the runtime goes, or the transport moved to a new
     /// socket. A dead socket still waiting for its delayed replacement is closed (its port is
-    /// free at once) and the replacement cancelled; the next death counts as a first one.
+    /// free at once) and the replacement canceled; the next death counts as a first one.
     fn forget_dead_socket(&mut self) {
         if let Some((_, s)) = self.pending_replace.take() {
             s.close();
