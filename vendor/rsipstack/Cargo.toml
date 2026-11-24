@@ -93,6 +93,8 @@ embassy-time = { version = "0.5", optional = true, default-features = false }
 critical-section = { version = "1", optional = true }
 
 [dev-dependencies]
+# siple: paused-clock tests of the receive-error backoff (`transport::tests::test_udp_dead_socket`)
+tokio = { version = "1.50.0", features = ["full", "test-util"] }
 dotenvy = "0.15.7"
 tempfile = "3"
 sdp-rs = "0.2.1"

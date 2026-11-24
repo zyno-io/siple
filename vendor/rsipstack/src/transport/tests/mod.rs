@@ -4,6 +4,8 @@ pub mod test_stream_encoding;
 pub mod test_stream_idle_timeout;
 pub mod test_tls_reload;
 pub mod test_udp;
+// siple:
+pub mod test_udp_dead_socket;
 pub mod test_via_received;
 
 pub mod test_message_framing;

@@ -74,6 +74,42 @@ Reliable 18x are ordinary provisional responses sent through `InviteDialog::ring
 - Every `Credential { .. }` literal (docs, README, tests) gained `guard: None`.
 - Rationale: siple only answers a challenge when the transaction's actual destination (`Transaction::destination` after `send`: the resolved / connected peer address) is one of the account's provider addresses. The decision needs the per-request destination, so it cannot be made once at dialog creation; request-URI, Contact and Route are peer-controlled and are not consulted.
 
+## Receive / accept errors: no hot loop, a dead socket is reported
+- New `src/transport/io_error.rs`: `ErrorClass` (`Benign` / `Resource` / `Unknown` / `Fatal`),
+  `classify` / `classify_io` (by `io::ErrorKind` and raw OS codes: `EBADF`/`ENOTSOCK`/
+  `WSAEBADF`/`WSAENOTSOCK`, `NotConnected`, `BrokenPipe` fatal; `ENFILE`/`EMFILE`/`ENOBUFS`/
+  `WSAEMFILE`/`WSAENOBUFS`, out of memory: resource; connection reset / refused / aborted,
+  unreachable, `EINTR`, would-block, timed out, `EMSGSIZE`/`WSAEMSGSIZE`/`WSAENETRESET`: benign),
+  `ErrorRun` (errors since the last success: the first 8 of a run retried at once, then a wait
+  of 10 ms doubling up to 1 s, at most 10 ms after a benign error; `Fatal` stops at once, 64
+  `Unknown` in a row (no other class in between) stop; `Benign` and `Resource` never stop;
+  logged at warn for the first error of a run and when the backoff starts, debug otherwise),
+  `wait_or_cancelled`. Raw codes per OS family (Linux/Android, Apple/BSD, Windows; elsewhere
+  only the `ErrorKind`s).
+- `src/transport/udp.rs` `serve_loop_with_whitelist`: a receive error goes through `ErrorRun`
+  (upstream: warn + `continue`). On `Stop` the loop sends `TransportEvent::Closed(SipConnection::Udp(listener))`
+  and returns the error; a cancel during the backoff ends it quietly.
+- `classify_accept_io` (accept loops): also benign are the errors Linux `accept(2)` reports for
+  one pending connection (`ENETDOWN`, `EPROTO`, `ENOPROTOOPT`, `EHOSTDOWN`, `ENONET`,
+  `EHOSTUNREACH`, `EOPNOTSUPP`, `ENETUNREACH`; the man page says to treat them like `EAGAIN`).
+- `src/transport/tcp_listener.rs`: `after_accept_error` (same policy for `accept`; on `Stop` sends
+  `TransportEvent::Closed(<listener>)` on the layer's `transport_tx`), used by the TCP, TLS
+  (`tls.rs`) and WebSocket (`websocket.rs`) accept loops (upstream: warn + `continue`, so a
+  process out of descriptors spun them). Stream read loops already end on an error (unchanged).
+- Rationale: macOS can "defunct" a process's sockets (every `sendto` `EPIPE`, every `recvfrom`
+  `ENOTCONN`). The UDP loop then retried forever: one core busy, about 700,000 warnings in 16 s,
+  and nobody learned that the socket was dead, so the account never received another request.
+  Siple replaces a listener reported this way (`crates/siple-sip/src/account.rs`
+  `on_listener_dead`).
+- `src/transport/transport_layer.rs`: `TransportLayer::restart_listener(listener)` starts the receive
+  loop of a listener still in the lookup list whose loop ended (Siple puts a new socket under the
+  same `UdpConnection`, so transactions and dialogs holding it carry on).
+- `Cargo.toml`: dev-dependency `tokio` with `test-util` (paused-clock tests of the backoff).
+- Tests: `src/transport/io_error.rs` (policy, classification) and
+  `src/transport/tests/test_udp_dead_socket.rs` (a scripted socket: a dead socket ends the loop
+  after one call with `Closed`; per-datagram errors are skipped and the next datagram served;
+  persistent unknown errors back off, then end the loop; a cancel during the backoff is quiet).
+
 ## Backports from upstream main (drop when 0.8.7+ is vendored)
 Both are merged on upstream `main` (head `4ff2bd2`) but in no release yet. Applied verbatim, with
 their upstream tests; only the `// siple:` markers were added.

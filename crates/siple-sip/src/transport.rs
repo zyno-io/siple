@@ -58,6 +58,116 @@ pub fn bind_udp(addr: SocketAddr) -> std::io::Result<tokio::net::UdpSocket> {
     tokio::net::UdpSocket::from_std(socket.into())
 }
 
+/// An account's UDP SIP socket as handed to rsipstack: [`AccountUdp::close`] releases the
+/// socket (and so its port) at once, although transactions and dialogs still hold clones of the
+/// connection around it, so a dead socket can be replaced by a new one on the same address.
+pub(crate) struct AccountUdp {
+    sock: std::sync::RwLock<Option<Arc<tokio::net::UdpSocket>>>,
+    local: SocketAddr,
+    /// Wakes a pending receive when the socket is closed or (test hook) killed.
+    wake: tokio::sync::Notify,
+    /// Test hook ([`AccountUdp::simulate_death`]): every call fails like on a socket the OS has
+    /// torn down (macOS "defunct": send `EPIPE`, receive `ENOTCONN`).
+    dead: std::sync::atomic::AtomicBool,
+}
+
+impl AccountUdp {
+    /// Binds `addr` ([`bind_udp`]).
+    pub(crate) fn bind(addr: SocketAddr) -> std::io::Result<Arc<Self>> {
+        let sock = bind_udp(addr)?;
+        let local = sock.local_addr()?;
+        Ok(Arc::new(Self {
+            sock: std::sync::RwLock::new(Some(Arc::new(sock))),
+            local,
+            wake: tokio::sync::Notify::new(),
+            dead: std::sync::atomic::AtomicBool::new(false),
+        }))
+    }
+
+    /// The bound address.
+    pub(crate) fn local(&self) -> SocketAddr {
+        self.local
+    }
+
+    /// Closes the socket: later calls fail with `NotConnected`, a pending receive ends, and the
+    /// descriptor is released once a send already in progress returns.
+    pub(crate) fn close(&self) {
+        let sock = self
+            .sock
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take();
+        drop(sock);
+        self.wake.notify_waiters();
+    }
+
+    /// Replaces a dead socket by a new one bound to the same address. The old descriptor is
+    /// released first (still held for a moment by a send in progress on it: then this fails
+    /// with `AddrInUse` and can be retried). Until it succeeds, calls fail with `NotConnected`.
+    pub(crate) fn rebind(&self) -> std::io::Result<()> {
+        let mut slot = self
+            .sock
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        drop(slot.take());
+        let sock = bind_udp(self.local)?;
+        *slot = Some(Arc::new(sock));
+        self.dead.store(false, std::sync::atomic::Ordering::SeqCst);
+        Ok(())
+    }
+
+    /// Test hook: from now on every call fails as on a socket the OS has torn down.
+    pub(crate) fn simulate_death(&self) {
+        self.dead.store(true, std::sync::atomic::Ordering::SeqCst);
+        self.wake.notify_waiters();
+    }
+
+    fn current(&self, dead: std::io::ErrorKind) -> std::io::Result<Arc<tokio::net::UdpSocket>> {
+        if self.dead.load(std::sync::atomic::Ordering::SeqCst) {
+            return Err(dead.into());
+        }
+        self.sock
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
+            .ok_or_else(|| std::io::ErrorKind::NotConnected.into())
+    }
+}
+
+#[async_trait::async_trait]
+impl rsipstack::platform::net::UdpSocket for AccountUdp {
+    async fn recv_from(&self, buf: &mut [u8]) -> rsipstack::Result<(usize, SocketAddr)> {
+        // Registered before the state is read, so a close / kill in between is not missed.
+        let woken = self.wake.notified();
+        tokio::pin!(woken);
+        woken.as_mut().enable();
+        let sock = self.current(std::io::ErrorKind::NotConnected)?;
+        tokio::select! {
+            r = sock.recv_from(buf) => {
+                let (len, from) = r?;
+                Ok((len, rsipstack::platform::net::canonical_socket_addr(from)))
+            }
+            () = woken => {
+                // Closed or killed (a spurious wake-up reads as an interrupted call).
+                let e = match self.current(std::io::ErrorKind::NotConnected) {
+                    Err(e) => e,
+                    Ok(_) => std::io::ErrorKind::Interrupted.into(),
+                };
+                Err(e.into())
+            }
+        }
+    }
+
+    async fn send_to(&self, buf: &[u8], addr: SocketAddr) -> rsipstack::Result<usize> {
+        let sock = self.current(std::io::ErrorKind::BrokenPipe)?;
+        Ok(sock.send_to(buf, addr).await?)
+    }
+
+    fn local_addr(&self) -> rsipstack::Result<SocketAddr> {
+        Ok(self.local)
+    }
+}
+
 #[cfg(windows)]
 fn set_exclusive_addr_use(socket: &Socket) -> std::io::Result<()> {
     use std::os::windows::io::AsRawSocket;

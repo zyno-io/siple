@@ -1,8 +1,10 @@
 use crate::platform::CancellationToken;
+use crate::transport::io_error::{classify_accept_io, wait_or_cancelled, ErrorRun, Next};
 use crate::transport::tcp::TcpConnection;
 use crate::transport::transport_layer::TransportLayerInnerRef;
 use crate::transport::SipAddr;
 use crate::transport::SipConnection;
+use crate::transport::TransportEvent;
 use crate::Result;
 use socket2::{Protocol, Type};
 use std::fmt;
@@ -50,15 +52,25 @@ impl TcpListenerConnection {
         socket.listen(128)?;
         let listener = TcpListener::from_std(socket.into())?;
         let listener_local_addr = self.get_addr().clone();
+        // siple: reported as closed if its socket dies (see `after_accept_error`)
+        let this = SipConnection::TcpListener(self.clone());
         crate::platform::spawn(async move {
+            let mut errors = ErrorRun::default();
             loop {
                 let (stream, remote_addr) =
                     match accept_or_cancelled(&listener, &transport_layer_inner.cancel_token).await
                     {
-                        Some(Ok((stream, remote_addr))) => (stream, remote_addr),
+                        Some(Ok((stream, remote_addr))) => {
+                            errors.success();
+                            (stream, remote_addr)
+                        }
                         Some(Err(e)) => {
-                            warn!(error = ?e, "Failed to accept connection");
-                            continue;
+                            if after_accept_error(&e, &mut errors, &this, &transport_layer_inner)
+                                .await
+                            {
+                                continue;
+                            }
+                            break;
                         }
                         None => {
                             debug!(local = %listener_local_addr, "TCP listener cancelled");
@@ -87,6 +99,40 @@ impl TcpListenerConnection {
             }
         });
         Ok(())
+    }
+}
+
+/// siple: what an accept loop does after `accept` failed (see `io_error`; upstream retried at
+/// once, so a broken listening socket, or a process out of descriptors, spun the loop). Returns
+/// `false` when the loop must stop: the layer was cancelled during the backoff, or the socket
+/// is dead, which is then reported as `TransportEvent::Closed(listener)`.
+pub(crate) async fn after_accept_error(
+    e: &std::io::Error,
+    errors: &mut ErrorRun,
+    listener: &SipConnection,
+    transport_layer_inner: &TransportLayerInnerRef,
+) -> bool {
+    match errors.error(classify_accept_io(e)) {
+        Next::Stop => {
+            warn!(
+                local = %listener.get_addr(),
+                error = %e,
+                errors = errors.consecutive(),
+                "listening socket is dead; stopping its accept loop"
+            );
+            let _ = transport_layer_inner
+                .transport_tx
+                .send(TransportEvent::Closed(listener.clone()));
+            false
+        }
+        Next::Retry(delay) => {
+            if errors.should_log() {
+                warn!(local = %listener.get_addr(), error = %e, errors = errors.consecutive(), "failed to accept a connection");
+            } else {
+                debug!(local = %listener.get_addr(), error = %e, errors = errors.consecutive(), "failed to accept a connection");
+            }
+            wait_or_cancelled(delay, Some(&transport_layer_inner.cancel_token)).await
+        }
     }
 }
 
