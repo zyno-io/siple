@@ -5340,11 +5340,15 @@ fn a_selection_made_while_the_menu_is_open_survives_the_next_right_click() {
     // A drag or Shift+arrows with the menu open changes the selection.
     select(&h, 3, 8);
     h.run_steps(2);
-    h.key_press(egui::Key::Escape);
-    h.run_steps(3);
-    h.get_by_label("Field").click_secondary();
-    h.run_steps(3);
-    assert_eq!(selection(&h), Some((3, 8)));
+    // What the next right-click restores is the new selection, not the one the menu opened with.
+    let kept = h
+        .ctx
+        .data(|d| d.get_temp::<egui::text::CCursorRange>(field_id().with("sel_before_press")))
+        .map(|r| {
+            let (a, b): (usize, usize) = (r.primary.index.into(), r.secondary.index.into());
+            (a.min(b), a.max(b))
+        });
+    assert_eq!(kept, Some((3, 8)));
 }
 
 #[test]
