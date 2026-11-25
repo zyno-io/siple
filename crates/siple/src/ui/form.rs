@@ -77,11 +77,10 @@ pub(crate) fn text_context_menu(ui: &mut egui::Ui, r: &egui::Response, text: &st
     let pressed =
         r.hovered() && ui.input(|i| i.pointer.button_pressed(egui::PointerButton::Secondary));
     if pressed {
-        if let Some(sel) = ctx.data(|d| d.get_temp::<CCursorRange>(keep)) {
-            if let Some(mut st) = load() {
-                st.cursor.set_char_range(Some(sel));
-                st.store(&ctx, id);
-            }
+        if let (Some(sel), Some(mut st)) = (ctx.data(|d| d.get_temp::<CCursorRange>(keep)), load())
+        {
+            st.cursor.set_char_range(Some(sel));
+            st.store(&ctx, id);
         }
         r.request_focus();
     } else if !r.context_menu_opened() {
@@ -97,7 +96,7 @@ pub(crate) fn text_context_menu(ui: &mut egui::Ui, r: &egui::Response, text: &st
     let has_sel = selection().is_some();
     let n = text.chars().count();
     r.context_menu(|ui| {
-        let mut run = |ui: &mut egui::Ui, cmd: EditCmd| {
+        let run = |ui: &mut egui::Ui, cmd: EditCmd| {
             r.request_focus();
             match cmd.delivery() {
                 EditDelivery::Viewport(c) => ui.ctx().send_viewport_cmd(c),
@@ -125,11 +124,10 @@ pub(crate) fn text_context_menu(ui: &mut egui::Ui, r: &egui::Response, text: &st
             .add_enabled(n > 0, egui::Button::new(EditCmd::SelectAll.title()))
             .clicked()
         {
-            if let Some(mut st) = load().or_else(|| Some(Default::default())) {
-                st.cursor
-                    .set_char_range(Some(CCursorRange::two(CCursor::new(0), CCursor::new(n))));
-                st.store(&ctx, id);
-            }
+            let mut st = load().unwrap_or_default();
+            st.cursor
+                .set_char_range(Some(CCursorRange::two(CCursor::new(0), CCursor::new(n))));
+            st.store(&ctx, id);
             r.request_focus();
             ui.close();
         }
