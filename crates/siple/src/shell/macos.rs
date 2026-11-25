@@ -8,7 +8,7 @@
 use std::sync::Mutex;
 
 use objc2::rc::Retained;
-use objc2::runtime::AnyObject;
+use objc2::runtime::{AnyObject, NSObjectProtocol};
 use objc2::{MainThreadMarker, MainThreadOnly, define_class, msg_send, sel};
 use objc2_app_kit::{
     NSApplication, NSApplicationActivationPolicy, NSEventModifierFlags, NSEventType,
@@ -229,12 +229,60 @@ pub fn forward_shortcut(cmd: EditCmd) -> bool {
     let Some(responder) = win.firstResponder() else {
         return false;
     };
-    let obj: &AnyObject = &responder;
-    if obj.class().name().to_str() != Ok("WinitView") {
+    // winit's view is the content view and the first responder. Compare by identity: with
+    // accessibility on, accesskit_macos swaps the view's class for a subclass
+    // (`AccessKitSubclassOfWinitView`), so the class name alone says nothing.
+    let Some(content) = win.contentView() else {
         return false;
+    };
+    let obj: &AnyObject = &responder;
+    let same = Retained::as_ptr(&content).cast::<u8>() == Retained::as_ptr(&responder).cast::<u8>();
+    if !same || !is_winit_view_class(obj.class()) {
+        return false;
+    }
+    // An IME composition in progress: the key must reach the input method (a commit on key-down
+    // would eat the paste), so let the queued command stand in.
+    if responder.respondsToSelector(sel!(hasMarkedText)) {
+        // SAFETY: `hasMarkedText` is NSTextInputClient's `BOOL`-returning getter.
+        let marked: bool = unsafe { msg_send![&*responder, hasMarkedText] };
+        if marked {
+            return false;
+        }
     }
     responder.keyDown(&event);
     true
+}
+
+/// Whether `cls` is winit's view class or a subclass of it (accesskit_macos adds one).
+fn is_winit_view_class(cls: &objc2::runtime::AnyClass) -> bool {
+    std::iter::successors(Some(cls), |c| c.superclass())
+        .any(|c| c.name().to_str() == Ok("WinitView"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_winit_view_class;
+    use objc2::ClassType;
+    use objc2::runtime::{AnyClass, ClassBuilder};
+    use objc2_foundation::NSObject;
+
+    fn class(name: &std::ffi::CStr, sup: &AnyClass) -> &'static AnyClass {
+        match ClassBuilder::new(name, sup) {
+            Some(b) => b.register(),
+            None => AnyClass::get(name).expect("registered by another test"),
+        }
+    }
+
+    #[test]
+    fn the_accesskit_subclass_of_winits_view_is_still_winits_view() {
+        let winit = class(c"WinitView", NSObject::class());
+        let accesskit = class(c"AccessKitSubclassOfWinitView", winit);
+        assert!(is_winit_view_class(winit));
+        assert!(is_winit_view_class(accesskit));
+        let other = class(c"SipleTestOtherView", NSObject::class());
+        assert!(!is_winit_view_class(other));
+        assert!(!is_winit_view_class(NSObject::class()));
+    }
 }
 
 /// The menu bar. Keep it alive for as long as the app runs.
