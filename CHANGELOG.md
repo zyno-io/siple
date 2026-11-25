@@ -1,11 +1,11 @@
 <!-- siple-rename: keep (this file documents the legacy ZynoPhone names on purpose) -->
 # Changelog
 
-## Unreleased
+## 0.2.8 (2026-11-25)
 
 ### Fixed
 
-- macOS: Cmd+A, Cmd+C, Cmd+X, Cmd+V and Cmd+Z (Shift+Cmd+Z to redo) work in text fields again. The Edit menu used to swallow these shortcuts without acting on them.
+- macOS: Cmd+A, Cmd+C, Cmd+X, Cmd+V and Cmd+Z (Shift+Cmd+Z to redo) work in text fields and selectable text. The Edit menu swallowed these shortcuts without acting on them; its items now work from the keyboard and the mouse.
 - Text fields have a right-click menu with Cut, Copy, Paste and Select All.
 
 ## 0.2.7 (2026-11-24)
