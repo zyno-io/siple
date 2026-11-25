@@ -11,6 +11,7 @@
 //! hidden app stays responsive; hidden, nothing is painted.
 
 pub mod autostart;
+pub mod edit_cmd;
 pub mod links;
 pub mod notify;
 pub mod policy;
@@ -341,6 +342,8 @@ pub struct Shell {
     applied_links: Option<bool>,
     /// "Settings…" was requested (menu or tray); see [`Shell::take_settings_request`].
     settings_requested: bool,
+    /// Key presses from the Edit menu, fed to egui by `ShellApp::raw_input_hook`.
+    edit_queue: edit_cmd::EditQueue,
     #[cfg(target_os = "macos")]
     _menu: Option<macos::AppMenu>,
 }
@@ -403,6 +406,7 @@ impl Shell {
             applied_login: None,
             applied_links: None,
             settings_requested: false,
+            edit_queue: Default::default(),
             #[cfg(target_os = "macos")]
             _menu: None,
         };
@@ -856,6 +860,9 @@ impl Shell {
                 self.settings_requested = true;
                 self.show_window(ctx);
             }
+            // Only while the main window has focus: a paste queued for a hidden window (or while
+            // the About panel is key) would land in a field later.
+            TrayCmd::Edit(c) => self.edit_queue.deliver(c, ctx, self.focused),
             TrayCmd::Quit => self.quit(ctx),
         }
     }
@@ -937,6 +944,10 @@ impl ShellApp {
 }
 
 impl eframe::App for ShellApp {
+    fn raw_input_hook(&mut self, _ctx: &egui::Context, raw_input: &mut egui::RawInput) {
+        self.shell.edit_queue.drain_into(raw_input);
+    }
+
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         // Panel requests from the control API apply (and save) even while hidden.
         self.inner.sync_panels();

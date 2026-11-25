@@ -18,6 +18,14 @@ pub fn install_handlers(tx: &ShellTx) {
     let t = tx.clone();
     MenuEvent::set_event_handler(Some(move |e: MenuEvent| {
         if let Some(cmd) = TrayCmd::from_id(e.id().as_ref()) {
+            // A shortcut chosen from the keyboard goes straight to the window's view, in order
+            // with the keys after it; see `macos::forward_shortcut`.
+            #[cfg(target_os = "macos")]
+            if let TrayCmd::Edit(c) = &cmd
+                && super::macos::forward_shortcut(*c)
+            {
+                return;
+            }
             t.send(ShellMsg::Tray(cmd));
         }
     }));

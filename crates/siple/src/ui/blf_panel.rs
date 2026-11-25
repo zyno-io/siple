@@ -389,6 +389,7 @@ fn filter_bar(ui: &mut egui::Ui, cx: &Cx, st: &mut UiState) {
                 .margin(Margin::symmetric(8, 5))
                 .desired_width(w),
         );
+        super::form::text_context_menu(ui, &edit, &st.blf_filter, false);
         edit.widget_info(|| {
             egui::WidgetInfo::labeled(egui::WidgetType::TextEdit, true, "Filter extensions")
         });

@@ -891,6 +891,7 @@ fn dial_row(ui: &mut egui::Ui, cx: &Cx, st: &mut UiState, large: bool, out: &mut
                 .margin(Margin::symmetric(10, v_margin))
                 .desired_width(field_w),
         );
+        super::form::text_context_menu(ui, &edit, &st.dial_target, false);
         edit.widget_info(|| {
             egui::WidgetInfo::labeled(egui::WidgetType::TextEdit, true, "Number or SIP URI")
         });

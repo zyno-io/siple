@@ -218,6 +218,8 @@ pub enum TrayCmd {
     SetDnd(bool),
     /// Open the settings (the window comes up).
     Settings,
+    /// An Edit menu item (Cut, Copy, Paste, Select All, Undo, Redo).
+    Edit(super::edit_cmd::EditCmd),
     /// Quit the application.
     Quit,
 }
@@ -237,6 +239,7 @@ impl TrayCmd {
             Self::Hangup(c) => format!("hangup:{c}"),
             Self::SetDnd(on) => format!("dnd:{}", u8::from(*on)),
             Self::Settings => "settings".into(),
+            Self::Edit(c) => c.to_id().into(),
             Self::Quit => "quit".into(),
         }
     }
@@ -248,6 +251,9 @@ impl TrayCmd {
             "0" => Some(false),
             _ => None,
         };
+        if let Some(c) = super::edit_cmd::EditCmd::from_id(id) {
+            return Some(Self::Edit(c));
+        }
         Some(match id {
             "show" => Self::Show,
             "hide" => Self::Hide,

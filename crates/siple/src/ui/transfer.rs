@@ -150,6 +150,10 @@ pub(super) fn composer(
                 .margin(Margin::symmetric(10, 7))
                 .desired_width(ui.available_width()),
         );
+        // Esc closes the field's right-click menu; it must not also close the composer. The menu
+        // is closed by the time the helper returns, so ask before.
+        let menu_was_open = edit.context_menu_opened();
+        super::form::text_context_menu(ui, &edit, &comp.target, false);
         // Read before re-focusing: requesting focus again would hide the Enter that left it.
         let enter_pressed = edit.lost_focus();
         if ui.memory(|m| m.focused().is_none()) && !enter_pressed {
@@ -234,7 +238,7 @@ pub(super) fn composer(
         if can && enter && (enter_pressed || (cmd && edit.has_focus())) {
             chosen = Some(consult_default != cmd);
         }
-        if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+        if !menu_was_open && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
             close = true;
         }
         if let Some(consult) = chosen {

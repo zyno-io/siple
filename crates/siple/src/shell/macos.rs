@@ -8,14 +8,17 @@
 use std::sync::Mutex;
 
 use objc2::rc::Retained;
-use objc2::runtime::AnyObject;
+use objc2::runtime::{AnyObject, NSObjectProtocol};
 use objc2::{MainThreadMarker, MainThreadOnly, define_class, msg_send, sel};
-use objc2_app_kit::{NSApplication, NSApplicationActivationPolicy};
+use objc2_app_kit::{
+    NSApplication, NSApplicationActivationPolicy, NSEventModifierFlags, NSEventType,
+};
 use objc2_foundation::{NSAppleEventDescriptor, NSAppleEventManager, NSObject};
 use tray_icon::menu::accelerator::{Accelerator, Code, Modifiers};
 use tray_icon::menu::{AboutMetadata, Menu, MenuItem, PredefinedMenuItem, Submenu};
 
 use super::ShellTx;
+use super::edit_cmd::EditCmd;
 
 /// Shows (`true`) or removes (`false`) the Dock icon by switching the activation policy.
 /// Showing also brings the app to the front, so the window it is about to show is key.
@@ -173,6 +176,89 @@ pub fn early_init() {
 
 // ---- app menu --------------------------------------------------------------------------------
 
+/// Hands the key press that chose an Edit menu item to the window's view, as if the menu had not
+/// taken it. Returns whether it did; on `false` the caller queues the command instead (item
+/// chosen with the mouse, a non-main window key, another keyboard layout).
+///
+/// Why: queued commands reach egui one or two frames after the keys that follow them (paste,
+/// then Return), but a key press forwarded to winit's view is queued in order with those keys
+/// and egui-winit turns Cmd+C / V / X into `Event::Copy` / `Paste` / `Cut` and Cmd+A / Z into
+/// key events, exactly as when no menu item existed.
+///
+/// Must run on the main thread inside the menu action: muda 0.21.2 sends `MenuEvent`s from the
+/// item's Objective-C action method (`MudaNSMenuItem::action` -> `MenuEvent::send`, which calls
+/// the global handler synchronously), and AppKit runs that method on the main thread from
+/// `NSMenu performKeyEquivalent:` while `NSApp.currentEvent` is the key-down being handled.
+/// `MainThreadMarker::new()` is the check; off the main thread this returns `false`.
+///
+/// No loop: `NSView keyDown:` (winit's `WinitView`) does not go through `performKeyEquivalent:`,
+/// so the menu never sees the forwarded event again. No double delivery: AppKit took the key
+/// equivalent (that is why egui never saw it), so the original key-down is not delivered
+/// separately, and the caller drops the command when this returns `true`.
+pub fn forward_shortcut(cmd: EditCmd) -> bool {
+    let Some(mtm) = MainThreadMarker::new() else {
+        return false;
+    };
+    let app = NSApplication::sharedApplication(mtm);
+    let Some(event) = app.currentEvent() else {
+        return false;
+    };
+    if event.r#type() != NSEventType::KeyDown {
+        return false;
+    }
+    let flags = event.modifierFlags();
+    let Some(chars) = event.charactersIgnoringModifiers() else {
+        return false;
+    };
+    let chord = cmd.is_shortcut(
+        &chars.to_string(),
+        flags.contains(NSEventModifierFlags::Command),
+        flags.contains(NSEventModifierFlags::Shift),
+        flags.intersects(NSEventModifierFlags::Control | NSEventModifierFlags::Option),
+    );
+    if !chord {
+        return false;
+    }
+    // Only Siple's main window: its first responder is winit's view (not the About panel's).
+    let Some(win) = app.keyWindow() else {
+        return false;
+    };
+    if !win.isVisible() || win.isMiniaturized() {
+        return false;
+    }
+    let Some(responder) = win.firstResponder() else {
+        return false;
+    };
+    // winit's view is the content view and the first responder. Compare by identity: with
+    // accessibility on, accesskit_macos swaps the view's class for a subclass
+    // (`AccessKitSubclassOfWinitView`), so the class name alone says nothing.
+    let Some(content) = win.contentView() else {
+        return false;
+    };
+    let obj: &AnyObject = &responder;
+    let same = Retained::as_ptr(&content).cast::<u8>() == Retained::as_ptr(&responder).cast::<u8>();
+    if !same || !is_winit_view_class(obj.class()) {
+        return false;
+    }
+    // An IME composition in progress: the key must reach the input method (a commit on key-down
+    // would eat the paste), so let the queued command stand in.
+    if responder.respondsToSelector(sel!(hasMarkedText)) {
+        // SAFETY: `hasMarkedText` is NSTextInputClient's `BOOL`-returning getter.
+        let marked: bool = unsafe { msg_send![&*responder, hasMarkedText] };
+        if marked {
+            return false;
+        }
+    }
+    responder.keyDown(&event);
+    true
+}
+
+/// Whether `cls` is winit's view class or a subclass of it (accesskit_macos adds one).
+fn is_winit_view_class(cls: &objc2::runtime::AnyClass) -> bool {
+    std::iter::successors(Some(cls), |c| c.superclass())
+        .any(|c| c.name().to_str() == Ok("WinitView"))
+}
+
 /// The menu bar. Keep it alive for as long as the app runs.
 pub struct AppMenu {
     _menu: Menu,
@@ -183,9 +269,11 @@ const SETTINGS_ID: &str = "settings";
 
 /// Builds and installs the menu: Siple (About, Settings…, Hide, Quit), Edit and Window.
 ///
-/// The Edit items use the standard responder-chain selectors; egui handles copy / paste from key
-/// events itself, so they are enabled only where AppKit finds a responder (they never swallow
-/// the shortcut).
+/// The Edit items are custom menu items, not the predefined responder-chain ones. Those send
+/// `copy:` / `paste:` / ... to a nil target, nothing in winit's view implements them, so AppKit
+/// shows them disabled, yet `NSMenu performKeyEquivalent:` still returns YES for a matching
+/// disabled item and swallows the key: egui never sees Cmd+C. Custom items route through the
+/// global `MenuEvent` handler as [`EditCmd`]s (see `shell::edit_cmd`) and become egui input.
 pub fn install_app_menu() -> Result<AppMenu, String> {
     let menu = Menu::new();
     let app = Submenu::new("Siple", true);
@@ -217,14 +305,32 @@ pub fn install_app_menu() -> Result<AppMenu, String> {
     ])
     .map_err(|e| e.to_string())?;
     let edit = Submenu::new("Edit", true);
+    let item = |c: EditCmd, mods: Modifiers, code: Code| {
+        MenuItem::with_id(
+            c.to_id(),
+            c.title(),
+            true,
+            Some(Accelerator::new(mods, code)),
+        )
+    };
+    let undo = item(EditCmd::Undo, Modifiers::META, Code::KeyZ);
+    let redo = item(
+        EditCmd::Redo,
+        Modifiers::META | Modifiers::SHIFT,
+        Code::KeyZ,
+    );
+    let cut = item(EditCmd::Cut, Modifiers::META, Code::KeyX);
+    let copy = item(EditCmd::Copy, Modifiers::META, Code::KeyC);
+    let paste = item(EditCmd::Paste, Modifiers::META, Code::KeyV);
+    let select_all = item(EditCmd::SelectAll, Modifiers::META, Code::KeyA);
     edit.append_items(&[
-        &PredefinedMenuItem::undo(None),
-        &PredefinedMenuItem::redo(None),
+        &undo,
+        &redo,
         &PredefinedMenuItem::separator(),
-        &PredefinedMenuItem::cut(None),
-        &PredefinedMenuItem::copy(None),
-        &PredefinedMenuItem::paste(None),
-        &PredefinedMenuItem::select_all(None),
+        &cut,
+        &copy,
+        &paste,
+        &select_all,
     ])
     .map_err(|e| e.to_string())?;
     let window = Submenu::new("Window", true);
@@ -241,4 +347,30 @@ pub fn install_app_menu() -> Result<AppMenu, String> {
     menu.init_for_nsapp();
     window.set_as_windows_menu_for_nsapp();
     Ok(AppMenu { _menu: menu })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_winit_view_class;
+    use objc2::ClassType;
+    use objc2::runtime::{AnyClass, ClassBuilder};
+    use objc2_foundation::NSObject;
+
+    fn class(name: &std::ffi::CStr, sup: &AnyClass) -> &'static AnyClass {
+        match ClassBuilder::new(name, sup) {
+            Some(b) => b.register(),
+            None => AnyClass::get(name).expect("registered by another test"),
+        }
+    }
+
+    #[test]
+    fn the_accesskit_subclass_of_winits_view_is_still_winits_view() {
+        let winit = class(c"WinitView", NSObject::class());
+        let accesskit = class(c"AccessKitSubclassOfWinitView", winit);
+        assert!(is_winit_view_class(winit));
+        assert!(is_winit_view_class(accesskit));
+        let other = class(c"SipleTestOtherView", NSObject::class());
+        assert!(!is_winit_view_class(other));
+        assert!(!is_winit_view_class(NSObject::class()));
+    }
 }
