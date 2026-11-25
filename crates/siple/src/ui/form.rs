@@ -87,7 +87,9 @@ pub(crate) fn text_context_menu(ui: &mut egui::Ui, r: &egui::Response, text: &st
     } else if !r.context_menu_opened() {
         match selection() {
             Some(sel) => ctx.data_mut(|d| d.insert_temp(keep, sel)),
-            None => ctx.data_mut(|d| d.remove_temp::<CCursorRange>(keep)),
+            None => {
+                ctx.data_mut(|d| d.remove_temp::<CCursorRange>(keep));
+            }
         }
     }
     let has_sel = selection().is_some();
