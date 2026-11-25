@@ -83,8 +83,11 @@ pub(crate) fn text_context_menu(ui: &mut egui::Ui, r: &egui::Response, text: &st
             st.store(&ctx, id);
         }
         r.request_focus();
-    } else if !r.context_menu_opened() {
-        match selection() {
+    } else {
+        // Remember the selection of a focused field every frame (also while the menu is open: a
+        // drag or Shift+arrows then count). An unfocused field's selection is invisible, so a
+        // right-click must not bring it back.
+        match selection().filter(|_| r.has_focus()) {
             Some(sel) => {
                 ctx.data_mut(|d| d.insert_temp(keep, sel));
             }

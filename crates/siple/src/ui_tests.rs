@@ -5294,3 +5294,96 @@ fn select_all_then_copy_cut_and_paste_edit_the_field() {
     feed(&mut h, egui::Event::Paste("xyz".into()));
     assert_eq!(h.state(), "xyz def");
 }
+
+/// Viewport commands the last frame sent.
+fn root_commands(h: &Harness<'_, String>) -> Vec<egui::ViewportCommand> {
+    h.output()
+        .viewport_output
+        .get(&egui::ViewportId::ROOT)
+        .map(|v| v.commands.clone())
+        .unwrap_or_default()
+}
+
+#[test]
+fn menu_cut_copy_paste_send_the_viewport_requests() {
+    use egui::ViewportCommand as V;
+    for (item, want) in [
+        ("Cut", V::RequestCut),
+        ("Copy", V::RequestCopy),
+        ("Paste", V::RequestPaste),
+    ] {
+        let mut h = field_harness("hello world", false);
+        h.run();
+        h.get_by_label("Field").focus();
+        h.run_steps(2);
+        select(&h, 0, 5);
+        h.run_steps(2);
+        h.get_by_label("Field").click_secondary();
+        h.run_steps(3);
+        h.get_by_label(item).click();
+        h.step(); // hover, press and release: the release frame ends it
+        assert!(root_commands(&h).contains(&want), "{item}");
+        assert!(h.ctx.text_edit_focused(), "{item}: the field keeps focus");
+    }
+}
+
+#[test]
+fn a_selection_made_while_the_menu_is_open_survives_the_next_right_click() {
+    let mut h = field_harness("hello world", false);
+    h.run();
+    h.get_by_label("Field").focus();
+    h.run_steps(2);
+    select(&h, 0, 5);
+    h.run_steps(2);
+    h.get_by_label("Field").click_secondary();
+    h.run_steps(3);
+    // A drag or Shift+arrows with the menu open changes the selection.
+    select(&h, 3, 8);
+    h.run_steps(2);
+    h.key_press(egui::Key::Escape);
+    h.run_steps(3);
+    h.get_by_label("Field").click_secondary();
+    h.run_steps(3);
+    assert_eq!(selection(&h), Some((3, 8)));
+}
+
+#[test]
+fn right_click_on_an_unfocused_field_does_not_bring_back_an_old_selection() {
+    let mut h = field_harness("hello world", false);
+    h.run();
+    h.get_by_label("Field").focus();
+    h.run_steps(2);
+    select(&h, 0, 5);
+    h.run_steps(2);
+    h.ctx.memory_mut(|m| m.surrender_focus(field_id()));
+    h.run_steps(3);
+    h.get_by_label("Field").click_secondary();
+    h.run_steps(3);
+    let (a, b) = selection(&h).unwrap_or((0, 0));
+    assert_eq!(a, b, "the old selection came back");
+    assert!(h.get_by_label("Cut").accesskit_node().is_disabled());
+}
+
+#[test]
+fn esc_closes_the_field_menu_but_not_the_transfer_composer() {
+    let mut h = composer_harness(TransferEnter::Consult);
+    let field = h.get_by_role(egui::accesskit::Role::TextInput);
+    field.focus();
+    field.type_text("1010");
+    h.run();
+    h.get_by_role(egui::accesskit::Role::TextInput)
+        .click_secondary();
+    h.run_steps(3);
+    assert!(h.query_by_label("Select All").is_some(), "the menu is open");
+    h.key_press(egui::Key::Escape);
+    h.run_steps(3);
+    assert!(
+        h.query_by_label("Select All").is_none(),
+        "Esc closes the menu"
+    );
+    assert!(h.state().ui.composer.is_some(), "the composer stays");
+    // With no menu open, Esc closes the composer as before.
+    h.key_press(egui::Key::Escape);
+    h.run_steps(3);
+    assert!(h.state().ui.composer.is_none());
+}

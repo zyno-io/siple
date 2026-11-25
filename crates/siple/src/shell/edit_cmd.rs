@@ -69,6 +69,40 @@ impl EditCmd {
         }
     }
 
+    /// The key (lowercase letter) of the command's shortcut and whether Shift is part of it.
+    fn shortcut(self) -> (char, bool) {
+        match self {
+            Self::Undo => ('z', false),
+            Self::Redo => ('z', true),
+            Self::Cut => ('x', false),
+            Self::Copy => ('c', false),
+            Self::Paste => ('v', false),
+            Self::SelectAll => ('a', false),
+        }
+    }
+
+    /// Whether a key press (its characters ignoring modifiers, and its modifier keys) is this
+    /// command's shortcut: Command plus the letter, Shift only for Redo, no Control / Option.
+    pub fn is_shortcut(self, chars: &str, command: bool, shift: bool, ctrl_or_alt: bool) -> bool {
+        let (letter, want_shift) = self.shortcut();
+        let mut cs = chars.chars();
+        let one = cs.next().filter(|_| cs.next().is_none());
+        command
+            && !ctrl_or_alt
+            && shift == want_shift
+            && one.is_some_and(|c| c.to_lowercase().eq(std::iter::once(letter)))
+    }
+
+    /// Modifiers of the injected key presses: what egui-winit reports for Cmd on macOS
+    /// (`mac_cmd` and `command`), so shortcuts bound to `Cmd+...` match.
+    fn cmd_modifiers() -> egui::Modifiers {
+        if cfg!(target_os = "macos") {
+            egui::Modifiers::MAC_CMD | egui::Modifiers::COMMAND
+        } else {
+            egui::Modifiers::COMMAND
+        }
+    }
+
     /// What to hand egui for this command.
     pub fn delivery(self) -> EditDelivery {
         let key = |key, modifiers| {
@@ -84,12 +118,9 @@ impl EditCmd {
             Self::Cut => EditDelivery::Viewport(egui::ViewportCommand::RequestCut),
             Self::Copy => EditDelivery::Viewport(egui::ViewportCommand::RequestCopy),
             Self::Paste => EditDelivery::Viewport(egui::ViewportCommand::RequestPaste),
-            Self::SelectAll => key(egui::Key::A, egui::Modifiers::COMMAND),
-            Self::Undo => key(egui::Key::Z, egui::Modifiers::COMMAND),
-            Self::Redo => key(
-                egui::Key::Z,
-                egui::Modifiers::COMMAND | egui::Modifiers::SHIFT,
-            ),
+            Self::SelectAll => key(egui::Key::A, Self::cmd_modifiers()),
+            Self::Undo => key(egui::Key::Z, Self::cmd_modifiers()),
+            Self::Redo => key(egui::Key::Z, Self::cmd_modifiers() | egui::Modifiers::SHIFT),
         }
     }
 
@@ -101,6 +132,26 @@ impl EditCmd {
             EditDelivery::Keys(mut ev) => pending.append(&mut ev),
         }
         ctx.request_repaint();
+    }
+}
+
+/// Key presses of Edit menu commands waiting for the next frame.
+#[derive(Debug, Default)]
+pub struct EditQueue(Vec<egui::Event>);
+
+impl EditQueue {
+    /// Delivers `cmd` (see [`EditCmd::deliver`]) while the main window has focus; ignores it
+    /// otherwise, so a command meant for a hidden window cannot land in a field later.
+    pub fn deliver(&mut self, cmd: EditCmd, ctx: &egui::Context, focused: bool) {
+        if focused {
+            cmd.deliver(ctx, &mut self.0);
+        }
+    }
+
+    /// Moves the queued key presses into the frame's input (`eframe::App::raw_input_hook`).
+    /// Each is handed over exactly once.
+    pub fn drain_into(&mut self, raw: &mut egui::RawInput) {
+        raw.events.append(&mut self.0);
     }
 }
 
@@ -149,12 +200,12 @@ mod tests {
             d => panic!("{d:?}"),
         };
         for (cmd, k, m) in [
-            (EditCmd::SelectAll, egui::Key::A, egui::Modifiers::COMMAND),
-            (EditCmd::Undo, egui::Key::Z, egui::Modifiers::COMMAND),
+            (EditCmd::SelectAll, egui::Key::A, EditCmd::cmd_modifiers()),
+            (EditCmd::Undo, egui::Key::Z, EditCmd::cmd_modifiers()),
             (
                 EditCmd::Redo,
                 egui::Key::Z,
-                egui::Modifiers::COMMAND | egui::Modifiers::SHIFT,
+                EditCmd::cmd_modifiers() | egui::Modifiers::SHIFT,
             ),
         ] {
             match one(cmd) {
@@ -171,6 +222,64 @@ mod tests {
                 e => panic!("{e:?}"),
             }
         }
+    }
+
+    #[test]
+    fn injected_keys_carry_mac_cmd_on_macos() {
+        let m = EditCmd::cmd_modifiers();
+        assert!(m.command);
+        assert_eq!(m.mac_cmd, cfg!(target_os = "macos"));
+    }
+
+    #[test]
+    fn shortcut_matching() {
+        // (cmd, chars, command, shift, ctrl_or_alt, expected)
+        for (c, ch, cmd, sh, ca, want) in [
+            (EditCmd::Copy, "c", true, false, false, true),
+            (EditCmd::Copy, "C", true, false, false, true),
+            (EditCmd::Copy, "c", false, false, false, false),
+            (EditCmd::Copy, "c", true, true, false, false),
+            (EditCmd::Copy, "c", true, false, true, false),
+            (EditCmd::Copy, "v", true, false, false, false),
+            (EditCmd::Copy, "cc", true, false, false, false),
+            (EditCmd::Copy, "", true, false, false, false),
+            (EditCmd::Undo, "z", true, false, false, true),
+            (EditCmd::Undo, "z", true, true, false, false),
+            (EditCmd::Redo, "z", true, true, false, true),
+            (EditCmd::Redo, "z", true, false, false, false),
+            (EditCmd::SelectAll, "a", true, false, false, true),
+            (EditCmd::Cut, "x", true, false, false, true),
+            (EditCmd::Paste, "v", true, false, false, true),
+        ] {
+            assert_eq!(c.is_shortcut(ch, cmd, sh, ca), want, "{c:?} {ch:?}");
+        }
+    }
+
+    #[test]
+    fn queued_keys_reach_the_frame_input_exactly_once_and_only_while_focused() {
+        let ctx = egui::Context::default();
+        let mut q = EditQueue::default();
+        q.deliver(EditCmd::SelectAll, &ctx, false);
+        let mut raw = egui::RawInput::default();
+        q.drain_into(&mut raw);
+        assert!(raw.events.is_empty(), "an unfocused window ignores it");
+
+        q.deliver(EditCmd::SelectAll, &ctx, true);
+        q.deliver(EditCmd::Copy, &ctx, true); // a viewport command: nothing to queue
+        let mut raw = egui::RawInput::default();
+        q.drain_into(&mut raw);
+        assert_eq!(raw.events.len(), 1);
+        assert!(matches!(
+            raw.events[0],
+            egui::Event::Key {
+                key: egui::Key::A,
+                pressed: true,
+                ..
+            }
+        ));
+        let mut again = egui::RawInput::default();
+        q.drain_into(&mut again);
+        assert!(again.events.is_empty(), "delivered once");
     }
 
     #[test]

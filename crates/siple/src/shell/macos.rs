@@ -10,7 +10,9 @@ use std::sync::Mutex;
 use objc2::rc::Retained;
 use objc2::runtime::AnyObject;
 use objc2::{MainThreadMarker, MainThreadOnly, define_class, msg_send, sel};
-use objc2_app_kit::{NSApplication, NSApplicationActivationPolicy};
+use objc2_app_kit::{
+    NSApplication, NSApplicationActivationPolicy, NSEventModifierFlags, NSEventType,
+};
 use objc2_foundation::{NSAppleEventDescriptor, NSAppleEventManager, NSObject};
 use tray_icon::menu::accelerator::{Accelerator, Code, Modifiers};
 use tray_icon::menu::{AboutMetadata, Menu, MenuItem, PredefinedMenuItem, Submenu};
@@ -173,6 +175,67 @@ pub fn early_init() {
 }
 
 // ---- app menu --------------------------------------------------------------------------------
+
+/// Hands the key press that chose an Edit menu item to the window's view, as if the menu had not
+/// taken it. Returns whether it did; on `false` the caller queues the command instead (item
+/// chosen with the mouse, a non-main window key, another keyboard layout).
+///
+/// Why: queued commands reach egui one or two frames after the keys that follow them (paste,
+/// then Return), but a key press forwarded to winit's view is queued in order with those keys
+/// and egui-winit turns Cmd+C / V / X into `Event::Copy` / `Paste` / `Cut` and Cmd+A / Z into
+/// key events, exactly as when no menu item existed.
+///
+/// Must run on the main thread inside the menu action: muda 0.21.2 sends `MenuEvent`s from the
+/// item's Objective-C action method (`MudaNSMenuItem::action` -> `MenuEvent::send`, which calls
+/// the global handler synchronously), and AppKit runs that method on the main thread from
+/// `NSMenu performKeyEquivalent:` while `NSApp.currentEvent` is the key-down being handled.
+/// `MainThreadMarker::new()` is the check; off the main thread this returns `false`.
+///
+/// No loop: `NSView keyDown:` (winit's `WinitView`) does not go through `performKeyEquivalent:`,
+/// so the menu never sees the forwarded event again. No double delivery: AppKit took the key
+/// equivalent (that is why egui never saw it), so the original key-down is not delivered
+/// separately, and the caller drops the command when this returns `true`.
+pub fn forward_shortcut(cmd: EditCmd) -> bool {
+    let Some(mtm) = MainThreadMarker::new() else {
+        return false;
+    };
+    let app = NSApplication::sharedApplication(mtm);
+    let Some(event) = app.currentEvent() else {
+        return false;
+    };
+    if event.r#type() != NSEventType::KeyDown {
+        return false;
+    }
+    let flags = event.modifierFlags();
+    let Some(chars) = event.charactersIgnoringModifiers() else {
+        return false;
+    };
+    let chord = cmd.is_shortcut(
+        &chars.to_string(),
+        flags.contains(NSEventModifierFlags::Command),
+        flags.contains(NSEventModifierFlags::Shift),
+        flags.intersects(NSEventModifierFlags::Control | NSEventModifierFlags::Option),
+    );
+    if !chord {
+        return false;
+    }
+    // Only Siple's main window: its first responder is winit's view (not the About panel's).
+    let Some(win) = app.keyWindow() else {
+        return false;
+    };
+    if !win.isVisible() || win.isMiniaturized() {
+        return false;
+    }
+    let Some(responder) = win.firstResponder() else {
+        return false;
+    };
+    let obj: &AnyObject = &responder;
+    if obj.class().name().to_str() != Ok("WinitView") {
+        return false;
+    }
+    responder.keyDown(&event);
+    true
+}
 
 /// The menu bar. Keep it alive for as long as the app runs.
 pub struct AppMenu {
