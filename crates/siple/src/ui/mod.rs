@@ -18,7 +18,7 @@ mod audio;
 mod blf_panel;
 pub(crate) mod draft;
 mod footer;
-mod form;
+pub(crate) mod form;
 mod header;
 mod keys;
 mod rail;

@@ -16,6 +16,7 @@ use tray_icon::menu::accelerator::{Accelerator, Code, Modifiers};
 use tray_icon::menu::{AboutMetadata, Menu, MenuItem, PredefinedMenuItem, Submenu};
 
 use super::ShellTx;
+use super::edit_cmd::EditCmd;
 
 /// Shows (`true`) or removes (`false`) the Dock icon by switching the activation policy.
 /// Showing also brings the app to the front, so the window it is about to show is key.
@@ -183,9 +184,11 @@ const SETTINGS_ID: &str = "settings";
 
 /// Builds and installs the menu: Siple (About, Settings…, Hide, Quit), Edit and Window.
 ///
-/// The Edit items use the standard responder-chain selectors; egui handles copy / paste from key
-/// events itself, so they are enabled only where AppKit finds a responder (they never swallow
-/// the shortcut).
+/// The Edit items are custom menu items, not the predefined responder-chain ones. Those send
+/// `copy:` / `paste:` / ... to a nil target, nothing in winit's view implements them, so AppKit
+/// shows them disabled, yet `NSMenu performKeyEquivalent:` still returns YES for a matching
+/// disabled item and swallows the key: egui never sees Cmd+C. Custom items route through the
+/// global `MenuEvent` handler as [`EditCmd`]s (see `shell::edit_cmd`) and become egui input.
 pub fn install_app_menu() -> Result<AppMenu, String> {
     let menu = Menu::new();
     let app = Submenu::new("Siple", true);
@@ -217,14 +220,32 @@ pub fn install_app_menu() -> Result<AppMenu, String> {
     ])
     .map_err(|e| e.to_string())?;
     let edit = Submenu::new("Edit", true);
+    let item = |c: EditCmd, mods: Modifiers, code: Code| {
+        MenuItem::with_id(
+            c.to_id(),
+            c.title(),
+            true,
+            Some(Accelerator::new(mods, code)),
+        )
+    };
+    let undo = item(EditCmd::Undo, Modifiers::META, Code::KeyZ);
+    let redo = item(
+        EditCmd::Redo,
+        Modifiers::META | Modifiers::SHIFT,
+        Code::KeyZ,
+    );
+    let cut = item(EditCmd::Cut, Modifiers::META, Code::KeyX);
+    let copy = item(EditCmd::Copy, Modifiers::META, Code::KeyC);
+    let paste = item(EditCmd::Paste, Modifiers::META, Code::KeyV);
+    let select_all = item(EditCmd::SelectAll, Modifiers::META, Code::KeyA);
     edit.append_items(&[
-        &PredefinedMenuItem::undo(None),
-        &PredefinedMenuItem::redo(None),
+        &undo,
+        &redo,
         &PredefinedMenuItem::separator(),
-        &PredefinedMenuItem::cut(None),
-        &PredefinedMenuItem::copy(None),
-        &PredefinedMenuItem::paste(None),
-        &PredefinedMenuItem::select_all(None),
+        &cut,
+        &copy,
+        &paste,
+        &select_all,
     ])
     .map_err(|e| e.to_string())?;
     let window = Submenu::new("Window", true);

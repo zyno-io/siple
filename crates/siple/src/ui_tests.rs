@@ -5135,3 +5135,162 @@ fn notice_shows_its_text_and_the_raw_answer_on_hover() {
     h.run_steps(60);
     assert!(h.query_by_label_contains("Details:").is_none());
 }
+
+// ---- text field edit menu ---------------------------------------------------------------------
+
+fn field_id() -> egui::Id {
+    egui::Id::new("edit_menu_field")
+}
+
+/// One text field with the shared right-click menu.
+fn field_harness(text: &str, password: bool) -> Harness<'static, String> {
+    Harness::new_ui_state(
+        move |ui, text: &mut String| {
+            let r = ui.add(
+                egui::TextEdit::singleline(text)
+                    .id(field_id())
+                    .password(password),
+            );
+            r.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::TextEdit, true, "Field"));
+            crate::ui::form::text_context_menu(ui, &r, text, password);
+        },
+        text.to_string(),
+    )
+}
+
+/// The field's selection as sorted char indexes.
+fn selection(h: &Harness<'_, String>) -> Option<(usize, usize)> {
+    let st = egui::TextEdit::load_state(&h.ctx, field_id())?;
+    let r = st.cursor.char_range()?;
+    let a: usize = r.primary.index.into();
+    let b: usize = r.secondary.index.into();
+    Some((a.min(b), a.max(b)))
+}
+
+fn select(h: &Harness<'_, String>, a: usize, b: usize) {
+    let mut st = egui::TextEdit::load_state(&h.ctx, field_id()).unwrap_or_default();
+    st.cursor.set_char_range(Some(egui::text::CCursorRange::two(
+        egui::text::CCursor::new(a),
+        egui::text::CCursor::new(b),
+    )));
+    st.store(&h.ctx, field_id());
+}
+
+#[test]
+fn right_click_on_a_text_field_opens_cut_copy_paste_select_all() {
+    let mut h = field_harness("hello world", false);
+    h.run();
+    h.get_by_label("Field").click_secondary();
+    h.run_steps(3);
+    for item in ["Cut", "Copy", "Paste", "Select All"] {
+        assert!(h.query_by_label(item).is_some(), "no {item:?} item");
+    }
+    // The right-click focused the field.
+    assert!(h.ctx.text_edit_focused());
+}
+
+#[test]
+fn right_click_keeps_the_selection_and_enables_cut_and_copy() {
+    let mut h = field_harness("hello world", false);
+    h.run();
+    h.get_by_label("Field").focus();
+    h.run_steps(2);
+    select(&h, 0, 5);
+    h.run_steps(2);
+    assert_eq!(selection(&h), Some((0, 5)));
+    h.get_by_label("Field").click_secondary();
+    h.run_steps(3);
+    assert_eq!(
+        selection(&h),
+        Some((0, 5)),
+        "the click collapsed the selection"
+    );
+    assert!(!h.get_by_label("Cut").accesskit_node().is_disabled());
+    assert!(!h.get_by_label("Copy").accesskit_node().is_disabled());
+}
+
+#[test]
+fn cut_and_copy_are_disabled_without_a_selection_and_for_passwords() {
+    let mut h = field_harness("hello", false);
+    h.run();
+    h.get_by_label("Field").click_secondary();
+    h.run_steps(3);
+    assert!(h.get_by_label("Cut").accesskit_node().is_disabled());
+    assert!(h.get_by_label("Copy").accesskit_node().is_disabled());
+    assert!(!h.get_by_label("Paste").accesskit_node().is_disabled());
+
+    let mut h = field_harness("secret", true);
+    h.run();
+    h.get_by_label("Field").focus();
+    h.run_steps(2);
+    select(&h, 0, 6);
+    h.get_by_label("Field").click_secondary();
+    h.run_steps(3);
+    assert!(h.get_by_label("Cut").accesskit_node().is_disabled());
+    assert!(h.get_by_label("Copy").accesskit_node().is_disabled());
+}
+
+#[test]
+fn select_all_in_the_menu_selects_the_whole_field() {
+    let mut h = field_harness("hello world", false);
+    h.run();
+    h.get_by_label("Field").click_secondary();
+    h.run_steps(3);
+    h.get_by_label("Select All").click();
+    h.run_steps(3);
+    assert_eq!(selection(&h), Some((0, 11)));
+}
+
+/// Runs one frame with `ev` as the only input and returns the text copied to the clipboard.
+fn feed(h: &mut Harness<'_, String>, ev: egui::Event) -> Option<String> {
+    h.event(ev);
+    h.step();
+    h.output()
+        .platform_output
+        .commands
+        .iter()
+        .find_map(|c| match c {
+            egui::OutputCommand::CopyText(t) => Some(t.clone()),
+            _ => None,
+        })
+}
+
+#[test]
+fn select_all_then_copy_cut_and_paste_edit_the_field() {
+    use crate::shell::edit_cmd::{EditCmd, EditDelivery};
+    let mut h = field_harness("hello world", false);
+    h.run();
+    h.get_by_label("Field").focus();
+    h.run_steps(2);
+
+    // Select All as the Edit menu delivers it (a Cmd+A key press).
+    let EditDelivery::Keys(keys) = EditCmd::SelectAll.delivery() else {
+        panic!("select all is a key press");
+    };
+    for k in keys {
+        feed(&mut h, k);
+    }
+    assert_eq!(selection(&h), Some((0, 11)));
+
+    // Copy leaves the text alone and puts it on the clipboard.
+    assert_eq!(
+        feed(&mut h, egui::Event::Copy).as_deref(),
+        Some("hello world")
+    );
+    assert_eq!(h.state(), "hello world");
+
+    // Cut removes the selection and copies it.
+    assert_eq!(
+        feed(&mut h, egui::Event::Cut).as_deref(),
+        Some("hello world")
+    );
+    assert_eq!(h.state(), "");
+
+    // Paste inserts the clipboard text; with a selection it replaces it.
+    feed(&mut h, egui::Event::Paste("abc def".into()));
+    assert_eq!(h.state(), "abc def");
+    select(&h, 0, 3);
+    h.run_steps(1);
+    feed(&mut h, egui::Event::Paste("xyz".into()));
+    assert_eq!(h.state(), "xyz def");
+}

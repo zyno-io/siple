@@ -150,6 +150,7 @@ pub(super) fn composer(
                 .margin(Margin::symmetric(10, 7))
                 .desired_width(ui.available_width()),
         );
+        super::form::text_context_menu(ui, &edit, &comp.target, false);
         // Read before re-focusing: requesting focus again would hide the Enter that left it.
         let enter_pressed = edit.lost_focus();
         if ui.memory(|m| m.focused().is_none()) && !enter_pressed {

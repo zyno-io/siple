@@ -4,6 +4,7 @@
 use eframe::egui::{self, Align, CornerRadius, Layout, Margin, RichText, Stroke};
 
 use super::combo_icon;
+use crate::shell::edit_cmd::{EditCmd, EditDelivery};
 use crate::theme::{FS_BODY, FS_MICRO, FS_SMALL, Palette, R_LG, R_MD, SP_S, SP_XS, icon as ic};
 use crate::widgets::{FIELD_MARGIN, account_switch, icon, mono, strong};
 
@@ -53,6 +54,84 @@ pub(crate) fn text_row(
     text_row_focus(ui, p, label, value, hint, password, err).0
 }
 
+/// Right-click menu of a text field: Cut, Copy, Paste and Select All.
+///
+/// Call right after adding the `TextEdit` (`text` is its buffer). A right-click would collapse
+/// the field's selection and may not focus it, so the selection from before the press is put
+/// back and the field is focused; the actions then run on it like the keyboard shortcuts do.
+/// Cut, Copy and Paste are the same viewport commands as the macOS Edit menu ([`EditCmd`]):
+/// egui-winit answers with `Event::Cut` / `Copy` / `Paste(clipboard)`, which the focused field
+/// handles. Select All sets the selection directly. Cut and Copy are off without a selection
+/// and for password fields.
+pub(crate) fn text_context_menu(ui: &mut egui::Ui, r: &egui::Response, text: &str, password: bool) {
+    use egui::text::{CCursor, CCursorRange};
+    let id = r.id;
+    let ctx = ui.ctx().clone();
+    let keep = id.with("sel_before_press");
+    let load = || egui::TextEdit::load_state(&ctx, id);
+    let selection = || {
+        load()
+            .and_then(|s| s.cursor.char_range())
+            .filter(|c| !c.is_empty())
+    };
+    let pressed =
+        r.hovered() && ui.input(|i| i.pointer.button_pressed(egui::PointerButton::Secondary));
+    if pressed {
+        if let Some(sel) = ctx.data(|d| d.get_temp::<CCursorRange>(keep)) {
+            if let Some(mut st) = load() {
+                st.cursor.set_char_range(Some(sel));
+                st.store(&ctx, id);
+            }
+        }
+        r.request_focus();
+    } else if !r.context_menu_opened() {
+        match selection() {
+            Some(sel) => ctx.data_mut(|d| d.insert_temp(keep, sel)),
+            None => ctx.data_mut(|d| d.remove_temp::<CCursorRange>(keep)),
+        }
+    }
+    let has_sel = selection().is_some();
+    let n = text.chars().count();
+    r.context_menu(|ui| {
+        let mut run = |ui: &mut egui::Ui, cmd: EditCmd| {
+            r.request_focus();
+            match cmd.delivery() {
+                EditDelivery::Viewport(c) => ui.ctx().send_viewport_cmd(c),
+                EditDelivery::Keys(_) => {}
+            }
+            ui.close();
+        };
+        let clip = !password && has_sel;
+        if ui
+            .add_enabled(clip, egui::Button::new(EditCmd::Cut.title()))
+            .clicked()
+        {
+            run(ui, EditCmd::Cut);
+        }
+        if ui
+            .add_enabled(clip, egui::Button::new(EditCmd::Copy.title()))
+            .clicked()
+        {
+            run(ui, EditCmd::Copy);
+        }
+        if ui.button(EditCmd::Paste.title()).clicked() {
+            run(ui, EditCmd::Paste);
+        }
+        if ui
+            .add_enabled(n > 0, egui::Button::new(EditCmd::SelectAll.title()))
+            .clicked()
+        {
+            if let Some(mut st) = load().or_else(|| Some(Default::default())) {
+                st.cursor
+                    .set_char_range(Some(CCursorRange::two(CCursor::new(0), CCursor::new(n))));
+                st.store(&ctx, id);
+            }
+            r.request_focus();
+            ui.close();
+        }
+    });
+}
+
 /// [`text_row`] that also says whether the field has keyboard focus.
 pub(crate) fn text_row_focus(
     ui: &mut egui::Ui,
@@ -77,6 +156,7 @@ pub(crate) fn text_row_focus(
                     .desired_width(ui.available_width()),
             );
             let r = r.labelled_by(l.id);
+            text_context_menu(ui, &r, &buf, password);
             (r.changed(), r.has_focus())
         })
         .inner;

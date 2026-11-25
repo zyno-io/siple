@@ -11,6 +11,7 @@
 //! hidden app stays responsive; hidden, nothing is painted.
 
 pub mod autostart;
+pub mod edit_cmd;
 pub mod links;
 pub mod notify;
 pub mod policy;
@@ -341,6 +342,8 @@ pub struct Shell {
     applied_links: Option<bool>,
     /// "Settings…" was requested (menu or tray); see [`Shell::take_settings_request`].
     settings_requested: bool,
+    /// Key presses from the Edit menu, fed to egui by `ShellApp::raw_input_hook`.
+    pending_keys: Vec<egui::Event>,
     #[cfg(target_os = "macos")]
     _menu: Option<macos::AppMenu>,
 }
@@ -403,6 +406,7 @@ impl Shell {
             applied_login: None,
             applied_links: None,
             settings_requested: false,
+            pending_keys: Vec::new(),
             #[cfg(target_os = "macos")]
             _menu: None,
         };
@@ -856,6 +860,7 @@ impl Shell {
                 self.settings_requested = true;
                 self.show_window(ctx);
             }
+            TrayCmd::Edit(c) => c.deliver(ctx, &mut self.pending_keys),
             TrayCmd::Quit => self.quit(ctx),
         }
     }
@@ -937,6 +942,10 @@ impl ShellApp {
 }
 
 impl eframe::App for ShellApp {
+    fn raw_input_hook(&mut self, _ctx: &egui::Context, raw_input: &mut egui::RawInput) {
+        raw_input.events.append(&mut self.shell.pending_keys);
+    }
+
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         // Panel requests from the control API apply (and save) even while hidden.
         self.inner.sync_panels();
