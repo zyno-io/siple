@@ -58,6 +58,14 @@
     <screenshot><caption>Dark appearance</caption><image>https://raw.githubusercontent.com/zyno-io/siple/v0.1.2/crates/siple/tests/snapshots/idle_dark_wide.png</image></screenshot>
   </screenshots>
   <releases>
+    <release version="0.2.10" date="2026-11-26">
+      <url type="details">https://github.com/zyno-io/siple/releases/tag/v0.2.10</url>
+      <description><ul>
+        <li>Start hidden applies only when Siple starts at login; starting it yourself always shows the window</li>
+        <li>Siple checks for updates shortly after every start</li>
+        <li>The update check asks only siple.app</li>
+      </ul></description>
+    </release>
     <release version="0.2.9" date="2026-11-26">
       <url type="details">https://github.com/zyno-io/siple/releases/tag/v0.2.9</url>
       <description><ul>
