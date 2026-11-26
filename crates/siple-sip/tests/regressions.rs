@@ -1055,6 +1055,242 @@ async fn tls_request_to_other_host_verifies_the_name_not_the_ip() {
     h.stack.shutdown().await;
 }
 
+/// Wire texts the capture saw for `account` starting with `method` (e.g. `"INVITE "`).
+fn wire_requests(h: &Harness, account: &str, method: &str) -> Vec<String> {
+    h.wire
+        .0
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|w| w.account == account && w.text.starts_with(method))
+        .map(|w| w.text.clone())
+        .collect()
+}
+
+/// Waits for the first `method` request `account` put on the wire.
+async fn wait_wire(h: &Harness, account: &str, method: &str) -> String {
+    for _ in 0..200 {
+        if let Some(t) = wire_requests(h, account, method).into_iter().next() {
+            return t;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    panic!("no {method:?} request from {account} on the wire");
+}
+
+/// The Contact header of a request over TLS carries `;transport=tls` and the Via says TLS.
+fn assert_tls_request(text: &str) {
+    assert!(text.contains("SIP/2.0/TLS"), "Via: {text}");
+    let contact = text
+        .lines()
+        .find(|l| l.to_ascii_lowercase().starts_with("contact:"))
+        .unwrap_or_else(|| panic!("no Contact: {text}"));
+    assert!(
+        contact.to_ascii_lowercase().contains(";transport=tls"),
+        "{contact}"
+    );
+}
+
+// ================= TLS from any account (on demand) =================
+
+/// A UDP account sends TLS requests (OPTIONS, INVITE, SUBSCRIBE): its client TLS config is
+/// installed on the first one. The certificate is valid for `localhost` only (no IP SAN), so the
+/// name must be registered after the config exists.
+#[tokio::test]
+async fn udp_account_dials_tls_with_on_demand_config() {
+    let dir = tempfile::tempdir().unwrap();
+    let (crt, key, ca) = write_pki_with(dir.path(), "udptls", false);
+    let h = harness();
+    let port = free_port();
+    let mut srv = peer("srvudptls", Transport::Tls, port);
+    srv.tls_cert = crt;
+    srv.tls_key = key;
+    add(&h, srv).await;
+    let mut cli = peer("cliudptls", Transport::Udp, 0);
+    cli.tls_verify = true;
+    cli.tls_ca_file = ca;
+    add(&h, cli).await;
+    let by_name = format!("sip:x@localhost:{port};transport=tls");
+
+    let r = h.stack.send_options("cliudptls", &by_name).await;
+    assert_eq!(
+        r.map(|r| r.code).map_err(|e| e.to_string()),
+        Ok(200),
+        "{by_name}"
+    );
+    assert_tls_request(&wait_wire(&h, "cliudptls", "OPTIONS ").await);
+
+    let call = h
+        .stack
+        .dial("cliudptls", &by_name, DialOptions::default())
+        .await
+        .unwrap_or_else(|e| panic!("dial {by_name}: {e}"));
+    assert_tls_request(&wait_wire(&h, "cliudptls", "INVITE ").await);
+    h.stack.hangup(&call).await.unwrap();
+
+    h.stack
+        .subscribe("cliudptls", &by_name, "presence", None, None)
+        .unwrap();
+    assert_tls_request(&wait_wire(&h, "cliudptls", "SUBSCRIBE ").await);
+
+    // UDP requests still work, and go out over UDP.
+    add(&h, peer("udpsrv", Transport::Udp, 0)).await;
+    let udp = local_addr(&h, "udpsrv");
+    let r = h
+        .stack
+        .send_options("cliudptls", &format!("sip:x@{udp}"))
+        .await;
+    assert_eq!(r.map(|r| r.code).map_err(|e| e.to_string()), Ok(200));
+    h.stack.shutdown().await;
+}
+
+/// `tls_fingerprint` pins the provider only: other TLS hosts are verified with the OS roots and
+/// `tls_ca_file` under the name dialed.
+#[tokio::test]
+async fn pinned_tls_account_calls_other_hosts_through_ca_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let (pcrt, pkey) = write_cert(dir.path(), "provider", Some(1000), true);
+    let cert = siple_sip::transport::read_pem_certs(&pcrt)
+        .unwrap()
+        .remove(0);
+    let fp: String = siple_sip::transport::cert_sha256(&cert)
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect();
+    let (ocrt, okey, oca) = write_pki_with(dir.path(), "other", false);
+    let h = harness();
+    let (pport, oport) = (free_port(), free_port());
+    let mut prov = peer("srvprov", Transport::Tls, pport);
+    prov.tls_cert = pcrt;
+    prov.tls_key = pkey;
+    add(&h, prov).await;
+    let mut other = peer("srvother", Transport::Tls, oport);
+    other.tls_cert = ocrt;
+    other.tls_key = okey;
+    add(&h, other).await;
+
+    let mut cli = peer("clipin", Transport::Tls, 0);
+    cli.registrar = format!("127.0.0.1:{pport}");
+    cli.tls_verify = true;
+    cli.tls_fingerprint = fp;
+    cli.tls_ca_file = oca;
+    add(&h, cli).await;
+    let to_provider = format!("sip:x@127.0.0.1:{pport};transport=tls");
+    let to_other = format!("sip:x@localhost:{oport};transport=tls");
+    for t in [&to_provider, &to_other] {
+        let r = h.stack.send_options("clipin", t).await;
+        assert_eq!(r.map(|r| r.code).map_err(|e| e.to_string()), Ok(200), "{t}");
+    }
+    let call = h
+        .stack
+        .dial("clipin", &to_other, DialOptions::default())
+        .await
+        .unwrap_or_else(|e| panic!("dial {to_other}: {e}"));
+    h.stack.hangup(&call).await.unwrap();
+    h.stack.shutdown().await;
+}
+
+/// `tls_verify = false` ignores certificate errors of the provider only.
+#[tokio::test]
+async fn tls_verify_false_is_provider_only() {
+    let dir = tempfile::tempdir().unwrap();
+    let (pcrt, pkey) = write_cert(dir.path(), "prov", None, false);
+    let (ocrt, okey) = write_cert(dir.path(), "oth", None, false);
+    let h = harness();
+    let (pport, oport) = (free_port(), free_port());
+    let mut prov = peer("srvp3", Transport::Tls, pport);
+    prov.tls_cert = pcrt;
+    prov.tls_key = pkey;
+    add(&h, prov).await;
+    let mut other = peer("srvo3", Transport::Tls, oport);
+    other.tls_cert = ocrt;
+    other.tls_key = okey;
+    add(&h, other).await;
+
+    let mut cli = peer("clinv", Transport::Tls, 0);
+    cli.registrar = format!("127.0.0.1:{pport}");
+    add(&h, cli).await; // tls_verify = false
+    let r = h
+        .stack
+        .send_options("clinv", &format!("sip:x@127.0.0.1:{pport};transport=tls"))
+        .await;
+    assert_eq!(r.map(|r| r.code).map_err(|e| e.to_string()), Ok(200));
+    let to_other = format!("sip:x@localhost:{oport};transport=tls");
+    let e = h.stack.send_options("clinv", &to_other).await.unwrap_err();
+    assert_eq!(e.problem(), Some(siple_sip::Problem::TlsUntrusted), "{e}");
+
+    // A UDP account: its provider is not the target either.
+    add(&h, peer("cliudpnv", Transport::Udp, 0)).await;
+    let e = h
+        .stack
+        .dial("cliudpnv", &to_other, DialOptions::default())
+        .await
+        .unwrap_err();
+    assert_eq!(e.problem(), Some(siple_sip::Problem::TlsUntrusted), "{e}");
+    h.stack.shutdown().await;
+}
+
+/// Bad `tls_*` settings of a UDP account fail only its TLS requests.
+#[tokio::test]
+async fn bad_tls_settings_fail_only_tls_requests_of_a_udp_account() {
+    let dir = tempfile::tempdir().unwrap();
+    let missing = dir
+        .path()
+        .join("missing.pem")
+        .to_string_lossy()
+        .into_owned();
+    let h = harness();
+    add(&h, peer("udpok", Transport::Udp, 0)).await;
+    let udp = format!("sip:x@{}", local_addr(&h, "udpok"));
+    let tls_target = "sip:x@localhost:9;transport=tls";
+
+    for (id, ca, fp) in [("badca", missing.as_str(), ""), ("badfp", "", "nope")] {
+        let mut cfg = peer(id, Transport::Udp, 0);
+        cfg.tls_verify = true;
+        cfg.tls_ca_file = ca.into();
+        cfg.tls_fingerprint = fp.into();
+        add(&h, cfg).await;
+        let ok = |r: siple_sip::Result<siple_sip::OptionsResponse>| {
+            r.map(|r| r.code).map_err(|e| e.to_string())
+        };
+        assert_eq!(
+            ok(h.stack.send_options(id, &udp).await),
+            Ok(200),
+            "{id} udp"
+        );
+        let e = h.stack.send_options(id, tls_target).await.unwrap_err();
+        assert_eq!(
+            e.problem(),
+            Some(siple_sip::Problem::TlsConfig),
+            "{id}: {e}"
+        );
+        if !ca.is_empty() {
+            assert!(e.to_string().contains("missing.pem"), "{e}");
+        }
+        let e = h
+            .stack
+            .dial(id, tls_target, DialOptions::default())
+            .await
+            .unwrap_err();
+        assert_eq!(
+            e.problem(),
+            Some(siple_sip::Problem::TlsConfig),
+            "{id}: {e}"
+        );
+        let st = h.stack.account_status(id).unwrap();
+        assert!(
+            !matches!(st.registration, RegState::Failed { .. }),
+            "{st:?}"
+        );
+        assert_eq!(
+            ok(h.stack.send_options(id, &udp).await),
+            Ok(200),
+            "{id} udp again"
+        );
+    }
+    h.stack.shutdown().await;
+}
+
 // ================= item 9: hot User-Agent =================
 
 #[tokio::test]
@@ -1099,7 +1335,9 @@ async fn tls_fingerprint_pins_the_leaf_certificate() {
     add(&h, srv).await;
     let target = format!("sip:x@127.0.0.1:{port};transport=tls");
 
+    // The server is the provider (registrar), which is where the pin applies.
     let mut ok = peer("cfp_ok", Transport::Tls, 0);
+    ok.registrar = format!("127.0.0.1:{port}");
     ok.tls_verify = true;
     ok.tls_fingerprint = fp.clone();
     ok.tls_server_name = "name.that.does.not.match".into();
@@ -1110,10 +1348,19 @@ async fn tls_fingerprint_pins_the_leaf_certificate() {
     );
 
     let mut bad = peer("cfp_bad", Transport::Tls, 0);
+    bad.registrar = format!("127.0.0.1:{port}");
     bad.tls_verify = false; // the pin still applies
     bad.tls_fingerprint = "00".repeat(32);
     add(&h, bad).await;
     assert!(h.stack.send_options("cfp_bad", &target).await.is_err());
+
+    // The pin is for the provider only: a server that is not the account's provider is
+    // verified as usual (this self-signed certificate is not trusted).
+    let mut elsewhere = peer("cfp_peer", Transport::Tls, 0);
+    elsewhere.tls_verify = true;
+    elsewhere.tls_fingerprint = fp.clone();
+    add(&h, elsewhere).await;
+    assert!(h.stack.send_options("cfp_peer", &target).await.is_err());
     h.stack.shutdown().await;
 }
 

@@ -119,6 +119,8 @@ pub(crate) struct RtEnv {
     /// the bind address it identifies the generation: a flap back to an earlier address can
     /// bring a different socket (another ephemeral port).
     pub listener: Option<std::net::SocketAddr>,
+    /// Client TLS config builder of the account (on-demand install for UDP / TCP accounts).
+    pub tls: Arc<crate::transport::ClientTls>,
 }
 
 impl RtEnv {
@@ -2189,6 +2191,10 @@ mod generation_tests {
             public_host: None,
             stream_gen,
             listener,
+            tls: crate::transport::ClientTls::new(
+                &siple_config::AccountConfig::default(),
+                crate::authz::AuthState::new(),
+            ),
         }
     }
 

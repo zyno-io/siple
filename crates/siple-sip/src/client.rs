@@ -435,7 +435,9 @@ impl Client {
         let mut req =
             self.endpoint
                 .make_request(Method::Options, target.clone(), via, from, to, 1, None);
-        let contact = build_contact(&self.user, adv.addr.clone(), self.transport, self.use_sips);
+        // The connection's transport: a UDP account's OPTIONS over TLS advertises `;transport=tls`.
+        let transport = adv.r#type.or(dest.r#type).unwrap_or(self.transport);
+        let contact = build_contact(&self.user, adv.addr.clone(), transport, self.use_sips);
         req.headers.unique_push(
             sip::typed::Contact {
                 display_name: None,

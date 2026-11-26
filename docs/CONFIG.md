@@ -392,19 +392,24 @@ is a rebuild. Reserved header names for `extra_headers`: `Via`, `From`, `To`, `C
 
 ### TLS
 
-Used when the transport is TLS (with `auto`, only if TLS is picked). Changes rebuild the transport.
+Apply to every TLS connection of the account: its TLS transport, and `sips:` / `;transport=tls` requests from UDP or TCP
+accounts. The provider is the registrar, outbound proxy, `domain`, `tls_server_name` and their addresses. Changes rebuild
+the transport.
 
 | Key | Default | What it does |
 |---|---|---|
-| `tls_verify` | `true` | Verify the server certificate. `false` ignores errors (test PBXs only). |
-| `tls_ca_file` | `""` | PEM file with extra trusted CAs. |
-| `tls_server_name` | `""` | Override the name used for SNI and verification. |
-| `tls_fingerprint` | `""` | Pin the server certificate: SHA-256 as 64 hex digits (colons optional). |
+| `tls_verify` | `true` | Verify the provider's certificate. `false` ignores its errors (test PBXs only); other TLS hosts are always verified. |
+| `tls_ca_file` | `""` | PEM file with extra trusted CAs. Used for every TLS host the provider's pin or `tls_verify = false` does not cover. |
+| `tls_server_name` | `""` | Name for SNI and verification of the registrar or outbound proxy. |
+| `tls_fingerprint` | `""` | Pin the provider's certificate: SHA-256 as 64 hex digits (colons optional). Other TLS hosts are verified as usual. |
 | `tls_cert`, `tls_key` | `""` | PEM certificate and key for the listener or client auth. Set both or neither. |
 
 An untrusted certificate shows `tls_untrusted`, and `account.test` reports its fingerprint. A pinned certificate is accepted
-whatever its chain, expiry or name, and `tls_verify` and `tls_ca_file` are ignored. Get one with
-`openssl x509 -in pbx.pem -noout -fingerprint -sha256`. Empty `tls_cert` means self-signed. A missing TLS file is a warning.
+for the provider whatever its chain, expiry or name; `tls_verify` is then ignored. Other hosts are checked against the OS
+roots plus `tls_ca_file`, under the name dialed. Get a fingerprint with `openssl x509 -in pbx.pem -noout -fingerprint -sha256`.
+For peers with private certificates, put their CA in `tls_ca_file`. An unreadable `tls_ca_file` fails the account's TLS
+requests, except with a pin or `tls_verify = false`: then it is a warning and other hosts use the OS roots only (none
+loadable: other hosts are refused). Empty `tls_cert` means self-signed. A missing TLS file is a warning.
 
 ### Media and SRTP
 

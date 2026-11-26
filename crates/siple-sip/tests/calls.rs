@@ -135,8 +135,14 @@ async fn incoming(r: &mut Rig, account: &str) -> CallInfo {
 
 /// A dials B; returns (a_call, b_call) while B rings.
 async fn ring(r: &mut Rig, transport: Transport) -> (String, CallInfo) {
-    add(r, peer("a", transport, false)).await;
     let b = add(r, peer("b", transport, true)).await;
+    let mut a = peer("a", transport, false);
+    if transport == Transport::Tls {
+        // `tls_verify = false` covers the provider only: make b a's provider (peer mode stays
+        // `register = false`).
+        a.registrar = b.clone();
+    }
+    add(r, a).await;
     let a_id = r
         .stack
         .dial("a", &uri_for("b", &b, transport), DialOptions::default())

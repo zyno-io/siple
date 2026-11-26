@@ -228,6 +228,32 @@ impl AuthState {
         }
     }
 
+    /// Whether `name` (a lower-case DNS name) is one of the configured provider hosts
+    /// (outbound proxy, registrar, domain). Ports and `auth_foreign` play no part.
+    pub(crate) fn is_provider_name(&self, name: &str) -> bool {
+        self.lock()
+            .provider
+            .configured
+            .iter()
+            .any(|e| e.host.trim_end_matches('.') == name)
+    }
+
+    /// Whether `ip` is a configured IP-literal provider host or an address the provider
+    /// resolved to, on any port.
+    pub(crate) fn is_provider_ip(&self, ip: IpAddr) -> bool {
+        let ip = ip.to_canonical();
+        let g = self.lock();
+        g.provider
+            .configured
+            .iter()
+            .chain(&g.provider.resolved)
+            .any(|e| {
+                e.host
+                    .parse::<IpAddr>()
+                    .is_ok_and(|x| x.to_canonical() == ip)
+            })
+    }
+
     /// The guard to put into the account's `Credential`.
     pub(crate) fn guard(self: &Arc<Self>) -> AuthGuard {
         let me = self.clone();
@@ -355,6 +381,30 @@ mod tests {
 
     fn run(p: &Provider, hop: &str) -> Decision {
         decide(p, Some(&ep(hop)), false)
+    }
+
+    #[test]
+    fn tls_provider_hosts() {
+        let st = AuthState::new();
+        let cfg = AccountConfig {
+            domain: "pbx.example".into(),
+            outbound_proxy: "sip:proxy.example:5070;lr".into(),
+            registrar: "10.0.0.5:5080".into(),
+            auth_foreign: true,
+            ..Default::default()
+        };
+        let a: SocketAddr = "192.0.2.1:5061".parse().unwrap();
+        st.update(&cfg, Some((&cfg, &[a])));
+        assert!(st.is_provider_name("pbx.example"));
+        assert!(st.is_provider_name("proxy.example"));
+        assert!(
+            !st.is_provider_name("other.example"),
+            "auth_foreign is no scope"
+        );
+        assert!(st.is_provider_ip("10.0.0.5".parse().unwrap()));
+        assert!(st.is_provider_ip("192.0.2.1".parse().unwrap()));
+        assert!(st.is_provider_ip("::ffff:192.0.2.1".parse().unwrap()));
+        assert!(!st.is_provider_ip("192.0.2.9".parse().unwrap()));
     }
 
     #[test]

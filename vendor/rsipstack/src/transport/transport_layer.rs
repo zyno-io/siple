@@ -436,6 +436,20 @@ impl TransportLayer {
         self.inner.set_sni_for(addr, name);
     }
 
+    /// siple: whether a client TLS configuration is installed.
+    #[cfg(all(feature = "platform-tokio", feature = "rustls"))]
+    pub fn has_tls_config(&self) -> bool {
+        self.inner.has_tls_config()
+    }
+
+    /// siple: install `tls_config` only when none is installed (checked and set under one lock,
+    /// so concurrent first TLS requests do not replace each other's config). Returns whether it
+    /// was installed.
+    #[cfg(all(feature = "platform-tokio", feature = "rustls"))]
+    pub fn set_tls_config_if_absent(&self, tls_config: TlsConfig) -> bool {
+        self.inner.set_tls_config_if_absent(tls_config)
+    }
+
     /// Remove the TLS configuration used for future outbound TLS connections.
     #[cfg(all(feature = "platform-tokio", feature = "rustls"))]
     pub fn clear_tls_config(&self) {
@@ -519,6 +533,21 @@ impl TransportLayerInner {
             cfg.sni_learned.clear();
         }
         cfg.sni_learned.insert(addr, name);
+    }
+
+    #[cfg(all(feature = "platform-tokio", feature = "rustls"))]
+    fn has_tls_config(&self) -> bool {
+        self.tls_config.read().is_some()
+    }
+
+    #[cfg(all(feature = "platform-tokio", feature = "rustls"))]
+    fn set_tls_config_if_absent(&self, tls_config: TlsConfig) -> bool {
+        let mut guard = self.tls_config.write();
+        if guard.is_some() {
+            return false;
+        }
+        *guard = Some(tls_config);
+        true
     }
 
     #[cfg(all(feature = "platform-tokio", feature = "rustls"))]

@@ -157,9 +157,15 @@ async fn options_between(transport: Transport) {
     } else {
         free_port()
     };
-    add(&h, peer("a", transport, 0)).await;
     add(&h, peer("b", transport, b_port)).await;
     let b = local_addr(&h, "b");
+    let mut a = peer("a", transport, 0);
+    if transport == Transport::Tls {
+        // `tls_verify = false` covers the provider only: make b a's provider (peer mode stays
+        // `register = false`).
+        a.registrar = b.to_string();
+    }
+    add(&h, a).await;
     let target = format!("sip:b@{b}");
 
     let resp = h.stack.send_options("a", &target).await.expect("OPTIONS");

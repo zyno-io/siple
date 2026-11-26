@@ -74,6 +74,21 @@ impl CallManager {
             }
         };
 
+        // A non-TLS account whose peer talks TLS in its Contact / Record-Route will reach it
+        // over TLS (in-dialog requests, BYE): give it a client config now, best effort.
+        if rt.transport != rsipstack::sip::Transport::Tls {
+            let wants_tls = ["contact", "record-route"]
+                .iter()
+                .flat_map(|h| util::header_values(&req.headers, h))
+                .any(|v| {
+                    let v = v.to_ascii_lowercase();
+                    v.contains("sips:") || v.contains(";transport=tls")
+                });
+            if wants_tls && let Err(e) = rt.tls.ensure(&rt.endpoint.transport_layer) {
+                tracing::warn!(account = %env.account, error = %e, "client TLS config for a TLS peer");
+            }
+        }
+
         // Unsupported extensions.
         let honoured = honoured_require(&cfg);
         let unsupported: Vec<String> = util::tokens(&req.headers, "require")

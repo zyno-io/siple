@@ -203,11 +203,11 @@ no audio devices: use a desktop session, or `source`/`sink` tone/null.
 
 ### TLS to a self-signed or private PBX
 
-- Quick and insecure: `tls_verify = false` (ignores all certificate errors).
+- Quick and insecure: `tls_verify = false` (ignores certificate errors of your provider; other TLS hosts are still verified).
 - Better: **pin** the certificate: `tls_fingerprint = "47:EE:8D:..."` from
   `openssl x509 -in pbx.pem -noout -fingerprint -sha256`. It is accepted regardless of chain, expiry or name, which
   also covers certificates the OS verifier rejects (e.g. macOS refuses self-signed leaf certs valid longer than
-  825 days). Or trust a CA: `tls_ca_file = "ca.pem"`.
+  825 days). It applies to your provider only. Or trust a CA (for every TLS host): `tls_ca_file = "ca.pem"`.
 - Handshake fails against an old FreeSWITCH: Siple speaks TLS 1.2/1.3 with ECDHE suites (rustls). TLS 1.0/1.1 or
   non-ECDHE-only servers are not supported.
 

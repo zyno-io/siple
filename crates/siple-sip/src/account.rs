@@ -33,7 +33,7 @@ use crate::net::{NetProbe, NetService, is_unreachable_io, is_unreachable_text};
 use crate::reg_logic;
 use crate::router::{AccountCtx, HandlerSlot, Router};
 use crate::subscribe::{SubEnv, SubManager};
-use crate::transport::{AccountUdp, client_tls_config, init_crypto, listener_tls_config};
+use crate::transport::{AccountUdp, ClientTls, init_crypto, listener_tls_config};
 use crate::types::{AccountStatus, OptionsResponse, RegState, SipEvent, UpdateOutcome, WireSink};
 use crate::update;
 
@@ -368,6 +368,9 @@ pub(crate) struct Runtime {
     built_for: AccountConfig,
     /// The account is configured with `transport = "auto"`.
     auto: bool,
+    /// Builds the client TLS config (at build, on a network move, and on demand for a UDP / TCP
+    /// account that sends a TLS request).
+    tls: Arc<ClientTls>,
 }
 
 impl Runtime {
@@ -652,13 +655,14 @@ async fn build_inner(
     if trace {
         tl.set_wire_tap(tap.clone());
     }
+    let tls = ClientTls::new(cfg, calls.auth.clone());
     if transport == Transport::Tls {
         let sni = hop_host
             .parse::<IpAddr>()
             .is_err()
             .then_some(hop_host)
             .filter(|h| !h.is_empty());
-        tl.set_tls_config(client_tls_config(cfg, sni, target_sock)?);
+        tl.set_tls_config(tls.config(sni, target_sock)?);
     }
 
     // Listeners. UDP always (it is also the only send socket). TCP/TLS are client-only unless a
@@ -760,6 +764,7 @@ async fn build_inner(
         },
         built_for: cfg.clone(),
         auto: false,
+        tls,
     })
 }
 
@@ -1160,6 +1165,7 @@ impl Actor {
                 public_host: rt.public_host.clone(),
                 stream_gen: rt.stream_gen,
                 listener: rt.local_addr,
+                tls: rt.tls.clone(),
             })
         });
         let mut provider_addrs: Vec<SocketAddr> = Vec::new();
@@ -1846,8 +1852,7 @@ impl Actor {
                 .is_err()
                 .then_some(hop)
                 .filter(|h| !h.is_empty());
-            rt.tl()
-                .set_tls_config(client_tls_config(&cfg, sni, now.target)?);
+            rt.tl().set_tls_config(rt.tls.config(sni, now.target)?);
         }
         if let Some((addr, tok, conn, sock)) = moved {
             let old_addr = rt.local_addr;
@@ -2679,10 +2684,13 @@ impl Actor {
                     .rt
                     .as_ref()
                     .map_or(self.cfg.transport, |r| r.built_for.transport);
+                let tls = self.rt.as_ref().map(|r| r.tls.clone());
                 tokio::spawn(async move {
-                    let res = match client {
+                    let res = match client.zip(tls) {
                         None => Err(SipError::Transport("account is not running".into())),
-                        Some(c) => send_options(&c, dns.as_ref(), transport, &target).await,
+                        Some((c, tls)) => {
+                            send_options(&c, dns.as_ref(), &tls, transport, &target).await
+                        }
                     };
                     let _ = reply.send(res);
                 });
@@ -2765,6 +2773,7 @@ impl Actor {
                 key,
                 dns: self.shared.dns.clone(),
                 transport: rt.built_for.transport,
+                tls: rt.tls.clone(),
             }))
         })();
         self.subs.set_env(env);
@@ -2957,6 +2966,7 @@ impl RegState {
 async fn send_options(
     client: &Client,
     dns: &SystemSrvSource,
+    tls: &ClientTls,
     default_transport: Transport,
     target: &str,
 ) -> Result<OptionsResponse> {
@@ -2964,6 +2974,7 @@ async fn send_options(
     let dest = resolve_destination(
         dns,
         &client.endpoint.transport_layer,
+        tls,
         &uri,
         default_transport,
     )
@@ -2987,13 +2998,20 @@ pub(crate) fn parse_target(t: &str) -> Result<Uri> {
 /// a host name, that name (the URI host, RFC 5922) is registered with `tl` as the TLS server
 /// name of the resolved address, so the connection verifies the certificate against the name
 /// and not the IP. The registrar / outbound-proxy hop keeps its own name (`sni_by_addr` wins).
+/// A TLS destination first makes sure `tl` has a client TLS config (`tls`; installed on demand
+/// for a UDP / TCP account), before any DNS and before the name is registered, which is a no-op
+/// without a config.
 pub(crate) async fn resolve_destination(
     source: &dyn rsipstack::resolver::sip_resolver::LookupSource,
     tl: &rsipstack::transport::TransportLayer,
+    tls: &ClientTls,
     uri: &Uri,
     default: Transport,
 ) -> Result<SipAddr> {
     let (host, port, transport) = uri_destination(uri, default);
+    if transport == Transport::Tls {
+        tls.ensure(tl)?;
+    }
     let addrs = dns::resolve(source, &host, port, transport).await?;
     let addr = addrs
         .first()

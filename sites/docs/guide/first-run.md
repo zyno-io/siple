@@ -59,7 +59,7 @@ use it only as a last resort.
 
 ::: details In config.toml
 **Trust this server** pins the certificate by writing `tls_fingerprint` to the account. **Turn off verification (not
-recommended)** sets `tls_verify = false`, which ignores all certificate errors. You can also trust a certificate authority
+recommended)** sets `tls_verify = false`, which ignores certificate errors of your provider. You can also trust a certificate authority
 with `tls_ca_file`. To get the fingerprint of a PEM file:
 
 ```sh
