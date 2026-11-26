@@ -313,7 +313,7 @@ open their store page. All keys are hot. Guide: [Updates](https://zyno-io.github
 | `install` | `true` | Direct downloads: allow the in-place install. `false` opens the release page and stops an install that has not replaced files yet. |
 | `channel` | unset | Direct downloads: `stable` or `prerelease`. Unset follows the build you run. |
 
-A check runs about 30 seconds after start, then hourly (direct) or daily (stores). Unset `channel` offers release candidates only
+A check runs about 10 seconds after every start, then hourly (direct) or daily (stores). Unset `channel` offers release candidates only
 while you run one. `reset_section updates channel` returns to unset.
 
 ### What an update check sends
@@ -323,7 +323,7 @@ No identifier, account, usage data or cookies. Each host sees your IP address.
 
 | Edition | Request |
 |---|---|
-| Direct download | `https://siple.app/updates/v1/releases.json` about hourly. GitHub's releases API is the fallback when siple.app fails, or a cross-check when it answers. GitHub is asked at most once per 24 hours in total. |
+| Direct download | `https://siple.app/updates/v1/releases.json` about hourly. GitHub is not asked. |
 | Mac App Store | `https://itunes.apple.com/lookup?id=6836164262` about daily. TestFlight sends nothing. |
 | Microsoft Store | No request from Siple. Windows' Store service is asked whether an update is waiting. |
 | Flatpak | Nothing. Flathub updates the app. |

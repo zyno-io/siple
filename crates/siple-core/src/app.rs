@@ -123,7 +123,7 @@ impl AppOptions {
     pub fn use_network_updates(&mut self) {
         #[cfg(not(feature = "store"))]
         {
-            self.update_providers.github = Arc::new(crate::update::FeedFetcher::network());
+            self.update_providers.github = Arc::new(crate::update::SiteFetcher);
             self.update_providers.install =
                 crate::update::install::InstallProviders::native(crate::update::full_version());
         }

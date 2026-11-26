@@ -25,9 +25,9 @@ use super::{FeedSource, UpdateAction, UpdateStatus};
 use crate::events::EventLog;
 use crate::state::StateStore;
 
-/// First check after start (unless one succeeded less than an interval ago).
-pub const INITIAL_DELAY: Duration = Duration::from_secs(30);
-/// Time between checks of the direct-download source (siple.app, with GitHub as the fallback).
+/// First check after start, whatever the last successful check was (every start checks once).
+pub const INITIAL_DELAY: Duration = Duration::from_secs(10);
+/// Time between checks of the direct-download source (siple.app).
 /// A static feed has no rate limit and an unchanged answer is a 304, so this can be short. Each
 /// scheduled check is moved by up to [`JITTER_PERCENT`] so installs do not hit the site in lockstep.
 pub const CHECK_INTERVAL: Duration = Duration::from_secs(3600);
@@ -41,10 +41,9 @@ pub const MIN_MANUAL_INTERVAL: Duration = Duration::from_secs(60);
 /// monotonic sleep does not run while the machine sleeps. Short against the hourly interval, so a
 /// machine that wakes up checks within minutes.
 const MAX_SLEEP: Duration = Duration::from_secs(15 * 60);
-/// Upper bound for any fetcher, whatever it does. A direct-build check can ask siple.app (up to
-/// `SITE_TIMEOUT`, 8 s) and then GitHub (up to `REQUEST_TIMEOUT`, 15 s), so this covers both
-/// requests plus a margin; the site's own shorter timeout is what keeps a hanging site from
-/// starving the GitHub request. The only user is the fetch in `Updater::check`.
+/// Upper bound for any fetcher, whatever it does. A direct-build check asks siple.app (up to
+/// `SITE_TIMEOUT`, 8 s); the store sources have their own request timeouts. This is the backstop
+/// above all of them. The only user is the fetch in `Updater::check`.
 const FETCH_LIMIT: Duration = Duration::from_secs(30);
 /// First retry after a failed check of a source that is checked less often than hourly (the
 /// stores); doubles per failure up to the interval.
@@ -120,7 +119,7 @@ impl std::fmt::Display for FetchError {
     }
 }
 
-/// The network side of the GitHub source; replaced in tests so they never touch the network.
+/// The network side of the direct-download source; replaced in tests so they never touch the network.
 #[cfg(not(feature = "store"))]
 #[async_trait]
 pub trait ReleaseFetcher: Send + Sync {
@@ -129,7 +128,7 @@ pub trait ReleaseFetcher: Send + Sync {
     -> Result<FetchOutcome, FetchError>;
 
     /// Which host answered the last successful [`fetch`](Self::fetch), when the fetcher has
-    /// several (see [`super::FeedFetcher`]).
+    /// several (the site feed always answers as [`FeedSource::Site`]).
     fn answered_by(&self) -> Option<FeedSource> {
         None
     }
@@ -183,7 +182,7 @@ enum SourceData {
     /// Nothing known, or nothing to offer.
     #[default]
     Nothing,
-    /// The GitHub releases list.
+    /// The releases list of the direct-download feed.
     #[cfg(not(feature = "store"))]
     Releases(Vec<Release>),
     /// The App Store listing.
@@ -646,19 +645,15 @@ impl Updater {
         );
     }
 
-    /// The scheduler: first check after the initial delay (right away is not wanted; and not at
-    /// all within an interval of the last successful one), then every interval, and again when the
-    /// settings change. Compares the wall clock, waking at least hourly, so time spent asleep
+    /// The scheduler: first check after the initial delay on every start (right away is not
+    /// wanted, but a recent `checked_at` does not postpone it), then every interval from that
+    /// check, and again when the settings change. A back-off in the state is still honored by the
+    /// check itself. Compares the wall clock, waking at least hourly, so time spent asleep
     /// counts. Runs until `cancel` fires.
     pub async fn run(self: Arc<Self>, cancel: CancellationToken) {
         {
             let now = self.now();
-            let mut st = self.st();
-            let first = match st.checked_at {
-                Some(t) if now - t < delta(self.o.interval) => t + delta(self.o.interval),
-                _ => now + delta(self.o.initial_delay),
-            };
-            st.next_due = Some(first);
+            self.st().next_due = Some(now + delta(self.o.initial_delay));
         }
         let mut was_enabled = (self.o.settings)().check;
         loop {
@@ -1036,14 +1031,14 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
-    async fn scheduler_checks_after_30s_then_daily_and_stops_on_cancel() {
+    async fn scheduler_checks_after_the_initial_delay_then_daily_and_stops_on_cancel() {
         let r = rig("0.1.0");
         for i in 0..3 {
             r.fake.push(Fake::body(&format!("\"e{i}\"")));
         }
         let cancel = CancellationToken::new();
         let h = spawn_updater(r.u.clone(), cancel.clone());
-        tokio::time::sleep(Duration::from_secs(29)).await;
+        tokio::time::sleep(Duration::from_secs(9)).await;
         assert_eq!(r.fake.n(), 0, "nothing before the initial delay");
         tokio::time::sleep(Duration::from_secs(2)).await;
         assert_eq!(r.fake.n(), 1);
@@ -1138,7 +1133,7 @@ mod tests {
         }
         let cancel = CancellationToken::new();
         let h = spawn_updater(r.u.clone(), cancel.clone());
-        tokio::time::sleep(Duration::from_secs(31)).await;
+        tokio::time::sleep(Duration::from_secs(11)).await;
         assert_eq!(r.fake.n(), 1);
         // 23 h later a manual check; the scheduled one must not fire an hour after that.
         tokio::time::sleep(Duration::from_secs(23 * 3600)).await;
@@ -1159,7 +1154,7 @@ mod tests {
         r.fake.push(Fake::body("\"e2\""));
         let cancel = CancellationToken::new();
         let h = spawn_updater(r.u.clone(), cancel.clone());
-        tokio::time::sleep(Duration::from_secs(31)).await;
+        tokio::time::sleep(Duration::from_secs(11)).await;
         assert_eq!(r.fake.n(), 1);
         // The machine sleeps for 25 h: the monotonic clock barely moves, the wall clock does.
         *r.skew.lock().unwrap() = chrono::TimeDelta::hours(25);
@@ -1184,23 +1179,42 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
-    async fn a_recent_persisted_check_delays_the_first_one() {
+    async fn a_recent_persisted_check_does_not_skip_the_startup_check() {
         let dir = tempfile::tempdir().unwrap();
         // First run: up to date (0.2.0 is the newest stable) -> remembered.
         let r = rig_in("0.2.0", Some(dir.path().into()), Arc::new(Fake::default()));
         r.fake.push(Fake::body("\"e1\""));
         r.u.check_now().await;
-        // Restart a little later: no check at 30 s, one when 24 h have passed since.
+        // Restart a little later: still checked once, INITIAL_DELAY after start, and the next
+        // scheduled check an interval after that one.
         let fake = Arc::new(Fake::default());
         fake.push(Fake::body("\"e2\""));
+        fake.push(Fake::body("\"e3\""));
         let r2 = rig_in("0.2.0", Some(dir.path().into()), fake);
         assert!(r2.u.status().checked_at.is_some());
         let cancel = CancellationToken::new();
         let h = spawn_updater(r2.u.clone(), cancel.clone());
-        tokio::time::sleep(Duration::from_secs(120)).await;
-        assert_eq!(r2.fake.n(), 0);
-        tokio::time::sleep(Duration::from_secs(25 * 3600)).await;
+        tokio::time::sleep(INITIAL_DELAY - Duration::from_secs(1)).await;
+        assert_eq!(r2.fake.n(), 0, "not before the initial delay");
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        assert_eq!(r2.fake.n(), 1, "checked despite a recent checked_at");
+        tokio::time::sleep(Duration::from_secs(23 * 3600)).await;
         assert_eq!(r2.fake.n(), 1);
+        tokio::time::sleep(Duration::from_secs(3600)).await;
+        assert_eq!(r2.fake.n(), 2);
+        cancel.cancel();
+        h.await.unwrap();
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn the_startup_check_is_skipped_when_checking_is_off() {
+        let r = rig("0.1.0");
+        r.fake.push(Fake::body("\"e1\""));
+        r.cfg.lock().unwrap().check = false;
+        let cancel = CancellationToken::new();
+        let h = spawn_updater(r.u.clone(), cancel.clone());
+        tokio::time::sleep(INITIAL_DELAY * 3).await;
+        assert_eq!(r.fake.n(), 0);
         cancel.cancel();
         h.await.unwrap();
     }
@@ -1217,11 +1231,11 @@ mod tests {
         let r2 = rig_in("0.1.0", Some(dir.path().into()), fake);
         let cancel = CancellationToken::new();
         let h = spawn_updater(r2.u.clone(), cancel.clone());
-        tokio::time::sleep(Duration::from_secs(40)).await;
+        tokio::time::sleep(Duration::from_secs(20)).await;
         assert_eq!(
             r2.fake.n(),
             1,
-            "no cached list after a restart: checked at 30 s"
+            "no cached list after a restart: checked at the initial delay"
         );
         assert!(r2.u.status().available);
         assert!(
@@ -1237,6 +1251,7 @@ mod tests {
         let r = rig("0.2.0");
         r.fake.push(Fake::body("\"e1\""));
         r.fake.push(Fake::body("\"e2\""));
+        r.fake.push(Fake::body("\"e3\""));
         r.u.check_now().await;
         // The clock was a month fast when that check ran, then NTP corrected it.
         *r.skew.lock().unwrap() = chrono::TimeDelta::days(-30);
@@ -1245,8 +1260,8 @@ mod tests {
         tokio::time::sleep(Duration::from_secs(26 * 3600)).await;
         assert_eq!(
             r.fake.n(),
-            2,
-            "checked within one interval of the corrected clock"
+            3,
+            "the startup check, then one within an interval of the corrected clock"
         );
         cancel.cancel();
         h.await.unwrap();
@@ -1265,11 +1280,11 @@ mod tests {
         let r2 = rig_in("0.2.0", Some(dir.path().into()), fake);
         let cancel = CancellationToken::new();
         let h = spawn_updater(r2.u.clone(), cancel.clone());
-        tokio::time::sleep(Duration::from_secs(120)).await;
+        tokio::time::sleep(Duration::from_secs(2)).await;
         assert_eq!(r2.fake.n(), 0);
         r2.cfg.lock().unwrap().channel = Some(UpdateChannel::Prerelease);
         r2.u.config_changed();
-        tokio::time::sleep(Duration::from_secs(10)).await;
+        tokio::time::sleep(Duration::from_secs(15)).await;
         assert_eq!(r2.fake.n(), 1);
         assert_eq!(r2.u.status().latest.as_deref(), Some("0.4.0"));
         cancel.cancel();
@@ -1285,7 +1300,7 @@ mod tests {
         r.fake.push(Fake::body("\"e1\""));
         let cancel = CancellationToken::new();
         let h = spawn_updater(r.u.clone(), cancel.clone());
-        tokio::time::sleep(Duration::from_secs(31)).await;
+        tokio::time::sleep(Duration::from_secs(11)).await;
         assert_eq!(r.fake.n(), 1);
         r.cfg.lock().unwrap().check = false;
         r.u.config_changed();
@@ -1305,13 +1320,8 @@ mod tests {
         assert!(DEFAULT_BACKOFF.as_secs() <= CHECK_INTERVAL.as_secs());
         assert!(MAX_SLEEP.as_secs() < CHECK_INTERVAL.as_secs());
         assert!(MIN_MANUAL_INTERVAL.as_secs() < RETRY_BASE_FAST.as_secs());
-        // One check may ask the site, then GitHub, one after the other.
-        assert!(
-            FETCH_LIMIT.as_secs()
-                >= crate::update::site::SITE_TIMEOUT.as_secs()
-                    + crate::update::http::REQUEST_TIMEOUT.as_secs()
-                    + 5
-        );
+        // A check asks the site, which gives up after its own shorter timeout.
+        assert!(FETCH_LIMIT.as_secs() > crate::update::site::SITE_TIMEOUT.as_secs());
     };
 
     #[test]
@@ -1445,8 +1455,8 @@ mod tests {
         })
     }
 
-    /// A fetcher that says which host answered, like [`crate::update::FeedFetcher`].
-    struct Via(Arc<Fake>, FeedSource);
+    /// A fetcher that says which host answered, like [`crate::update::SiteFetcher`].
+    struct Via(Arc<Fake>);
 
     #[async_trait]
     impl ReleaseFetcher for Via {
@@ -1454,17 +1464,17 @@ mod tests {
             self.0.fetch(etag, ua).await
         }
         fn answered_by(&self) -> Option<FeedSource> {
-            Some(self.1)
+            Some(FeedSource::Site)
         }
     }
 
     #[tokio::test(start_paused = true)]
-    async fn the_status_names_the_host_that_answered_and_keeps_the_source() {
-        for (feed, name) in [(FeedSource::Site, "site"), (FeedSource::Github, "github")] {
+    async fn the_status_names_the_site_as_the_host_that_answered_and_keeps_the_source() {
+        for (feed, name) in [(FeedSource::Site, "site")] {
             let fake = Arc::new(Fake::default());
             fake.push(Fake::body("\"e1\""));
             fake.push(Ok(FetchOutcome::NotModified));
-            let u = with_interval(Arc::new(Via(fake, feed)), CHECK_INTERVAL);
+            let u = with_interval(Arc::new(Via(fake)), CHECK_INTERVAL);
             assert_eq!(u.status().feed, None, "nothing known before a check");
             let s = u.check_now().await;
             // `source` is the kind of source (direct downloads): the install toggle follows it.
