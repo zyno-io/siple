@@ -35,7 +35,7 @@ use crate::dns::split_host_port;
 use crate::error::SipError;
 use crate::net::{NetProbe, is_unreachable_text};
 use crate::problem::{Context, Problem, classify};
-use crate::transport::{bind_udp, cert_sha256, client_tls_config, init_crypto};
+use crate::transport::{ClientTls, bind_udp, cert_sha256, init_crypto};
 
 /// Longest time an `account.test` may take, and the default.
 pub const TEST_TIMEOUT: Duration = Duration::from_secs(15);
@@ -407,6 +407,8 @@ async fn register_once(
 ) -> Diagnosis {
     let transport = cfg.transport;
     let tl = TransportLayer::new(token.clone());
+    let auth = AuthState::new();
+    auth.update(cfg, Some((cfg, &[target])));
     let mut tls_config = None;
     if transport == Transport::Tls {
         let hop = split_host_port(if cfg.outbound_proxy.is_empty() {
@@ -420,7 +422,7 @@ async fn register_once(
             .is_err()
             .then_some(hop)
             .filter(|h| !h.is_empty());
-        match client_tls_config(cfg, sni, Some(target)) {
+        match ClientTls::new(cfg, auth.clone()).config(sni, Some(target)) {
             Ok(mut t) => {
                 if let Some(inner) = t.verifier.take() {
                     t.verifier = Some(Arc::new(RecordingVerifier {
@@ -478,8 +480,6 @@ async fn register_once(
         };
     };
     let probe_target = SipAddr::new(sip_transport(transport), target.into());
-    let auth = AuthState::new();
-    auth.update(cfg, Some((cfg, &[target])));
     let client = Client {
         endpoint: endpoint.inner.clone(),
         target: Some(probe_target),

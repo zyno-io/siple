@@ -112,6 +112,7 @@ impl CallManager {
         resolve_destination(
             self.dns.as_ref(),
             &rt.endpoint.transport_layer,
+            &rt.tls,
             uri,
             cfg.transport,
         )

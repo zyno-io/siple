@@ -47,7 +47,7 @@ hosts and ports. With no SRV record it uses UDP on port 5060. There is no NAPTR 
   "TLS (auto)".
 - The choice is made when the transport is built and again after each network re-probe. A changed answer rebuilds the
   transport and re-registers. While the account has calls, the transport is kept.
-- With `auto`, `tls_verify`, `tls_ca_file` and `tls_fingerprint` apply only if TLS is picked.
+- With `auto`, `tls_verify`, `tls_ca_file` and `tls_fingerprint` apply to the account's TLS connection when TLS is picked, and to `sips:` / `;transport=tls` requests otherwise.
 :::
 
 ::: details In config.toml

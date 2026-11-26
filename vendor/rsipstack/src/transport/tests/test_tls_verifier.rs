@@ -224,3 +224,28 @@ async fn test_set_tls_config_keeps_learned_names() {
     let sni = tokio::time::timeout(t, pinned_rx).await.unwrap().unwrap();
     assert_eq!(sni.as_deref(), Some("pinned.example"));
 }
+
+// siple: `set_tls_config_if_absent` installs only when no config exists.
+#[tokio::test]
+async fn test_set_tls_config_if_absent_keeps_the_installed_config() {
+    use crate::transport::TransportLayer;
+    use tokio_util::sync::CancellationToken;
+
+    let (srv, srv_rx) = spawn_server().await;
+    let srv_sock: std::net::SocketAddr = srv.addr.clone().try_into().unwrap();
+
+    let tl = TransportLayer::new(CancellationToken::new());
+    assert!(!tl.has_tls_config());
+    assert!(tl.set_tls_config_if_absent(TlsConfig {
+        verifier: Some(Arc::new(AcceptAll)),
+        sni_by_addr: [(srv_sock, "first.example".to_string())].into(),
+        ..Default::default()
+    }));
+    assert!(tl.has_tls_config());
+    assert!(!tl.set_tls_config_if_absent(TlsConfig::default()));
+    // A default config would reject the self-signed certificate.
+    tl.lookup(&srv, None).await.expect("first config kept");
+    let t = std::time::Duration::from_secs(2);
+    let sni = tokio::time::timeout(t, srv_rx).await.unwrap().unwrap();
+    assert_eq!(sni.as_deref(), Some("first.example"));
+}

@@ -47,7 +47,7 @@ with token), the MCP bridge, config handling, the release artifacts and the in-a
 
 Things that are deliberate, documented behaviors rather than vulnerabilities:
 
-- `tls_verify = false` disables certificate checking for that account.
+- `tls_verify = false` disables certificate checking for that account's provider (registrar, outbound proxy, domain, `tls_server_name` and the addresses they resolve to); other TLS hosts are still verified.
 - SIP traces and logs can contain credentials unless `[logging] redact_credentials` and
   `redact_srtp_keys` are enabled (see `docs/CONFIG.md`, "Logs and secrets"). Plaintext account passwords are never logged.
 - Anyone who can already run code as the same OS user can use that user's control socket.

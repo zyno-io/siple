@@ -4,7 +4,7 @@ use std::net::{IpAddr, SocketAddr, UdpSocket as StdUdpSocket};
 use std::sync::Arc;
 
 use ring::digest as ring_digest;
-use rsipstack::transport::TlsConfig;
+use rsipstack::transport::{TlsConfig, TransportLayer};
 use rustls::DigitallySignedStruct;
 use rustls::SignatureScheme;
 use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
@@ -13,6 +13,7 @@ use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
 use siple_config::AccountConfig;
 use socket2::{Domain, Protocol, Socket, Type};
 
+use crate::authz::{AuthState, Endpoint};
 use crate::error::{Result, SipError};
 
 /// Installs the `ring` rustls crypto provider as the process default. Idempotent; rsipstack's
@@ -192,8 +193,8 @@ fn set_exclusive_addr_use(socket: &Socket) -> std::io::Result<()> {
     }
 }
 
-/// `tls_verify = false`: accepts any server certificate (signatures are still checked
-/// structurally by the provider).
+/// `tls_verify = false`, for the account's provider only ([`ScopedVerifier`]): accepts any
+/// server certificate (signatures are still checked structurally by the provider).
 #[derive(Debug)]
 pub struct AcceptAllVerifier(Arc<CryptoProvider>);
 
@@ -220,6 +221,48 @@ impl ServerCertVerifier for AcceptAllVerifier {
         _now: UnixTime,
     ) -> std::result::Result<ServerCertVerified, rustls::Error> {
         Ok(ServerCertVerified::assertion())
+    }
+
+    fn verify_tls12_signature(
+        &self,
+        m: &[u8],
+        c: &CertificateDer<'_>,
+        d: &DigitallySignedStruct,
+    ) -> std::result::Result<HandshakeSignatureValid, rustls::Error> {
+        rustls::crypto::verify_tls12_signature(m, c, d, &self.0.signature_verification_algorithms)
+    }
+
+    fn verify_tls13_signature(
+        &self,
+        m: &[u8],
+        c: &CertificateDer<'_>,
+        d: &DigitallySignedStruct,
+    ) -> std::result::Result<HandshakeSignatureValid, rustls::Error> {
+        rustls::crypto::verify_tls13_signature(m, c, d, &self.0.signature_verification_algorithms)
+    }
+
+    fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
+        self.0.signature_verification_algorithms.supported_schemes()
+    }
+}
+
+/// Refuses every server certificate: the verifier for non-provider hosts when no CA roots can be
+/// loaded (see [`make_verifier`]), so the provider's pin / no-verify still works.
+#[derive(Debug)]
+struct DenyAllVerifier(Arc<CryptoProvider>);
+
+impl ServerCertVerifier for DenyAllVerifier {
+    fn verify_server_cert(
+        &self,
+        _end_entity: &CertificateDer<'_>,
+        _intermediates: &[CertificateDer<'_>],
+        _server_name: &ServerName<'_>,
+        _ocsp: &[u8],
+        _now: UnixTime,
+    ) -> std::result::Result<ServerCertVerified, rustls::Error> {
+        Err(rustls::Error::InvalidCertificate(
+            rustls::CertificateError::UnknownIssuer,
+        ))
     }
 
     fn verify_tls12_signature(
@@ -334,27 +377,132 @@ pub fn read_pem_certs(path: &str) -> Result<Vec<CertificateDer<'static>>> {
         .map_err(|e| SipError::Tls(format!("{path}: {e}")))
 }
 
-/// Server certificate verifier for an account. Precedence:
-/// 1. `tls_fingerprint` set: pin exactly that leaf certificate ([`FingerprintVerifier`]);
-/// 2. `tls_verify = false`: accept-all;
-/// 3. otherwise the OS verifier (`rustls-platform-verifier`) plus the extra roots from
-///    `tls_ca_file`. Platform verifiers take extra roots natively, which also works for
-///    self-signed `CA:TRUE` PBX certificates that plain webpki would reject
-///    (`CaUsedAsEndEntity`).
-///
-/// Caveat: the macOS platform verifier enforces Apple's certificate policy even for roots
-/// supplied through `tls_ca_file`; a self-signed CA whose validity exceeds 825 days is rejected
-/// ("not standards compliant", -67901). Use `tls_fingerprint` for such certificates.
-pub fn make_verifier(cfg: &AccountConfig) -> Result<Arc<dyn ServerCertVerifier>> {
-    if !cfg.tls_fingerprint.is_empty() {
-        let fp = siple_config::parse_fingerprint(&cfg.tls_fingerprint)
-            .ok_or_else(|| SipError::Tls("tls_fingerprint is not a SHA-256 hex digest".into()))?;
-        return Ok(Arc::new(FingerprintVerifier::new(fp)));
+/// Which TLS server names belong to the account's provider: the registrar, outbound proxy,
+/// `domain`, `tls_server_name` and their addresses. `tls_fingerprint` and `tls_verify = false`
+/// apply to these only.
+#[derive(Clone)]
+pub(crate) struct TlsScope {
+    /// Hosts of the runtime's config (what its hop connection is verified under).
+    hosts: Vec<String>,
+    /// Live provider description: current `domain` / proxy / registrar and resolved addresses.
+    auth: Arc<AuthState>,
+}
+
+impl TlsScope {
+    /// Scope of the transport built for `cfg`.
+    pub(crate) fn new(cfg: &AccountConfig, auth: Arc<AuthState>) -> Self {
+        let mut hosts: Vec<String> = Vec::new();
+        for s in [
+            cfg.tls_server_name.as_str(),
+            cfg.outbound_proxy.as_str(),
+            cfg.effective_registrar(),
+        ] {
+            // rustls verifies DNS names without their trailing dot.
+            if let Some(e) = Endpoint::parse(s)
+                && let h = e.host.trim_end_matches('.')
+                && !h.is_empty()
+                && !hosts.iter().any(|x| x == h)
+            {
+                hosts.push(h.to_string());
+            }
+        }
+        Self { hosts, auth }
     }
-    if !cfg.tls_verify {
-        tracing::warn!(account = %cfg.id, "TLS certificate verification is DISABLED (tls_verify = false)");
-        return Ok(Arc::new(AcceptAllVerifier::new()));
+
+    /// Whether a connection verified under `name` is to the provider.
+    pub(crate) fn contains(&self, name: &ServerName<'_>) -> bool {
+        match name {
+            ServerName::DnsName(d) => {
+                let n = d.as_ref().trim_end_matches('.').to_ascii_lowercase();
+                self.hosts.contains(&n) || self.auth.is_provider_name(&n)
+            }
+            ServerName::IpAddress(ip) => {
+                let ip = IpAddr::from(*ip).to_canonical();
+                self.hosts
+                    .iter()
+                    .any(|h| h.parse::<IpAddr>().is_ok_and(|x| x.to_canonical() == ip))
+                    || self.auth.is_provider_ip(ip)
+            }
+            _ => false,
+        }
     }
+}
+
+/// Verifier that applies the account's pin / accept-all (`provider`) to the provider's server
+/// names and the OS verifier plus `tls_ca_file` (`others`) to every other name.
+struct ScopedVerifier {
+    scope: TlsScope,
+    provider: Arc<dyn ServerCertVerifier>,
+    others: Arc<dyn ServerCertVerifier>,
+    crypto: Arc<CryptoProvider>,
+}
+
+impl std::fmt::Debug for ScopedVerifier {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ScopedVerifier")
+            .field("hosts", &self.scope.hosts)
+            .finish_non_exhaustive()
+    }
+}
+
+impl ServerCertVerifier for ScopedVerifier {
+    fn verify_server_cert(
+        &self,
+        end_entity: &CertificateDer<'_>,
+        intermediates: &[CertificateDer<'_>],
+        server_name: &ServerName<'_>,
+        ocsp: &[u8],
+        now: UnixTime,
+    ) -> std::result::Result<ServerCertVerified, rustls::Error> {
+        let provider = self.scope.contains(server_name);
+        tracing::debug!(name = ?server_name, provider, "TLS certificate check");
+        let v = if provider {
+            &self.provider
+        } else {
+            &self.others
+        };
+        v.verify_server_cert(end_entity, intermediates, server_name, ocsp, now)
+    }
+
+    fn verify_tls12_signature(
+        &self,
+        m: &[u8],
+        c: &CertificateDer<'_>,
+        d: &DigitallySignedStruct,
+    ) -> std::result::Result<HandshakeSignatureValid, rustls::Error> {
+        rustls::crypto::verify_tls12_signature(
+            m,
+            c,
+            d,
+            &self.crypto.signature_verification_algorithms,
+        )
+    }
+
+    fn verify_tls13_signature(
+        &self,
+        m: &[u8],
+        c: &CertificateDer<'_>,
+        d: &DigitallySignedStruct,
+    ) -> std::result::Result<HandshakeSignatureValid, rustls::Error> {
+        rustls::crypto::verify_tls13_signature(
+            m,
+            c,
+            d,
+            &self.crypto.signature_verification_algorithms,
+        )
+    }
+
+    fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
+        self.crypto
+            .signature_verification_algorithms
+            .supported_schemes()
+    }
+}
+
+/// The OS verifier (`rustls-platform-verifier`) plus the extra roots from `tls_ca_file`.
+/// Platform verifiers take extra roots natively, which also works for self-signed `CA:TRUE` PBX
+/// certificates that plain webpki would reject (`CaUsedAsEndEntity`).
+fn os_verifier(cfg: &AccountConfig) -> Result<Arc<dyn ServerCertVerifier>> {
     let extra = if cfg.tls_ca_file.is_empty() {
         Vec::new()
     } else {
@@ -369,14 +517,78 @@ pub fn make_verifier(cfg: &AccountConfig) -> Result<Arc<dyn ServerCertVerifier>>
     Ok(Arc::new(v))
 }
 
+/// Server certificate verifier for an account, decided per server name. For the provider
+/// (`scope`):
+/// 1. `tls_fingerprint` set: pin exactly that leaf certificate ([`FingerprintVerifier`]);
+/// 2. `tls_verify = false`: accept-all.
+///
+/// Every other name, and the provider when neither is set, gets the OS verifier plus the extra
+/// roots from `tls_ca_file`. A bad `tls_ca_file` is an error, except when a pin / no-verify
+/// setting exists: then only non-provider hosts lose the extra roots.
+///
+/// Caveat: the macOS platform verifier enforces Apple's certificate policy even for roots
+/// supplied through `tls_ca_file`; a self-signed CA whose validity exceeds 825 days is rejected
+/// ("not standards compliant", -67901). Use `tls_fingerprint` for such certificates.
+pub(crate) fn make_verifier(
+    cfg: &AccountConfig,
+    scope: TlsScope,
+) -> Result<Arc<dyn ServerCertVerifier>> {
+    let provider: Arc<dyn ServerCertVerifier> = if !cfg.tls_fingerprint.is_empty() {
+        let fp = siple_config::parse_fingerprint(&cfg.tls_fingerprint)
+            .ok_or_else(|| SipError::Tls("tls_fingerprint is not a SHA-256 hex digest".into()))?;
+        Arc::new(FingerprintVerifier::new(fp))
+    } else if !cfg.tls_verify {
+        tracing::warn!(
+            account = %cfg.id,
+            "TLS certificate verification is DISABLED for the provider (tls_verify = false); \
+             other TLS hosts are verified"
+        );
+        Arc::new(AcceptAllVerifier::new())
+    } else {
+        return os_verifier(cfg);
+    };
+    // The provider's pin / no-verify must keep working when the other hosts' verifier cannot be
+    // built (unreadable `tls_ca_file`, or no OS roots at all: Linux without ca-certificates).
+    let others: Arc<dyn ServerCertVerifier> = match os_verifier(cfg) {
+        Ok(v) => v,
+        Err(e) => match (
+            cfg.tls_ca_file.is_empty(),
+            rustls_platform_verifier::Verifier::new(ring()),
+        ) {
+            (false, Ok(v)) => {
+                tracing::warn!(
+                    account = %cfg.id, error = %e,
+                    "tls_ca_file unusable; TLS hosts other than the provider are checked \
+                     against the OS roots only"
+                );
+                Arc::new(v)
+            }
+            _ => {
+                tracing::warn!(
+                    account = %cfg.id, error = %e,
+                    "no usable CA roots; TLS hosts other than the provider are refused"
+                );
+                Arc::new(DenyAllVerifier(ring()))
+            }
+        },
+    };
+    Ok(Arc::new(ScopedVerifier {
+        scope,
+        provider,
+        others,
+        crypto: ring(),
+    }))
+}
+
 /// Client-side TLS settings for the transport layer. The server name for SNI and verification
 /// applies only to the registrar / outbound-proxy connection (`hop`, its resolved address):
 /// `tls_server_name` if set, else `default_sni` (the hop host when it is a name). Every other
 /// destination uses its own host name (see SIPLE_PATCHES.md, `sni_by_addr`).
-pub fn client_tls_config(
+pub(crate) fn client_tls_config(
     cfg: &AccountConfig,
     default_sni: Option<String>,
     hop: Option<SocketAddr>,
+    scope: TlsScope,
 ) -> Result<TlsConfig> {
     let sni = if cfg.tls_server_name.is_empty() {
         default_sni
@@ -384,7 +596,7 @@ pub fn client_tls_config(
         Some(cfg.tls_server_name.clone())
     };
     let mut tls = TlsConfig {
-        verifier: Some(make_verifier(cfg)?),
+        verifier: Some(make_verifier(cfg, scope)?),
         ..Default::default()
     };
     if let Some(addr) = hop {
@@ -398,6 +610,51 @@ pub fn client_tls_config(
         tls.client_key = Some(read_file(&cfg.tls_key)?);
     }
     Ok(tls)
+}
+
+/// Builds an account's client TLS config, also on demand: a UDP / TCP account gets one the first
+/// time Siple sends a TLS request (`sips:` / `;transport=tls`), so bad `tls_*` settings fail
+/// only TLS requests.
+pub(crate) struct ClientTls {
+    /// The config the runtime was built for.
+    cfg: AccountConfig,
+    auth: Arc<AuthState>,
+}
+
+impl ClientTls {
+    pub(crate) fn new(cfg: &AccountConfig, auth: Arc<AuthState>) -> Arc<Self> {
+        Arc::new(Self {
+            cfg: cfg.clone(),
+            auth,
+        })
+    }
+
+    /// The TLS config ([`client_tls_config`]) for the runtime's settings.
+    pub(crate) fn config(
+        &self,
+        default_sni: Option<String>,
+        hop: Option<SocketAddr>,
+    ) -> Result<TlsConfig> {
+        client_tls_config(
+            &self.cfg,
+            default_sni,
+            hop,
+            TlsScope::new(&self.cfg, self.auth.clone()),
+        )
+    }
+
+    /// Installs a config on `tl` unless it has one. A failure is not remembered: the next TLS
+    /// request retries.
+    pub(crate) fn ensure(&self, tl: &TransportLayer) -> Result<()> {
+        if tl.has_tls_config() {
+            return Ok(());
+        }
+        let t = self.config(None, None)?;
+        if tl.set_tls_config_if_absent(t) {
+            tracing::debug!(account = %self.cfg.id, "client TLS config installed on demand");
+        }
+        Ok(())
+    }
 }
 
 fn read_file(path: &str) -> Result<Vec<u8>> {
@@ -461,6 +718,10 @@ mod tests {
         assert!(bind_udp(addr).is_err());
     }
 
+    fn scope(cfg: &AccountConfig) -> TlsScope {
+        TlsScope::new(cfg, AuthState::new())
+    }
+
     #[test]
     fn verifier_selection() {
         init_crypto();
@@ -468,12 +729,169 @@ mod tests {
             id: "t".into(),
             ..Default::default()
         };
-        assert!(make_verifier(&cfg).is_ok(), "platform verifier");
+        assert!(
+            make_verifier(&cfg, scope(&cfg)).is_ok(),
+            "platform verifier"
+        );
         cfg.tls_verify = false;
-        assert!(make_verifier(&cfg).is_ok(), "accept-all");
+        assert!(make_verifier(&cfg, scope(&cfg)).is_ok(), "accept-all");
         cfg.tls_verify = true;
         cfg.tls_ca_file = "/nonexistent/ca.pem".into();
-        assert!(matches!(make_verifier(&cfg), Err(SipError::Tls(_))));
+        assert!(matches!(
+            make_verifier(&cfg, scope(&cfg)),
+            Err(SipError::Tls(_))
+        ));
+    }
+
+    /// A self-signed leaf certificate (DER) and its pin as hex.
+    fn leaf() -> (CertificateDer<'static>, String) {
+        let (pem, _) = self_signed("127.0.0.1".parse().unwrap()).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("c.pem");
+        std::fs::write(&path, pem).unwrap();
+        let cert = read_pem_certs(path.to_str().unwrap()).unwrap().remove(0);
+        let hex = cert_sha256(&cert)
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect::<String>();
+        (cert, hex)
+    }
+
+    fn verifies(v: &Arc<dyn ServerCertVerifier>, cert: &CertificateDer<'_>, name: &str) -> bool {
+        let name = ServerName::try_from(name.to_string()).unwrap();
+        v.verify_server_cert(cert, &[], &name, &[], UnixTime::now())
+            .is_ok()
+    }
+
+    #[test]
+    fn scoped_verifier_applies_pin_to_provider_names_only() {
+        init_crypto();
+        let (cert, hex) = leaf();
+        let cfg = AccountConfig {
+            id: "t".into(),
+            domain: "pbx.example.com".into(),
+            tls_server_name: "sni.example.com".into(),
+            tls_fingerprint: hex,
+            ..Default::default()
+        };
+        let auth = AuthState::new();
+        let resolved: SocketAddr = "192.0.2.7:5061".parse().unwrap();
+        auth.update(&cfg, Some((&cfg, &[resolved])));
+        let v = make_verifier(&cfg, TlsScope::new(&cfg, auth.clone())).unwrap();
+        for n in [
+            "pbx.example.com",
+            "PBX.Example.COM",
+            "pbx.example.com.",
+            "sni.example.com",
+            "192.0.2.7",
+        ] {
+            assert!(verifies(&v, &cert, n), "{n} is the provider");
+        }
+        for n in ["other.example", "192.0.2.8"] {
+            assert!(!verifies(&v, &cert, n), "{n} is not the provider");
+        }
+        // `auth_foreign` does not widen the scope.
+        let foreign = AccountConfig {
+            auth_foreign: true,
+            ..cfg.clone()
+        };
+        auth.update(&foreign, None);
+        assert!(!verifies(&v, &cert, "other.example"));
+        // A hot `domain` change is in scope live.
+        let moved = AccountConfig {
+            domain: "new.example.com".into(),
+            ..cfg.clone()
+        };
+        assert!(!verifies(&v, &cert, "new.example.com"));
+        auth.update(&moved, None);
+        assert!(verifies(&v, &cert, "new.example.com"));
+        // Configured hosts with a trailing dot match the dot-less name rustls verifies.
+        let dotted = AccountConfig {
+            domain: "dot.example.com.".into(),
+            registrar: "reg.example.com.:5061".into(),
+            ..cfg.clone()
+        };
+        let dauth = AuthState::new();
+        dauth.update(&dotted, None);
+        let dv = make_verifier(&dotted, TlsScope::new(&dotted, dauth)).unwrap();
+        for n in ["dot.example.com", "reg.example.com"] {
+            assert!(verifies(&dv, &cert, n), "{n} is the provider");
+        }
+    }
+
+    #[test]
+    fn deny_all_refuses_and_keeps_signatures() {
+        init_crypto();
+        let (cert, _) = leaf();
+        let v: Arc<dyn ServerCertVerifier> = Arc::new(DenyAllVerifier(ring()));
+        assert!(!verifies(&v, &cert, "other.example"));
+        assert!(!v.supported_verify_schemes().is_empty());
+    }
+
+    #[test]
+    fn accept_all_is_provider_only() {
+        init_crypto();
+        let (cert, _) = leaf();
+        let cfg = AccountConfig {
+            id: "t".into(),
+            registrar: "pbx.example.com:5061".into(),
+            tls_verify: false,
+            ..Default::default()
+        };
+        let v = make_verifier(&cfg, scope(&cfg)).unwrap();
+        assert!(verifies(&v, &cert, "pbx.example.com"));
+        assert!(!verifies(&v, &cert, "other.example"));
+    }
+
+    #[test]
+    fn bad_ca_file_is_soft_with_pin_or_no_verify_and_fatal_otherwise() {
+        init_crypto();
+        let path = "/nonexistent/ca.pem";
+        let mut cfg = AccountConfig {
+            id: "t".into(),
+            tls_ca_file: path.into(),
+            tls_verify: false,
+            ..Default::default()
+        };
+        assert!(make_verifier(&cfg, scope(&cfg)).is_ok(), "no-verify");
+        cfg.tls_verify = true;
+        cfg.tls_fingerprint = "00".repeat(32);
+        assert!(make_verifier(&cfg, scope(&cfg)).is_ok(), "pin");
+        cfg.tls_fingerprint.clear();
+        let Err(SipError::Tls(m)) = make_verifier(&cfg, scope(&cfg)) else {
+            panic!("a bad tls_ca_file is fatal without a pin");
+        };
+        assert!(m.contains(path), "{m}");
+        cfg.tls_fingerprint = "nope".into();
+        assert!(matches!(
+            make_verifier(&cfg, scope(&cfg)),
+            Err(SipError::Tls(_))
+        ));
+    }
+
+    #[tokio::test]
+    async fn client_tls_ensure_installs_once() {
+        use rsipstack::transport::TransportLayer;
+        init_crypto();
+        let cfg = AccountConfig {
+            id: "t".into(),
+            ..Default::default()
+        };
+        let tl = TransportLayer::new(tokio_util::sync::CancellationToken::new());
+        let tls = ClientTls::new(&cfg, AuthState::new());
+        assert!(!tl.has_tls_config());
+        tls.ensure(&tl).unwrap();
+        assert!(tl.has_tls_config());
+        tls.ensure(&tl).unwrap();
+
+        let bad = AccountConfig {
+            tls_ca_file: "/nonexistent/ca.pem".into(),
+            ..cfg
+        };
+        let tl = TransportLayer::new(tokio_util::sync::CancellationToken::new());
+        let tls = ClientTls::new(&bad, AuthState::new());
+        assert!(matches!(tls.ensure(&tl), Err(SipError::Tls(_))));
+        assert!(!tl.has_tls_config(), "a failure installs nothing");
     }
 
     #[test]
@@ -490,7 +908,7 @@ mod tests {
             ..Default::default()
         };
         assert!(
-            make_verifier(&cfg).is_ok(),
+            make_verifier(&cfg, scope(&cfg)).is_ok(),
             "platform verifier with extra roots"
         );
         std::fs::write(&path, "not a pem").unwrap();
@@ -517,7 +935,7 @@ mod tests {
             ..Default::default()
         };
         let sni = |cfg: &AccountConfig, d: Option<&str>, h: Option<SocketAddr>| {
-            let t = client_tls_config(cfg, d.map(Into::into), h).unwrap();
+            let t = client_tls_config(cfg, d.map(Into::into), h, scope(cfg)).unwrap();
             assert!(t.sni_hostname.is_none(), "no layer-wide SNI");
             t.sni_by_addr.get(&hop).cloned()
         };
@@ -526,7 +944,8 @@ mod tests {
             Some("pbx.example")
         );
         // Not for any other destination.
-        let t = client_tls_config(&cfg, Some("pbx.example".into()), Some(hop)).unwrap();
+        let t =
+            client_tls_config(&cfg, Some("pbx.example".into()), Some(hop), scope(&cfg)).unwrap();
         assert!(
             !t.sni_by_addr
                 .contains_key(&"192.0.2.2:5061".parse().unwrap())
@@ -559,9 +978,10 @@ mod tests {
             .join(":");
         let cfg = AccountConfig {
             tls_fingerprint: hex,
+            registrar: "whatever.example".into(),
             ..Default::default()
         };
-        let v = make_verifier(&cfg).unwrap();
+        let v = make_verifier(&cfg, scope(&cfg)).unwrap();
         let name = ServerName::try_from("whatever.example").unwrap();
         let now = UnixTime::now();
         assert!(v.verify_server_cert(&cert, &[], &name, &[], now).is_ok());

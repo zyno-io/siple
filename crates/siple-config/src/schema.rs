@@ -1080,15 +1080,18 @@ pub struct AccountConfig {
     pub keepalive_fail_threshold: u32,
     /// Use a `sips:` Contact on TLS instead of `sip:...;transport=tls`.
     pub use_sips_uri: bool,
-    /// Verify the server certificate (OS roots + `tls_ca_file`); false ignores errors.
+    /// Verify the provider's certificate (OS roots + `tls_ca_file`); false ignores its errors.
+    /// Other TLS hosts are always verified.
     pub tls_verify: bool,
-    /// PEM file with extra trusted CA certificates.
+    /// PEM file with extra trusted CA certificates, for every TLS host that the provider's
+    /// `tls_fingerprint` / `tls_verify = false` does not cover.
     pub tls_ca_file: String,
     /// TLS server name override for SNI and verification.
     pub tls_server_name: String,
-    /// Pin the server's leaf certificate: SHA-256 of its DER as hex (colons optional). When set,
-    /// exactly that certificate is accepted regardless of chain, expiry or name (handshake
-    /// signatures are still checked); `tls_verify` / `tls_ca_file` are not consulted.
+    /// Pin the provider's leaf certificate: SHA-256 of its DER as hex (colons optional). When
+    /// set, exactly that certificate is accepted for the provider regardless of chain, expiry or
+    /// name (handshake signatures are still checked); `tls_verify` is not consulted. Other TLS
+    /// hosts are verified as usual.
     pub tls_fingerprint: String,
     /// PEM certificate for the inbound TLS listener and client auth; empty = self-signed.
     pub tls_cert: String,

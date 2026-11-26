@@ -33,6 +33,7 @@ use crate::client::{Client, build_contact};
 use crate::dns::SystemSrvSource;
 use crate::error::{Result, SipError};
 use crate::mwi::{MwiStatus, status_from_body};
+use crate::transport::ClientTls;
 use crate::types::SipEvent;
 
 /// Fraction of the granted lifetime after which a subscription is refreshed.
@@ -308,6 +309,8 @@ pub(crate) struct SubEnv {
     pub key: String,
     pub dns: Arc<SystemSrvSource>,
     pub transport: Transport,
+    /// Client TLS config builder of the account (on-demand install for UDP / TCP accounts).
+    pub tls: Arc<ClientTls>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -1503,6 +1506,7 @@ impl SubTask {
         resolve_destination(
             env.dns.as_ref(),
             &env.client.endpoint.transport_layer,
+            &env.tls,
             target,
             env.transport,
         )
@@ -1540,14 +1544,12 @@ impl SubTask {
         client.cred = self.mgr.calls.credential();
         let dest = self.dest_for(env, &snap.target).await?;
         let (_conn, adv) = client.flow(&dest).await?;
-        let contact = env.contact.clone().unwrap_or_else(|| {
-            build_contact(
-                &client.user,
-                adv.addr.clone(),
-                client.transport,
-                client.use_sips,
-            )
-        });
+        // The registered Contact only fits requests over the account's own transport.
+        let dest_t = dest.r#type.unwrap_or(client.transport);
+        let contact = match env.contact.clone() {
+            Some(c) if dest_t == client.transport => c,
+            _ => build_contact(&client.user, adv.addr.clone(), dest_t, client.use_sips),
+        };
         let via = client.endpoint.get_via(Some(adv), None)?;
         let from = sip::typed::From {
             display_name: (!client.display_name.is_empty()).then(|| client.display_name.clone()),

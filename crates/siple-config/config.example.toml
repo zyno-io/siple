@@ -150,11 +150,12 @@ keepalive_secs = 30                   # 0 = off
 keepalive_method = "crlf"             # crlf | options
 keepalive_fail_threshold = 2          # options only: consecutive unanswered keep-alives that mark the flow dead; 0 = never, max 20
 use_sips_uri = false                  # sips: Contact on TLS
-tls_verify = true                     # set false to ignore certificate errors
-tls_ca_file = ""                      # extra trusted CAs (PEM)
+tls_verify = true                     # set false to ignore certificate errors of the provider only
+tls_ca_file = ""                      # extra trusted CAs (PEM), for hosts the pin / tls_verify=false do not cover
 tls_server_name = ""                  # SNI/verification name override (registrar/proxy only)
-tls_fingerprint = ""                  # pin the server leaf cert: sha256 hex of its DER (colons optional);
-                                      # accepted regardless of chain/expiry/name. Use for self-signed PBX
+tls_fingerprint = ""                  # pin the provider's leaf cert: sha256 hex of its DER (colons optional);
+                                      # accepted regardless of chain/expiry/name (other hosts: verified as
+                                      # usual). Use for self-signed PBX
                                       # certs the OS verifier rejects (e.g. macOS: >825-day validity).
                                       # openssl x509 -in pbx.pem -noout -fingerprint -sha256
 tls_cert = ""                         # listener/client cert (PEM); "" = self-signed
