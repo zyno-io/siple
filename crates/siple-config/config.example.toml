@@ -188,7 +188,7 @@ accept_refer = true
 attended_refer_target = "aor"         # aor | contact
 attended_refer_on = "original"        # original | consult
 mwi = "subscribe"                     # subscribe | unsolicited | off
-mwi_uri = ""                          # "" = own AOR
+mwi_uri = ""                          # "" = own AOR (none when register = false)
 blf_expires = 600
 # pickup = "off"                      # directed pickup of ringing BLF extensions: off | prefix | replaces (experimental)
 # pickup_prefix = "**"                # feature code dialed before the extension with pickup = "prefix"

@@ -160,3 +160,67 @@ async fn test_sni_by_addr_applies_only_to_listed_destination() {
     let sni = tokio::time::timeout(t, other_rx).await.unwrap().unwrap();
     assert_eq!(sni, None);
 }
+
+// siple: `set_sni_for` names a resolved address, never overrides `sni_by_addr`, and the latest
+// name wins.
+#[tokio::test]
+async fn test_set_sni_for_learns_names_but_not_over_sni_by_addr() {
+    use crate::transport::TransportLayer;
+    use tokio_util::sync::CancellationToken;
+
+    let (listed, listed_rx) = spawn_server().await;
+    let (learned, learned_rx) = spawn_server().await;
+    let listed_sock: std::net::SocketAddr = listed.addr.clone().try_into().unwrap();
+    let learned_sock: std::net::SocketAddr = learned.addr.clone().try_into().unwrap();
+
+    let tl = TransportLayer::new(CancellationToken::new());
+    // No TLS config: a no-op, not a panic.
+    tl.set_sni_for(learned_sock, "ignored.example".into());
+    tl.set_tls_config(TlsConfig {
+        verifier: Some(Arc::new(AcceptAll)),
+        sni_by_addr: [(listed_sock, "pinned.example".to_string())].into(),
+        ..Default::default()
+    });
+    tl.set_sni_for(listed_sock, "learned.example".into());
+    tl.set_sni_for(learned_sock, "old.example".into());
+    tl.set_sni_for(learned_sock, "new.example".into());
+    tl.lookup(&listed, None).await.expect("listed connects");
+    tl.lookup(&learned, None).await.expect("learned connects");
+    let t = std::time::Duration::from_secs(2);
+    let sni = tokio::time::timeout(t, listed_rx).await.unwrap().unwrap();
+    assert_eq!(sni.as_deref(), Some("pinned.example"));
+    let sni = tokio::time::timeout(t, learned_rx).await.unwrap().unwrap();
+    assert_eq!(sni.as_deref(), Some("new.example"));
+}
+
+// siple: replacing the TLS config keeps learned names; the new `sni_by_addr` still wins.
+#[tokio::test]
+async fn test_set_tls_config_keeps_learned_names() {
+    use crate::transport::TransportLayer;
+    use tokio_util::sync::CancellationToken;
+
+    let (kept, kept_rx) = spawn_server().await;
+    let (pinned, pinned_rx) = spawn_server().await;
+    let kept_sock: std::net::SocketAddr = kept.addr.clone().try_into().unwrap();
+    let pinned_sock: std::net::SocketAddr = pinned.addr.clone().try_into().unwrap();
+
+    let tl = TransportLayer::new(CancellationToken::new());
+    let base = || TlsConfig {
+        verifier: Some(Arc::new(AcceptAll)),
+        ..Default::default()
+    };
+    tl.set_tls_config(base());
+    tl.set_sni_for(kept_sock, "kept.example".into());
+    tl.set_sni_for(pinned_sock, "learned.example".into());
+    tl.set_tls_config(TlsConfig {
+        sni_by_addr: [(pinned_sock, "pinned.example".to_string())].into(),
+        ..base()
+    });
+    tl.lookup(&kept, None).await.expect("kept connects");
+    tl.lookup(&pinned, None).await.expect("pinned connects");
+    let t = std::time::Duration::from_secs(2);
+    let sni = tokio::time::timeout(t, kept_rx).await.unwrap().unwrap();
+    assert_eq!(sni.as_deref(), Some("kept.example"));
+    let sni = tokio::time::timeout(t, pinned_rx).await.unwrap().unwrap();
+    assert_eq!(sni.as_deref(), Some("pinned.example"));
+}

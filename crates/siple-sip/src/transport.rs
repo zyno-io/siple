@@ -387,8 +387,11 @@ pub fn client_tls_config(
         verifier: Some(make_verifier(cfg)?),
         ..Default::default()
     };
-    if let (Some(addr), Some(sni)) = (hop, sni) {
-        tls.sni_by_addr.insert(addr, sni);
+    if let Some(addr) = hop {
+        // No name (IP-literal registrar): pin the IP itself, which is what is verified then,
+        // so a name learned for another request to this address cannot replace it.
+        tls.sni_by_addr
+            .insert(addr, sni.unwrap_or_else(|| addr.ip().to_string()));
     }
     if !cfg.tls_cert.is_empty() && !cfg.tls_key.is_empty() {
         tls.client_cert = Some(read_file(&cfg.tls_cert)?);
@@ -535,6 +538,9 @@ mod tests {
         );
         assert_eq!(sni(&cfg, None, Some(hop)).as_deref(), Some("other.example"));
         assert_eq!(sni(&cfg, None, None), None);
+        // An IP-literal hop without a name is pinned to its IP (nothing can be learned for it).
+        cfg.tls_server_name.clear();
+        assert_eq!(sni(&cfg, None, Some(hop)).as_deref(), Some("192.0.2.1"));
     }
 
     #[test]

@@ -1156,7 +1156,8 @@ pub struct AccountConfig {
     pub attended_refer_on: AttendedReferOn,
     /// Message-waiting handling.
     pub mwi: MwiMode,
-    /// URI to subscribe `message-summary` on; empty = own AOR.
+    /// URI to subscribe `message-summary` on; empty = own AOR (peer mode, `register = false`:
+    /// no subscription).
     pub mwi_uri: String,
     /// Requested expiry of BLF subscriptions, in seconds.
     pub blf_expires: u32,

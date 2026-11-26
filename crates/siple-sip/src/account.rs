@@ -2961,9 +2961,13 @@ async fn send_options(
     target: &str,
 ) -> Result<OptionsResponse> {
     let uri = parse_target(target)?;
-    let (host, port, transport) = uri_destination(&uri, default_transport);
-    let addrs = dns::resolve(dns, &host, port, transport).await?;
-    let dest = SipAddr::new(sip_transport(transport), addrs[0].into());
+    let dest = resolve_destination(
+        dns,
+        &client.endpoint.transport_layer,
+        &uri,
+        default_transport,
+    )
+    .await?;
     client.options(&uri, &dest).await
 }
 
@@ -2976,6 +2980,30 @@ pub(crate) fn parse_target(t: &str) -> Result<Uri> {
         format!("sip:{t}")
     };
     Uri::try_from(s.as_str()).map_err(|e| SipError::Config(format!("bad target {t:?}: {e}")))
+}
+
+/// Next hop for a request to `uri`'s own host: resolved here with the usual SRV / A rules
+/// (first candidate), for every transport, so everything downstream sees one address. For TLS to
+/// a host name, that name (the URI host, RFC 5922) is registered with `tl` as the TLS server
+/// name of the resolved address, so the connection verifies the certificate against the name
+/// and not the IP. The registrar / outbound-proxy hop keeps its own name (`sni_by_addr` wins).
+pub(crate) async fn resolve_destination(
+    source: &dyn rsipstack::resolver::sip_resolver::LookupSource,
+    tl: &rsipstack::transport::TransportLayer,
+    uri: &Uri,
+    default: Transport,
+) -> Result<SipAddr> {
+    let (host, port, transport) = uri_destination(uri, default);
+    let addrs = dns::resolve(source, &host, port, transport).await?;
+    let addr = addrs
+        .first()
+        .ok_or_else(|| SipError::Dns(format!("{host} did not resolve")))?;
+    if transport == Transport::Tls
+        && matches!(uri.host_with_port.host, rsipstack::sip::Host::Domain(_))
+    {
+        tl.set_sni_for(*addr, host);
+    }
+    Ok(SipAddr::new(sip_transport(transport), (*addr).into()))
 }
 
 /// Host, explicit port and transport a URI asks for (`;transport=` param, `sips:` implies TLS).

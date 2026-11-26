@@ -23,14 +23,14 @@ use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 use tokio::sync::oneshot;
 use tokio::time::Instant;
 
-use crate::account::{CALLID_SUFFIX, sip_transport, uri_destination};
+use crate::account::{CALLID_SUFFIX, resolve_destination};
 use crate::blf::{
     BlfDialog, BlfState, BlfStatus, BlfSubscription, BlfTracker, SubscriptionPhase,
     parse_dialog_info,
 };
 use crate::calls::AccountCalls;
 use crate::client::{Client, build_contact};
-use crate::dns::{self, SystemSrvSource};
+use crate::dns::SystemSrvSource;
 use crate::error::{Result, SipError};
 use crate::mwi::{MwiStatus, status_from_body};
 use crate::types::SipEvent;
@@ -671,7 +671,9 @@ impl SubManager {
                 (b.group.clone(), b.pickup_for(cfg).mode),
             ));
         }
-        if cfg.mwi == MwiMode::Subscribe {
+        // Peer mode (`register = false`) is calls only: it subscribes to MWI only on an explicit
+        // `mwi_uri`, never to its own AOR.
+        if cfg.mwi == MwiMode::Subscribe && (cfg.register || !cfg.mwi_uri.is_empty()) {
             let spec = if cfg.mwi_uri.is_empty() {
                 cfg.aor()
             } else {
@@ -703,6 +705,9 @@ impl SubManager {
                     Some(w) => h.key == "mwi" && lock(&h.shared).spec != w.2,
                 };
                 if drop_it {
+                    if h.key == "mwi" && keep.is_none() {
+                        g.mwi = None;
+                    }
                     g.subs.remove(&h.id);
                     gone.push(h);
                 }
@@ -1495,9 +1500,13 @@ impl SubTask {
         {
             return Ok(t.clone());
         }
-        let (host, port, transport) = uri_destination(target, env.transport);
-        let addrs = dns::resolve(env.dns.as_ref(), &host, port, transport).await?;
-        Ok(SipAddr::new(sip_transport(transport), addrs[0].into()))
+        resolve_destination(
+            env.dns.as_ref(),
+            &env.client.endpoint.transport_layer,
+            target,
+            env.transport,
+        )
+        .await
     }
 
     async fn exchange(&mut self, env: &Arc<SubEnv>, expires: u32) -> Result<SubResp> {
