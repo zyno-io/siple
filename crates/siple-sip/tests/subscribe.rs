@@ -857,6 +857,49 @@ async fn mwi_subscribe_and_unsolicited() {
     r.stack.shutdown().await;
 }
 
+/// Peer mode (`register = false`) is calls only: `mwi = "subscribe"` without `mwi_uri` sends no
+/// SUBSCRIBE (and reports no MWI status); an explicit `mwi_uri` is subscribed, and removing it
+/// again ends the subscription.
+#[tokio::test]
+async fn peer_mode_subscribes_mwi_only_on_explicit_uri() {
+    let mut f = Fake::start().await;
+    let r = rig();
+    let mut c = cfg("p", &f);
+    assert!(!c.register);
+    c.mwi = MwiMode::Subscribe;
+    add(&r, c.clone()).await;
+    assert!(
+        f.no_subscribe(1).await,
+        "peer mode must not subscribe to its own AOR"
+    );
+    assert!(r.stack.mwi_status("p").is_none());
+    c.mwi_uri = "*97".into();
+    assert!(r.stack.update_account(c.clone()).await.is_ok());
+    let s = f.subscribe_for("message-summary").await;
+    assert!(s.start_line().contains("sip:*97@"), "{}", s.start_line());
+    f.respond(&s, "202 Accepted", Some("pm"), &[("Expires", "3600")])
+        .await;
+    let mut d = f.dialog(&s, "pm");
+    f.notify_ok(
+        &mut d,
+        "message-summary",
+        "active;expires=3600",
+        MS,
+        "Messages-Waiting: yes\r\nMessage-Account: sip:p@x\r\nVoice-Message: 2/0 (0/0)\r\n",
+    )
+    .await;
+    assert_eq!(r.stack.mwi_status("p").unwrap().voice.new, 2);
+    c.mwi_uri.clear();
+    assert!(r.stack.update_account(c).await.is_ok());
+    let unsub = f.subscribe_for("message-summary").await;
+    assert_eq!(unsub.header("expires"), "0", "{}", unsub.start_line());
+    assert!(
+        r.stack.mwi_status("p").is_none(),
+        "status cleared with the subscription"
+    );
+    r.stack.shutdown().await;
+}
+
 /// `mwi = "unsolicited"` makes no SUBSCRIBE but accepts NOTIFYs; `"off"` ignores them.
 #[tokio::test]
 async fn mwi_modes_unsolicited_and_off() {

@@ -902,6 +902,11 @@ fn write_cert(dir: &std::path::Path, name: &str, days: Option<i64>, ca: bool) ->
 
 /// A CA and a server leaf signed by it (SAN: localhost, 127.0.0.1): (leaf cert, leaf key, CA cert).
 fn write_pki(dir: &std::path::Path, name: &str) -> (String, String, String) {
+    write_pki_with(dir, name, true)
+}
+
+/// [`write_pki`]; `ip_san = false` leaves 127.0.0.1 out of the leaf (valid for `localhost` only).
+fn write_pki_with(dir: &std::path::Path, name: &str, ip_san: bool) -> (String, String, String) {
     let now = std::time::SystemTime::now();
     let (nb, na) = (
         now - Duration::from_secs(86400),
@@ -921,8 +926,10 @@ fn write_pki(dir: &std::path::Path, name: &str) -> (String, String, String) {
     let issuer = rcgen::Issuer::new(cp, ca_key);
 
     let mut lp = rcgen::CertificateParams::new(vec!["localhost".to_string()]).unwrap();
-    lp.subject_alt_names
-        .push(rcgen::SanType::IpAddress("127.0.0.1".parse().unwrap()));
+    if ip_san {
+        lp.subject_alt_names
+            .push(rcgen::SanType::IpAddress("127.0.0.1".parse().unwrap()));
+    }
     lp.distinguished_name
         .push(rcgen::DnType::CommonName, "Siple test");
     (lp.not_before, lp.not_after) = (nb.into(), na.into());
@@ -967,6 +974,83 @@ async fn tls_sni_is_not_pinned_to_the_registrar_for_other_targets() {
             Ok(200),
             "{target}"
         );
+    }
+    h.stack.shutdown().await;
+}
+
+/// A TLS request to a host that is not the account's registrar is verified against the host
+/// NAME of the target, not the address Siple resolved it to: the certificate is valid for
+/// `localhost` only (no IP SAN), so verifying the IP would fail with `NotValidForName`.
+#[tokio::test]
+async fn tls_request_to_other_host_verifies_the_name_not_the_ip() {
+    let dir = tempfile::tempdir().unwrap();
+    let (crt, key, ca) = write_pki_with(dir.path(), "namesan", false);
+    let h = harness();
+    let port = free_port();
+    let mut srv = peer("srvname", Transport::Tls, port);
+    srv.tls_cert = crt;
+    srv.tls_key = key;
+    add(&h, srv).await;
+    let mut cli = peer("cliname", Transport::Tls, 0);
+    cli.domain = "pbx.example.com".into();
+    cli.tls_verify = true;
+    cli.tls_ca_file = ca.clone();
+    add(&h, cli).await;
+    let cli_ca = ca;
+    let by_name = format!("sip:x@localhost:{port};transport=tls");
+    let r = h.stack.send_options("cliname", &by_name).await;
+    assert_eq!(
+        r.map(|r| r.code).map_err(|e| e.to_string()),
+        Ok(200),
+        "{by_name}"
+    );
+    // Other request kinds from fresh accounts (own transport layer: no cached connection, no
+    // name learned by the OPTIONS above) resolve the name the same way.
+    let client = |id: &str| {
+        let mut c = peer(id, Transport::Tls, 0);
+        c.domain = "pbx.example.com".into();
+        c.tls_verify = true;
+        c.tls_ca_file = cli_ca.clone();
+        c
+    };
+    // INVITE (pre-connect and transaction).
+    add(&h, client("clidial")).await;
+    let call = h
+        .stack
+        .dial("clidial", &by_name, DialOptions::default())
+        .await
+        .unwrap_or_else(|e| panic!("dial {by_name}: {e}"));
+    h.stack.hangup(&call).await.unwrap();
+    // SUBSCRIBE (`dest_for`): the listener answers it (any final response), so the TLS
+    // handshake got through; a verification failure leaves a local failure (code 0).
+    add(&h, client("clisub")).await;
+    let id = h
+        .stack
+        .subscribe("clisub", &by_name, "presence", None, None)
+        .unwrap();
+    let end = std::time::Instant::now() + Duration::from_secs(8);
+    loop {
+        let st = h
+            .stack
+            .subscriptions(Some("clisub"))
+            .into_iter()
+            .find(|s| s.id == id)
+            .map(|s| s.state);
+        match st {
+            Some(siple_sip::SubState::Failed { code: 0, reason }) => {
+                panic!("subscribe never reached the listener: {reason}")
+            }
+            Some(siple_sip::SubState::Pending) | None if std::time::Instant::now() < end => {
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+            other => {
+                assert!(
+                    !matches!(other, Some(siple_sip::SubState::Pending) | None),
+                    "subscribe: no answer"
+                );
+                break;
+            }
+        }
     }
     h.stack.shutdown().await;
 }

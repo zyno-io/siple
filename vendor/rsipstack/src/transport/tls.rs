@@ -258,6 +258,10 @@ pub struct TlsConfig {
     // name (or `sni_hostname` if set). Lets an account pin the registrar's server name
     // without forcing it on unrelated TLS targets.
     pub sni_by_addr: std::collections::HashMap<SocketAddr, String>,
+    // siple: names learned at run time by `TransportLayer::set_sni_for` (the host name a
+    // request was addressed to, keyed by the address the application resolved it to). Consulted
+    // after `sni_by_addr`, which therefore always wins; replaced together with the config.
+    pub sni_learned: std::collections::HashMap<SocketAddr, String>,
 }
 
 // siple: manual Debug because `dyn ServerCertVerifier` is not Debug; the
@@ -273,6 +277,7 @@ impl Debug for TlsConfig {
             .field("sni_hostname", &self.sni_hostname)
             .field("verifier", &self.verifier.as_ref().map(|_| "<set>"))
             .field("sni_by_addr", &self.sni_by_addr)
+            .field("sni_learned", &self.sni_learned)
             .finish()
     }
 }

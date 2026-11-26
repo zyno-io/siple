@@ -472,8 +472,8 @@ calls there offer plain RTP first. If that is refused, they retry once with SRTP
 
 | Key | Default | What it does |
 |---|---|---|
-| `mwi` | `"subscribe"` | Message-waiting light: `subscribe`, `unsolicited` or `off`. Resubscribes on change. |
-| `mwi_uri` | `""` | URI to subscribe on. `""` is your own address. Resubscribes on change. |
+| `mwi` | `"subscribe"` | Message-waiting light: `subscribe`, `unsolicited` or `off`. In peer mode (`register = false`) only an explicit `mwi_uri` is subscribed. Resubscribes on change. |
+| `mwi_uri` | `""` | URI to subscribe on. `""` is your own address, except in peer mode (`register = false`), where it means no MWI subscription. Resubscribes on change. |
 | `blf_expires` | `600` | Extension subscription lifetime, in seconds. 10 to 86400. Resubscribes on change. |
 | `pickup` | `"off"` | Directed pickup: `off`, `prefix` or `replaces` (experimental). |
 | `pickup_prefix` | `"**"` | Feature code dialed before the extension with `prefix`. No spaces. |

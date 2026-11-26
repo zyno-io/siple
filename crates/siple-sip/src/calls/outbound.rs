@@ -17,9 +17,8 @@ use super::{
     AccountCalls, Call, CallDirection, CallEnd, CallEnv, CallId, CallInfo, CallInner, CallManager,
     CallState, DialOptions, EndCause, EndedBy, HoldFlags, RtEnv, cause_for_status,
 };
-use crate::account::{sip_transport, uri_destination};
+use crate::account::{resolve_destination, uri_destination};
 use crate::client::{CONNECT_TIMEOUT, build_contact};
-use crate::dns;
 use crate::error::{Result, SipError};
 use crate::media::CallMediaRequest;
 use crate::types::{ALLOW, SipEvent};
@@ -101,7 +100,7 @@ impl CallManager {
     /// Next hop for a request URI: the account's outbound proxy / registrar for its own domain,
     /// otherwise the URI's host resolved with the usual SRV / A rules.
     async fn destination(&self, cfg: &AccountConfig, rt: &RtEnv, uri: &Uri) -> Result<SipAddr> {
-        let (host, port, transport) = uri_destination(uri, cfg.transport);
+        let (host, port, _) = uri_destination(uri, cfg.transport);
         let registrar = cfg.effective_registrar().to_string();
         let own = host.eq_ignore_ascii_case(&cfg.domain)
             || host.eq_ignore_ascii_case(host_of(&registrar));
@@ -110,11 +109,13 @@ impl CallManager {
                 SipError::Config("no registrar / outbound proxy to route the call through".into())
             });
         }
-        let addrs = dns::resolve(self.dns.as_ref(), &host, port, transport).await?;
-        let addr = addrs
-            .first()
-            .ok_or_else(|| SipError::Dns(format!("{host} did not resolve")))?;
-        Ok(SipAddr::new(sip_transport(transport), (*addr).into()))
+        resolve_destination(
+            self.dns.as_ref(),
+            &rt.endpoint.transport_layer,
+            uri,
+            cfg.transport,
+        )
+        .await
     }
 
     /// Dials `target` from the account behind `env`.

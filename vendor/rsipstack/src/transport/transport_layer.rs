@@ -12,6 +12,10 @@ use crate::platform::CancellationToken;
 use crate::prelude::*;
 #[cfg(feature = "platform-tokio")]
 use crate::resolver::SipResolver;
+
+/// siple: cap of `TlsConfig::sni_learned` (see `TransportLayer::set_sni_for`).
+#[cfg(all(feature = "platform-tokio", feature = "rustls"))]
+const MAX_LEARNED_SNI: usize = 256;
 #[cfg(feature = "platform-tokio")]
 use crate::sip::HostWithPort;
 use crate::sip::{Host, Transport};
@@ -422,6 +426,16 @@ impl TransportLayer {
         self.inner.set_tls_config(Some(tls_config));
     }
 
+    /// siple: remember `name` as the TLS server name (SNI and certificate identity) for outbound
+    /// connections to the already-resolved `addr`. For applications that resolve host names
+    /// themselves and hand the layer an IP. Never overrides a `TlsConfig::sni_by_addr` entry;
+    /// the latest name wins for an address; no-op without a TLS config. Bounded
+    /// (`MAX_LEARNED_SNI`: the map is cleared when full).
+    #[cfg(all(feature = "platform-tokio", feature = "rustls"))]
+    pub fn set_sni_for(&self, addr: std::net::SocketAddr, name: String) {
+        self.inner.set_sni_for(addr, name);
+    }
+
     /// Remove the TLS configuration used for future outbound TLS connections.
     #[cfg(all(feature = "platform-tokio", feature = "rustls"))]
     pub fn clear_tls_config(&self) {
@@ -474,7 +488,37 @@ impl TransportLayerInner {
 
     #[cfg(all(feature = "platform-tokio", feature = "rustls"))]
     fn set_tls_config(&self, tls_config: Option<TlsConfig>) {
-        *self.tls_config.write() = tls_config;
+        let mut guard = self.tls_config.write();
+        let mut new = tls_config;
+        // siple: names learned through `set_sni_for` are DNS name -> address facts; keep them
+        // across a config replacement (network move, rebuild of the client config) so calls
+        // in flight can still reconnect. `sni_by_addr` entries of the new config win.
+        if let (Some(n), Some(old)) = (new.as_mut(), guard.as_ref()) {
+            for (addr, name) in &old.sni_learned {
+                if n.sni_learned.len() >= MAX_LEARNED_SNI {
+                    break;
+                }
+                if !n.sni_by_addr.contains_key(addr) {
+                    n.sni_learned.entry(*addr).or_insert_with(|| name.clone());
+                }
+            }
+        }
+        *guard = new;
+    }
+
+    #[cfg(all(feature = "platform-tokio", feature = "rustls"))]
+    fn set_sni_for(&self, addr: std::net::SocketAddr, name: String) {
+        let mut guard = self.tls_config.write();
+        let Some(cfg) = guard.as_mut() else {
+            return;
+        };
+        if cfg.sni_by_addr.contains_key(&addr) {
+            return;
+        }
+        if cfg.sni_learned.len() >= MAX_LEARNED_SNI && !cfg.sni_learned.contains_key(&addr) {
+            cfg.sni_learned.clear();
+        }
+        cfg.sni_learned.insert(addr, name);
     }
 
     #[cfg(all(feature = "platform-tokio", feature = "rustls"))]
@@ -663,10 +707,21 @@ impl TransportLayerInner {
                     // siple: a per-destination override (keyed by the resolved address)
                     // wins; it never leaks to other destinations.
                     let sni_override = match &target.addr.host {
-                        Host::IpAddr(ip) => effective_config.sni_by_addr.get(&std::net::SocketAddr::new(
-                            *ip,
-                            target.addr.port.as_ref().map_or(5061, |p| p.value()),
-                        )),
+                        Host::IpAddr(ip) => {
+                            let key = std::net::SocketAddr::new(
+                                *ip,
+                                target.addr.port.as_ref().map_or(5061, |p| p.value()),
+                            );
+                            // A name rsipstack itself dialed (`original_domain`) keeps its
+                            // own name; learned names are for addresses the application
+                            // resolved.
+                            effective_config.sni_by_addr.get(&key).or_else(|| {
+                                original_domain
+                                    .is_none()
+                                    .then(|| effective_config.sni_learned.get(&key))
+                                    .flatten()
+                            })
+                        }
                         _ => None,
                     }
                     .cloned();
