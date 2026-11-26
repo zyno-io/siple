@@ -6,6 +6,7 @@
 
 mod actions;
 mod gui_libs;
+mod launch_origin;
 #[cfg(not(feature = "store"))]
 mod relaunch;
 mod shell;
@@ -67,6 +68,12 @@ struct Cli {
     /// would make the new version exit instead of coming back).
     #[arg(long, hide = true, value_enum, value_name = "STATE")]
     window: Option<WindowArg>,
+    /// Started by the OS at login: `[ui] start_hidden` applies only then. The login entries Siple
+    /// writes pass it; add it to a custom autostart command to keep starting hidden. Permanent like
+    /// the relaunch flags: entries written now pass it to every later version, so never rename or
+    /// remove it.
+    #[arg(long)]
+    at_login: bool,
     /// A `sip:`, `sips:`, `tel:`, `callto:` or `siple:` link passed by the OS URL handler.
     /// Validated, then handed to the running (or this) instance. A call link is put into the
     /// dial field and never dials by itself; a `siple:provision` setup link opens a review
@@ -77,12 +84,14 @@ struct Cli {
 
 /// Whether the window starts hidden. A link always shows it. After an update relaunch `--window`
 /// restores the state the old process had (`hidden` needs a tray, or the window would be
-/// unreachable); otherwise `[ui] start_hidden` decides.
+/// unreachable); otherwise `[ui] start_hidden` decides, and only when the OS started Siple at
+/// login: a manual launch always shows the window.
 fn start_hidden(
     cfg_start_hidden: bool,
     tray: bool,
     has_link: bool,
     window_arg: Option<WindowArg>,
+    origin: launch_origin::LaunchOrigin,
 ) -> bool {
     if has_link {
         return false;
@@ -90,7 +99,7 @@ fn start_hidden(
     match window_arg {
         Some(WindowArg::Shown) => false,
         Some(WindowArg::Hidden) => tray,
-        None => cfg_start_hidden && tray,
+        None => origin == launch_origin::LaunchOrigin::Login && cfg_start_hidden && tray,
     }
 }
 
@@ -194,6 +203,7 @@ fn main() -> ExitCode {
         (!is_default_path).then(|| config_path_for_login.clone()),
         cli.no_audio,
     );
+    let early_login = launch_origin::early(cli.at_login);
     #[cfg(target_os = "macos")]
     shell::early_init();
     let mut opts = AppOptions::new(config_path);
@@ -221,6 +231,7 @@ fn main() -> ExitCode {
         link,
         (!is_default_path).then_some(config_path_for_login),
         cli.window,
+        early_login,
     )
 }
 
@@ -310,6 +321,7 @@ fn run_gui(
     link: Option<Result<siple_core::uri::IncomingLink, String>>,
     login_config: Option<PathBuf>,
     window_arg: Option<WindowArg>,
+    early_login: Option<&'static str>,
 ) -> ExitCode {
     if app.created_config() {
         tracing::info!("created example config at {}", app.config_path().display());
@@ -402,13 +414,21 @@ fn run_gui(
             let ui_cfg = app.config().ui.clone();
             let phone = ui::PhoneUi::new(shared.clone(), actions.clone())
                 .with_audio_disabled_reason(app.audio_disabled_reason());
+            let (origin, via) = launch_origin::resolve(early_login);
+            tracing::info!(?origin, via, "launch origin");
             let sh = shell::Shell::new(
                 &cc.egui_ctx,
                 &app,
                 &handle,
                 shared.clone(),
                 actions,
-                start_hidden(ui_cfg.start_hidden, ui_cfg.tray, link.is_some(), window_arg),
+                start_hidden(
+                    ui_cfg.start_hidden,
+                    ui_cfg.tray,
+                    link.is_some(),
+                    window_arg,
+                    origin,
+                ),
                 login_config,
             );
             let mut shell_app = shell::ShellApp::new(phone, sh);
@@ -693,33 +713,60 @@ mod tests {
         assert!(Cli::try_parse_from(["siple"]).unwrap().uri.is_none());
     }
 
+    use launch_origin::LaunchOrigin::{Login, Manual};
+
     #[test]
-    fn start_hidden_without_the_flag_is_the_config() {
-        assert!(start_hidden(true, true, false, None));
-        assert!(!start_hidden(false, true, false, None));
-        assert!(!start_hidden(true, false, false, None));
+    fn start_hidden_at_login_is_the_config() {
+        assert!(start_hidden(true, true, false, None, Login));
+        assert!(!start_hidden(false, true, false, None, Login));
+        assert!(!start_hidden(true, false, false, None, Login));
+    }
+
+    #[test]
+    fn a_manual_launch_always_shows_the_window() {
+        for cfg in [false, true] {
+            for tray in [false, true] {
+                assert!(!start_hidden(cfg, tray, false, None, Manual));
+            }
+        }
     }
 
     #[test]
     fn window_shown_overrides_start_hidden() {
         let shown = Some(WindowArg::Shown);
-        assert!(!start_hidden(true, true, false, shown));
-        assert!(!start_hidden(false, true, false, shown));
+        for origin in [Manual, Login] {
+            assert!(!start_hidden(true, true, false, shown, origin));
+            assert!(!start_hidden(false, true, false, shown, origin));
+        }
     }
 
     #[test]
     fn window_hidden_needs_a_tray() {
         let hidden = Some(WindowArg::Hidden);
-        assert!(start_hidden(false, true, false, hidden));
-        assert!(start_hidden(true, true, false, hidden));
-        assert!(!start_hidden(true, false, false, hidden));
+        for origin in [Manual, Login] {
+            assert!(start_hidden(false, true, false, hidden, origin));
+            assert!(start_hidden(true, true, false, hidden, origin));
+            assert!(!start_hidden(true, false, false, hidden, origin));
+        }
     }
 
     #[test]
     fn a_link_always_shows_the_window() {
-        for arg in [None, Some(WindowArg::Hidden), Some(WindowArg::Shown)] {
-            assert!(!start_hidden(true, true, true, arg));
+        for origin in [Manual, Login] {
+            for arg in [None, Some(WindowArg::Hidden), Some(WindowArg::Shown)] {
+                assert!(!start_hidden(true, true, true, arg, origin));
+            }
         }
+    }
+
+    #[test]
+    fn accepts_the_at_login_flag() {
+        assert!(!Cli::try_parse_from(["siple"]).unwrap().at_login);
+        let c = Cli::try_parse_from(["siple", "--at-login", "--config", "/x/c.toml"]).unwrap();
+        assert!(c.at_login);
+        assert_eq!(c.config.unwrap(), PathBuf::from("/x/c.toml"));
+        let help = Cli::command().render_help().to_string();
+        assert!(help.contains("--at-login"));
     }
 
     #[test]
@@ -732,7 +779,7 @@ mod tests {
         assert!(Cli::try_parse_from(["siple", "--window", "bogus"]).is_err());
         // Wired: a parsed `--window shown` beats `start_hidden`.
         let c = Cli::try_parse_from(["siple", "--window", "shown"]).unwrap();
-        assert!(!start_hidden(true, true, false, c.window));
+        assert!(!start_hidden(true, true, false, c.window, Login));
         let help = Cli::command().render_help().to_string();
         assert!(!help.contains("--window"));
     }

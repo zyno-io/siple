@@ -29,7 +29,7 @@ Linux) while its window is hidden. Turn it off to keep the Dock icon, or to mini
 
 ## Start in the tray when you sign in
 
-1. Turn on **Start hidden** under **Settings › Notifications** so Siple opens without a window.
+1. Turn on **Start hidden at login** under **Settings › Notifications** so Siple opens without a window when the system starts it at login. Starting Siple yourself always shows the window.
 2. Turn on **Start Siple when you log in** under **Settings › Notifications**.
 
 On a Mac, run Siple from Applications. From a disk image or a quarantined download, Settings asks you to move it there first.
@@ -62,7 +62,7 @@ All of these keys are under `[ui]`. See the [reference](/reference/configuration
 | **Show in the tray / menu bar** | `tray` | on |
 | **Closing the window keeps Siple running** | `close_to_tray` | on |
 | **Hide from the taskbar / Dock while hidden** | `hide_from_taskbar` | on |
-| **Start hidden** | `start_hidden` | off |
+| **Start hidden at login** | `start_hidden` | off |
 | **Start Siple when you log in** | `launch_at_login` | off |
 | **Show the window on an incoming call** | `show_on_incoming` | on |
 | **Show the window when a call is answered** | `show_on_answer` | off |
@@ -86,6 +86,6 @@ launch_at_login = true
 Linux uses a StatusNotifierItem (KDE, XFCE, GNOME with the AppIndicator extension). Without a host for it, closing the
 window minimizes it so the app stays reachable.
 
-On Wayland the window cannot be unmapped, so closing minimizes it and **Start hidden** has no effect. For full hide-to-tray,
+On Wayland the window cannot be unmapped, so closing minimizes it and **Start hidden at login** has no effect. For full hide-to-tray,
 start Siple under XWayland: `env -u WAYLAND_DISPLAY -u WAYLAND_SOCKET siple`.
 :::

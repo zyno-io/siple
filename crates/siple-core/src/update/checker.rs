@@ -554,8 +554,8 @@ impl Updater {
             }
         }
         if persist.is_some() {
-            // Only "nothing newer" is remembered across restarts: while an update is available
-            // there is no cached list after a restart, so the next start checks again.
+            // Only "nothing newer" is remembered across restarts (every start checks again anyway;
+            // a remembered time while an update is available would claim a list that is not held).
             let available = self.status().available;
             self.persist(|s| s.set_last_update_check((!available).then_some(now)));
         }

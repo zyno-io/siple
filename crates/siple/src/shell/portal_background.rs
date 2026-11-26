@@ -13,7 +13,7 @@ use std::time::Duration;
 use futures_util::StreamExt;
 use zbus::zvariant::{OwnedObjectPath, OwnedValue, Value};
 
-use super::autostart::profile_args;
+use super::autostart::login_entry_args;
 
 /// File in the config dir: written before an enable request, removed once the portal says
 /// autostart is off, so a crash cannot orphan an entry.
@@ -43,10 +43,10 @@ pub(super) fn decide(enabled: bool, marker_exists: bool) -> Step {
     }
 }
 
-/// `["siple"]` followed by `--config <path>` for a non-default profile.
+/// `["siple", "--at-login"]` followed by `--config <path>` for a non-default profile.
 pub(super) fn commandline(config: Option<&Path>) -> Vec<String> {
     let mut v = vec!["siple".to_string()];
-    v.extend(profile_args(config));
+    v.extend(login_entry_args(&[], config));
     v
 }
 
@@ -299,11 +299,20 @@ mod tests {
 
     #[test]
     fn the_command_line_carries_a_non_default_profile() {
-        assert_eq!(commandline(None), vec!["siple"]);
+        assert_eq!(commandline(None), vec!["siple", "--at-login"]);
         assert_eq!(
             commandline(Some(Path::new("/p/a b/config.toml"))),
-            vec!["siple", "--config", "/p/a b/config.toml"]
+            vec!["siple", "--at-login", "--config", "/p/a b/config.toml"]
         );
+    }
+
+    #[test]
+    fn the_command_line_parses_back_with_the_login_flag() {
+        use clap::Parser;
+        let p = Path::new("/p/a b/config.toml");
+        let c = crate::Cli::try_parse_from(commandline(Some(p))).unwrap();
+        assert!(c.at_login);
+        assert_eq!(c.config.as_deref(), Some(p));
     }
 
     #[test]
@@ -346,14 +355,14 @@ mod tests {
         let seen = std::cell::Cell::new(None);
         sync_with(true, None, d.path(), |autostart, cmd| {
             assert!(autostart);
-            assert_eq!(cmd, ["siple"]);
+            assert_eq!(cmd, ["siple", "--at-login"]);
             seen.set(Some(
                 std::fs::read_to_string(d.path().join(MARKER)).unwrap(),
             ));
             Ok(true)
         })
         .unwrap();
-        assert_eq!(seen.take().as_deref(), Some("[\"siple\"]"));
+        assert_eq!(seen.take().as_deref(), Some("[\"siple\",\"--at-login\"]"));
         assert!(state(d.path()).0);
     }
 

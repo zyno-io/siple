@@ -105,7 +105,7 @@ Open:
 1. Interactive checks in a logged-on session (over SSH everything runs in session 0, where protocol activation, the
    StartupTask broker and toasts are unavailable): `sip:` / `tel:` activation argv (the manifest passes
    `Parameters="-- &quot;%1&quot;"`), the startup task (enabled from Settings > Apps > Startup), toasts under the package
-   AUMID, microphone consent, the first-run firewall prompt. Also install as a standard user (firewall rule creation).
+   AUMID, a startup-task launch honors `start_hidden` while a manual launch shows the window, microphone consent, the first-run firewall prompt. Also install as a standard user (firewall rule creation).
 2. Discovery: an unpackaged `siple-cli` (zip, winget) should probe
    `%LOCALAPPDATA%\Packages\<package family name>\LocalState\Siple\runtime.json` for a compiled-in list of known package
    family names (the Store and sideload identities differ). No glob: a planted `runtime.json` could capture

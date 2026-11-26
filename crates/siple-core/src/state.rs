@@ -103,8 +103,8 @@ struct StateFile {
     /// The release the user chose to skip in the update pill ("Skip this version").
     #[serde(default, skip_serializing_if = "Option::is_none")]
     skipped_update: Option<String>,
-    /// Wall-clock time of the last update check that found nothing newer (so a restart does not
-    /// check again within the interval).
+    /// Wall-clock time of the last update check that found nothing newer (shown as `checked_at`
+    /// after a restart; every start still checks again).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     last_update_check: Option<DateTime<Utc>>,
     /// The release version `app.update_available` was last emitted for.

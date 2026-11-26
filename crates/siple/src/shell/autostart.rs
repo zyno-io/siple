@@ -10,6 +10,9 @@
 //! - Windows: `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`;
 //! - Linux: `~/.config/autostart/io.zyno.siple.desktop` (XDG autostart);
 //! - Flatpak: the Background portal (`portal_background`), which writes that entry on the host.
+//!
+//! Every entry Siple writes passes [`AT_LOGIN_ARG`] (see [`login_entry_args`]), which is how a
+//! login launch is told from a manual one (`[ui] start_hidden`).
 
 // Windows only writes a registry value; the file-based entries are built (and tested) everywhere.
 #![cfg_attr(target_os = "windows", allow(dead_code))]
@@ -79,6 +82,18 @@ pub fn profile_args(config: Option<&Path>) -> Vec<String> {
     config.map_or_else(Vec::new, |c| {
         vec!["--config".into(), c.to_string_lossy().into_owned()]
     })
+}
+
+/// Passed by every login entry Siple writes, so the launch is known to be one at login (`[ui] start_hidden`).
+pub const AT_LOGIN_ARG: &str = "--at-login";
+
+/// Arguments of every login entry: the runtime prefix (must come first), [`AT_LOGIN_ARG`], then
+/// the profile.
+pub fn login_entry_args(prefix: &[&str], config: Option<&Path>) -> Vec<String> {
+    let mut v: Vec<String> = prefix.iter().map(|a| (*a).to_string()).collect();
+    v.push(AT_LOGIN_ARG.into());
+    v.extend(profile_args(config));
+    v
 }
 
 /// Quotes one argument of a Desktop Entry `Exec=` line (spec: wrap in double quotes when it has
@@ -468,12 +483,7 @@ fn apply_for(
         return Err(std::io::Error::other(msg));
     }
     // A runtime option (`--appimage-extract-and-run`) must be the first argument.
-    let mut extra: Vec<String> = channel
-        .launch_args_prefix()
-        .iter()
-        .map(|a| (*a).to_string())
-        .collect();
-    extra.extend(profile_args(config));
+    let extra = login_entry_args(channel.launch_args_prefix(), config);
     let name = entry_name(config);
     #[cfg(target_os = "windows")]
     {
@@ -609,19 +619,17 @@ mod tests {
     fn an_extracted_appimage_login_entry_starts_with_the_runtime_option() {
         use siple_core::config::channel::Channel;
         let file = Path::new("/home/u/Siple.AppImage");
-        let args = |ch: &Channel| -> Vec<String> {
-            ch.launch_args_prefix()
-                .iter()
-                .map(|a| a.to_string())
-                .collect()
-        };
+        let args = |ch: &Channel| login_entry_args(ch.launch_args_prefix(), None);
         let mounted = Channel::appimage(file);
         let entry = linux_autostart_entry(&mounted.launch_target().unwrap(), &args(&mounted));
-        assert!(entry.contains("Exec=/home/u/Siple.AppImage\n"), "{entry}");
+        assert!(
+            entry.contains("Exec=/home/u/Siple.AppImage --at-login\n"),
+            "{entry}"
+        );
         let extracted = mounted.with_extracted(true);
         let entry = linux_autostart_entry(&extracted.launch_target().unwrap(), &args(&extracted));
         assert!(
-            entry.contains("Exec=/home/u/Siple.AppImage --appimage-extract-and-run\n"),
+            entry.contains("Exec=/home/u/Siple.AppImage --appimage-extract-and-run --at-login\n"),
             "{entry}"
         );
     }
@@ -761,6 +769,55 @@ mod tests {
     }
 
     #[test]
+    fn login_entries_pass_the_flag_after_the_prefix_and_before_the_profile() {
+        assert_eq!(login_entry_args(&[], None), vec!["--at-login"]);
+        assert_eq!(
+            login_entry_args(
+                &["--appimage-extract-and-run"],
+                Some(Path::new("/p/work.toml"))
+            ),
+            vec![
+                "--appimage-extract-and-run",
+                "--at-login",
+                "--config",
+                "/p/work.toml"
+            ]
+        );
+        let exe = Path::new("/Applications/Siple.app/Contents/MacOS/siple");
+        assert_eq!(
+            macos_program_args(exe, &login_entry_args(&[], None)),
+            vec![
+                "/usr/bin/open",
+                "-a",
+                "/Applications/Siple.app",
+                "--args",
+                "--at-login"
+            ]
+        );
+        assert_eq!(
+            macos_program_args(
+                Path::new("/usr/local/bin/siple"),
+                &login_entry_args(&[], None)
+            ),
+            vec!["/usr/local/bin/siple", "--at-login"]
+        );
+    }
+
+    #[test]
+    fn written_entries_parse_back_with_the_login_flag() {
+        use clap::Parser;
+        let p = Path::new("/p/work.toml");
+        let args = login_entry_args(&[], Some(p));
+        let exe = Path::new("/Applications/Siple.app/Contents/MacOS/siple");
+        let full = macos_program_args(exe, &args);
+        let tail = &full[full.iter().position(|a| a == "--args").unwrap() + 1..];
+        let argv = std::iter::once("siple".to_string()).chain(tail.iter().cloned());
+        let c = crate::Cli::try_parse_from(argv).unwrap();
+        assert!(c.at_login);
+        assert_eq!(c.config.as_deref(), Some(p));
+    }
+
+    #[test]
     fn desktop_exec_quoting() {
         assert_eq!(desktop_exec_quote("/usr/bin/siple"), "/usr/bin/siple");
         let q = desktop_exec_quote("/tmp/a\nX-Flatpak=io.zyno.siple\r");
@@ -800,6 +857,13 @@ mod tests {
                 &profile_args(Some(Path::new(r"C:\Users\a b\c.toml")))
             ),
             r#""C:\Siple\siple.exe" "--config" "C:\Users\a b\c.toml""#
+        );
+        assert_eq!(
+            windows_run_value(
+                Path::new(r"C:\Siple\siple.exe"),
+                &login_entry_args(&[], None)
+            ),
+            r#""C:\Siple\siple.exe" "--at-login""#
         );
     }
 
@@ -865,6 +929,13 @@ mod tests {
         assert_eq!(std::fs::read_to_string(&f).unwrap(), portal);
         remove_unless_flatpak(&f).unwrap();
         assert_eq!(std::fs::read_to_string(&f).unwrap(), portal);
+
+        // An entry written before `--at-login` existed is rewritten with it.
+        let old = linux_autostart_entry(Path::new("/usr/bin/siple"), &[]);
+        let new = linux_autostart_entry(Path::new("/usr/bin/siple"), &login_entry_args(&[], None));
+        std::fs::write(&f, &old).unwrap();
+        write_unless_flatpak(&f, &new).unwrap();
+        assert!(std::fs::read_to_string(&f).unwrap().contains("--at-login"));
 
         // The tarball's own entry is still written and removed.
         let own = linux_autostart_entry(Path::new("/usr/bin/siple"), &[]);

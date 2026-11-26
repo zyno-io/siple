@@ -95,6 +95,12 @@ const GURL: u32 = u32::from_be_bytes(*b"GURL");
 /// `'aevt'` / `'rapp'`: the "reopen application" event (Dock click on a running app).
 const AEVT: u32 = u32::from_be_bytes(*b"aevt");
 const RAPP: u32 = u32::from_be_bytes(*b"rapp");
+/// `'oapp'`: the "open application" event sent at launch.
+const OAPP: u32 = u32::from_be_bytes(*b"oapp");
+/// `'prdt'` (`keyAEPropData`): the property-data parameter of the launch event.
+const KEY_AE_PROP_DATA: u32 = u32::from_be_bytes(*b"prdt");
+/// `'lgit'` (`keyAELaunchedAsLogInItem`): the launch event's property when started as a login item.
+const LAUNCHED_AS_LOGIN_ITEM: u32 = u32::from_be_bytes(*b"lgit");
 /// `'----'`: the direct-object keyword of an Apple Event.
 const KEY_DIRECT_OBJECT: u32 = u32::from_be_bytes(*b"----");
 
@@ -152,12 +158,49 @@ fn install_event_handlers() {
     std::mem::forget(handler); // the manager does not retain its handler
 }
 
+static LOGIN_LAUNCH: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+
+fn is_login_launch(class: u32, id: u32, prop: Option<u32>) -> bool {
+    class == AEVT && id == OAPP && prop == Some(LAUNCHED_AS_LOGIN_ITEM)
+}
+
+/// Whether macOS launched Siple as a login item (SMAppService / Login Items), from the launch
+/// 'oapp' Apple Event. Valid only on the main thread while that event is current (during
+/// applicationDidFinishLaunching); latched on the first read there.
+pub fn launched_as_login_item() -> bool {
+    if let Some(v) = LOGIN_LAUNCH.get() {
+        return *v;
+    }
+    if MainThreadMarker::new().is_none() {
+        return false; // never latch off-thread
+    }
+    *LOGIN_LAUNCH.get_or_init(|| {
+        let Some(ev) = NSAppleEventManager::sharedAppleEventManager().currentAppleEvent() else {
+            return false;
+        };
+        let prop = ev
+            .paramDescriptorForKeyword(KEY_AE_PROP_DATA)
+            .map(|d| d.enumCodeValue());
+        let r = is_login_launch(ev.eventClass(), ev.eventID(), prop);
+        tracing::info!(
+            class = ev.eventClass(),
+            id = ev.eventID(),
+            ?prop,
+            login_item = r,
+            "launch Apple Event"
+        );
+        r
+    })
+}
+
 /// Call from `main()` on the main thread, before the event loop starts: installs the Apple
 /// Event handlers as the app is about to finish launching, which is before the launch URL is
 /// dispatched. Links queue until [`attach`].
 pub fn early_init() {
     use block2::RcBlock;
-    use objc2_app_kit::NSApplicationWillFinishLaunchingNotification;
+    use objc2_app_kit::{
+        NSApplicationDidFinishLaunchingNotification, NSApplicationWillFinishLaunchingNotification,
+    };
     use objc2_foundation::{NSNotification, NSNotificationCenter};
     use std::ptr::NonNull;
     let center = NSNotificationCenter::defaultCenter();
@@ -166,6 +209,21 @@ pub fn early_init() {
     let token = unsafe {
         center.addObserverForName_object_queue_usingBlock(
             Some(NSApplicationWillFinishLaunchingNotification),
+            None,
+            None,
+            &block,
+        )
+    };
+    std::mem::forget(token);
+    // The launch 'oapp' event is current while the did-finish-launching notification is posted:
+    // latch whether it was a login-item launch.
+    let block = RcBlock::new(|_n: NonNull<NSNotification>| {
+        let _ = launched_as_login_item();
+    });
+    // SAFETY: as above.
+    let token = unsafe {
+        center.addObserverForName_object_queue_usingBlock(
+            Some(NSApplicationDidFinishLaunchingNotification),
             None,
             None,
             &block,
@@ -351,10 +409,26 @@ pub fn install_app_menu() -> Result<AppMenu, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::is_winit_view_class;
+    use super::{
+        AEVT, GURL, LAUNCHED_AS_LOGIN_ITEM, OAPP, RAPP, is_login_launch, is_winit_view_class,
+    };
     use objc2::ClassType;
     use objc2::runtime::{AnyClass, ClassBuilder};
     use objc2_foundation::NSObject;
+
+    #[test]
+    fn only_the_login_item_oapp_event_is_a_login_launch() {
+        let lgit = Some(LAUNCHED_AS_LOGIN_ITEM);
+        assert!(is_login_launch(AEVT, OAPP, lgit));
+        assert!(!is_login_launch(AEVT, OAPP, None));
+        assert!(!is_login_launch(
+            AEVT,
+            OAPP,
+            Some(u32::from_be_bytes(*b"prdt"))
+        ));
+        assert!(!is_login_launch(GURL, GURL, lgit));
+        assert!(!is_login_launch(AEVT, RAPP, lgit));
+    }
 
     fn class(name: &std::ffi::CStr, sup: &AnyClass) -> &'static AnyClass {
         match ClassBuilder::new(name, sup) {

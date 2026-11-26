@@ -212,7 +212,7 @@ Desktop window settings. All keys are hot. Settings writes this table. Guides:
 | `tray` | `true` | Show a tray or menu-bar icon. `false` makes closing the window quit. |
 | `close_to_tray` | `true` | Closing the window hides it. Quit from the tray menu. |
 | `hide_from_taskbar` | `true` | No Dock icon or taskbar button while hidden. |
-| `start_hidden` | `false` | Start with the window hidden. |
+| `start_hidden` | `false` | Start in the tray when Siple starts at login (`launch_at_login`, a macOS login item or the Microsoft Store startup task). Starting it yourself always shows the window. |
 | `show_on_incoming` | `true` | Raise the window on an incoming call. |
 | `show_on_answer` | `false` | Raise the window when a call is answered. |
 | `notifications` | `true` | Desktop notifications for calls and transfers. |
@@ -230,7 +230,7 @@ app. `launch_at_login` is also in Settings > Notifications > Tray and window and
 - **Linux tray:** a StatusNotifierItem (KDE, XFCE, GNOME with the AppIndicator extension). Without a tray host, closing
   minimizes. On Wayland the window cannot be hidden, so closing minimizes and `start_hidden` has no effect. For full
   hide-to-tray run `env -u WAYLAND_DISPLAY -u WAYLAND_SOCKET siple`.
-- **`launch_at_login`** writes a macOS LaunchAgent, a Windows `HKCU\...\Run` entry or a Linux autostart `.desktop` file for the
+- **`launch_at_login`** (its entries pass `--at-login`, which is how `start_hidden` knows the OS started Siple; add it to a custom autostart command to keep starting hidden) writes a macOS LaunchAgent, a Windows `HKCU\...\Run` entry or a Linux autostart `.desktop` file for the
   running executable (the `.AppImage` file in the AppImage edition). `false` removes it. A non-default `--config` profile has its
   own entry. On macOS, a copy running from a disk image or a quarantined download cannot start at login: Settings says
   "Move Siple to Applications first" until you move it.
@@ -323,8 +323,8 @@ No identifier, account, usage data or cookies. Each host sees your IP address.
 
 | Edition | Request |
 |---|---|
-| Direct download | `https://siple.app/updates/v1/releases.json` about hourly. GitHub is not asked. |
-| Mac App Store | `https://itunes.apple.com/lookup?id=6836164262` about daily. TestFlight sends nothing. |
+| Direct download | `https://siple.app/updates/v1/releases.json` after every start, then about hourly. GitHub is not asked. |
+| Mac App Store | `https://itunes.apple.com/lookup?id=6836164262` after every start, then about daily. TestFlight sends nothing. |
 | Microsoft Store | No request from Siple. Windows' Store service is asked whether an update is waiting. |
 | Flatpak | Nothing. Flathub updates the app. |
 

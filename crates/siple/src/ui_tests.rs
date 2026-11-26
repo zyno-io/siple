@@ -706,7 +706,7 @@ fn launch_at_login_toggle_emits_the_config_edit() {
         );
         // The hint wraps inside the window.
         let hint = h
-            .query_all_by_label_contains("Combine with Start hidden")
+            .query_all_by_label_contains("Combine with Start hidden at login")
             .next()
             .expect("the launch-at-login hint");
         assert!(

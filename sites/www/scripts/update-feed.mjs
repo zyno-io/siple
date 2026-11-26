@@ -1,9 +1,8 @@
 #!/usr/bin/env node
 /**
  * Writes public/updates/v1/releases.json, the update feed of the direct-download builds of the app
- * (crates/siple-core/src/update/site.rs asks https://siple.app/updates/v1/releases.json about every hour, and
- * cross-checks GitHub's releases API at most once a day; it falls back to GitHub, on the same daily budget, when
- * the site gives no usable answer).
+ * (crates/siple-core/src/update/site.rs asks https://siple.app/updates/v1/releases.json after every start and then
+ * about every hour; the app never asks GitHub for the version, so this feed is its only source).
  *
  * The feed is a JSON array in the shape of the GitHub releases API, cut down to what the app's parser reads
  * (crates/siple-core/src/update/releases.rs): published releases only (no drafts), newest first, at most 20,

@@ -743,7 +743,8 @@ pub struct UiConfig {
     pub close_to_tray: bool,
     /// No taskbar button / Dock icon while hidden.
     pub hide_from_taskbar: bool,
-    /// Start with the window hidden.
+    /// Start with the window hidden when the OS starts Siple at login (needs the tray). Starting
+    /// Siple yourself always shows it.
     pub start_hidden: bool,
     /// Raise the window on an incoming call.
     pub show_on_incoming: bool,
