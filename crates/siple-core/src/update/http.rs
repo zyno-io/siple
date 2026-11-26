@@ -18,7 +18,7 @@ use tokio_rustls::TlsConnector;
 
 use super::checker::{FetchError, FetchOutcome};
 
-/// Largest response accepted (the site's feed of 20 releases is far below it; GitHub's list with notes is larger).
+/// Largest response accepted (the site's feed of 20 releases is far below it).
 const MAX_BODY: usize = 4 * 1024 * 1024;
 /// Largest header block accepted.
 const MAX_HEAD: usize = 64 * 1024;

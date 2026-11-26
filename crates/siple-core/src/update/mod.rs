@@ -5,9 +5,7 @@
 //! Which source answers is decided at run time from the distribution channel ([`source::select`]):
 //!
 //! - direct builds: one anonymous HTTPS GET of the release feed of siple.app
-//!   (`https://siple.app/updates/v1/releases.json`, see [`site`]). GitHub's releases list of this
-//!   project (see [`http`]) is asked at most once per process per 24 hours: as a cross-check
-//!   merged into the site's list, or instead of the site when it gives no usable answer;
+//!   (`https://siple.app/updates/v1/releases.json`, see [`site`]); GitHub is not asked;
 //! - Mac App Store: one anonymous HTTPS GET of Apple's lookup of Siple's listing;
 //! - Microsoft Store: a question to Windows' Store service about this package (Siple sends
 //!   nothing itself);
@@ -20,7 +18,7 @@
 //! announced once as the event `app.update_available`.
 //!
 //! The cargo feature `store` (Mac App Store, Microsoft Store and Flatpak builds) only removes code: the
-//! site and GitHub sources, its releases parser, the downloader and the installer. The store sources are compiled in every build so they
+//! site source, its releases parser, the downloader and the installer. The store sources are compiled in every build so they
 //! can be tested everywhere; only the Windows Store call itself needs `windows` and `store`.
 
 mod version;
@@ -36,8 +34,6 @@ pub mod appstore;
 mod checker;
 #[cfg(not(feature = "store"))]
 pub mod download;
-#[cfg(not(feature = "store"))]
-mod github;
 mod http;
 #[cfg(not(feature = "store"))]
 pub mod install;
@@ -58,13 +54,11 @@ pub use checker::{
 #[cfg(not(feature = "store"))]
 pub use checker::{OfflineFetcher, ReleaseFetcher};
 #[cfg(not(feature = "store"))]
-pub use github::GithubFetcher;
-#[cfg(not(feature = "store"))]
 pub use install::Installer;
 #[cfg(not(feature = "store"))]
 pub use releases::{Asset, Release, parse_releases, pick};
 #[cfg(not(feature = "store"))]
-pub use site::{FeedFetcher, SiteFetcher};
+pub use site::SiteFetcher;
 
 use serde::Serialize;
 
@@ -84,15 +78,14 @@ pub enum UpdateAction {
     None,
 }
 
-/// Which host answered the last direct-build check. `status.source` stays `github` (the kind of
-/// source: direct downloads, which can install); this says where the list came from.
+/// Which host answered the last direct-build check (always siple.app). `status.source` stays
+/// `github` (the kind of source: direct downloads, which can install); this says where the list
+/// came from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum FeedSource {
     /// The release feed of siple.app.
     Site,
-    /// The GitHub releases API (the site did not answer usably).
-    Github,
 }
 
 /// The result of the update check, as `app.update_status` returns it.
@@ -113,8 +106,8 @@ pub struct UpdateStatus {
     /// Where the check looks: `github` (direct downloads), `app_store`, `microsoft_store` or
     /// `none`.
     pub source: SourceName,
-    /// Direct downloads: the host that answered the last successful check, `site` (siple.app) or
-    /// `github` (fallback). Absent before the first success and for the stores.
+    /// Direct downloads: the host that answered the last successful check, `site` (siple.app).
+    /// Absent before the first success and for the stores.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub feed: Option<FeedSource>,
     /// What opening the offer does; `none` while nothing is available.

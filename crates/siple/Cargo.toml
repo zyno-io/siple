@@ -10,7 +10,7 @@ publish.workspace = true
 [features]
 # Store builds (Mac App Store, Microsoft Store, Flatpak): no GitHub update source (the store check and its
 # store-link offer stay). See docs/RELEASING.md.
-store = ["siple-core/store"]
+store = ["siple-core/store", "dep:windows"]
 
 [dependencies]
 siple-core = { path = "../siple-core" }
@@ -59,6 +59,8 @@ block2 = "0.6"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Threading"] }
+# Store builds: MSIX activation kind (startup task) for `[ui] start_hidden`.
+windows = { version = "0.62", optional = true, default-features = false, features = ["ApplicationModel_Activation"] }
 winreg = "0.56"
 notify-rust = { version = "4", default-features = false }
 

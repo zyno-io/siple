@@ -172,8 +172,8 @@ A tag for another version is ignored. Packaging scripts need no change.
 ## Update check, and store builds
 
 Where the update check looks is decided at run time from how the process was installed (`[updates]` in `docs/CONFIG.md`; detection
-only): direct-download builds read the release feed of siple.app (`https://siple.app/updates/v1/releases.json`) about every hour and
-fall back to the GitHub releases list in the same check when the site does not answer usably, on a budget of one GitHub request per process per 24 hours that the app also uses for a daily cross-check of the site's list (see `docs/CONFIG.md`); the Mac App Store edition asks Apple's lookup of its listing, the
+only): direct-download builds read the release feed of siple.app (`https://siple.app/updates/v1/releases.json`) shortly after every
+start and then about every hour, and never ask GitHub for the version (see `docs/CONFIG.md`); the Mac App Store edition asks Apple's lookup of its listing, the
 Microsoft Store edition asks Windows' Store service; the Flatpak is a store build (`--features store`) that makes no check at all
 (Flatpak updates it, `disabled_reason: managed_by_flatpak`). Releases that should be offered on GitHub must be **published** (drafts are
 skipped), tagged `v<semver>`; release candidates `v<semver>-rc.N` are marked as GitHub pre-releases and are only offered to users on the
@@ -197,8 +197,9 @@ download links stay on the stable release while the feed, fetched live, gains th
 it. The strict version check compares against that stable tag's CHANGELOG. The deploy runs in its own concurrency group
 (`www-deploy-production-rc`), so it never replaces a pending stable deploy, and it fails instead of deploying when a newer stable
 release appeared while it built. The latest stable tag must contain the feed script: until one does, a candidate's run fails early
-with that message and the feed refreshes with the next stable release. Even without the refresh, the app sees a candidate within a day:
-it cross-checks GitHub once per 24 hours.
+with that message and the feed refreshes with the next stable release. The app has no other way to learn of a candidate: until the
+feed is refreshed, the `prerelease` channel does not see it, so a failed refresh must be fixed (rerun the deploy) before the candidate
+counts as released.
 The feed is unsigned: the installer ignores everything in it except the version and the asset names and sizes, and trusts only the
 minisign-signed `SHA256SUMS` of that version (its trusted comment must read `siple v<version> SHA256SUMS`), so a wrong feed can hide an
 update but cannot make the app install anything unsigned or an older release. If the site's feed ever lags (a failed deploy), apps

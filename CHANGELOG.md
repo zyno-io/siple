@@ -1,6 +1,14 @@
 <!-- siple-rename: keep (this file documents the legacy ZynoPhone names on purpose) -->
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- The update check of direct downloads asks only siple.app. It no longer asks api.github.com, neither as a second opinion nor when siple.app is down: a failed check retries after 5, 10, 20 and 40 minutes, then hourly. The `feed` field of `app.update_status` is always `site` after a success. Installing an update still downloads from the project's GitHub release.
+- Siple checks for updates about 10 seconds after every start (it used to wait 30 seconds, and skipped the check when one had succeeded within the last interval). This applies to direct downloads and to the Mac App Store and Microsoft Store editions; `[updates] check = false` still turns it off.
+- `start_hidden` now applies only when Siple starts at login; starting it yourself always shows the window. Login entries update on the next start. Custom autostart commands need `--at-login`. After downgrading to 0.2.9 or older, start that version once yourself so its login entry is rewritten (older versions reject `--at-login`).
+
 ## 0.2.9 (2026-11-26)
 
 ### Changed

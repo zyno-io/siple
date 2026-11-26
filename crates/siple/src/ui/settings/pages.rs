@@ -245,7 +245,16 @@ pub(super) fn notifications(ui: &mut egui::Ui, cx: &Cx, out: &mut Vec<UiAction>)
             &v,
         );
         launch_at_login_row(ui, p, out, cx, &v, true);
-        sec_toggle(ui, p, out, "ui", "start_hidden", "Start hidden", "", &v);
+        sec_toggle(
+            ui,
+            p,
+            out,
+            "ui",
+            "start_hidden",
+            "Start hidden at login",
+            "Starting Siple yourself always shows its window.",
+            &v,
+        );
         sec_toggle(
             ui,
             p,
@@ -456,13 +465,13 @@ fn updates_help(u: &siple_core::update::UpdateStatus) -> &'static str {
     use siple_core::update::{DisabledReason, SourceName};
     match (u.source, u.disabled_reason) {
         (SourceName::Github, _) => {
-            "About once an hour Siple asks siple.app for the list of releases (one anonymous request that carries only the version). About once a day it also asks GitHub as a second opinion, and asks GitHub alone when siple.app does not answer. A new version is downloaded only when you choose to install it."
+            "Shortly after it starts, and then about once an hour, Siple asks siple.app for the list of releases (one anonymous request that carries only the version). A new version is downloaded only when you choose to install it."
         }
         (SourceName::AppStore, _) => {
-            "Once a day Siple asks the App Store whether a newer version exists (one anonymous request to Apple that carries only the version). The App Store installs updates."
+            "Shortly after it starts, and then once a day, Siple asks the App Store whether a newer version exists (one anonymous request to Apple that carries only the version). The App Store installs updates."
         }
         (SourceName::MicrosoftStore, _) => {
-            "Once a day Siple asks Windows' Store service whether an update is waiting; Windows contacts Microsoft, Siple sends nothing itself. The Microsoft Store installs updates."
+            "Shortly after it starts, and then once a day, Siple asks Windows' Store service whether an update is waiting; Windows contacts Microsoft, Siple sends nothing itself. The Microsoft Store installs updates."
         }
         (SourceName::None, Some(DisabledReason::Sideloaded)) => {
             "This copy was not installed from the Microsoft Store, so there is nothing to check; update it the way you installed it."
@@ -783,7 +792,7 @@ fn login_row(
             "If it's switched off in System Settings > General > Login Items, turn it on there.",
         )
     } else {
-        LoginRow::Switch("Combine with Start hidden to start in the tray.")
+        LoginRow::Switch("Combine with Start hidden at login to start in the tray.")
     }
 }
 

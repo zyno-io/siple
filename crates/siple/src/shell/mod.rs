@@ -85,6 +85,13 @@ pub fn early_init() {
     macos::early_init();
 }
 
+/// macOS: whether the launch Apple Event says the OS started Siple as a login item. Main thread,
+/// during launch only (see `macos::launched_as_login_item`).
+#[cfg(target_os = "macos")]
+pub fn launched_as_login_item() -> bool {
+    macos::launched_as_login_item()
+}
+
 /// Whether the process runs inside a macOS app bundle (`Siple.app/Contents/MacOS/siple`).
 #[allow(dead_code)]
 pub(crate) fn platform_bundled() -> bool {

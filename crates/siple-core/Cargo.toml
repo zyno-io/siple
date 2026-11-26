@@ -8,7 +8,7 @@ license.workspace = true
 publish.workspace = true
 
 [features]
-# Mac App Store / Microsoft Store / Flatpak builds: compiles out only the GitHub update source (its API
+# Mac App Store / Microsoft Store / Flatpak builds: compiles out only the direct-download update source (its feed
 # request and releases parser) and, later, any downloader or installer. The store update checks
 # stay: the App Store lookup, and the Microsoft Store query (`windows`, Windows only). See
 # docs/RELEASING.md.

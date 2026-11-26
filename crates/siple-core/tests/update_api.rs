@@ -99,7 +99,11 @@ mod github {
         ] {
             assert!(s.get(k).is_none(), "{k} must be absent: {s}");
         }
-        assert_eq!(fake.calls.load(Ordering::SeqCst), 0, "no check within 30 s");
+        assert_eq!(
+            fake.calls.load(Ordering::SeqCst),
+            0,
+            "no check before the initial delay"
+        );
         let st = c.call("status", Value::Null).await.unwrap();
         assert_eq!(st["version"], siple_core::update::full_version());
         assert_eq!(st["update"]["enabled"], true);

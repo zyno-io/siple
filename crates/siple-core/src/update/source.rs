@@ -91,7 +91,7 @@ pub fn select(channel: &Channel, store_build: bool) -> SourceKind {
 /// A source with the fetcher that talks to it.
 #[derive(Clone)]
 pub enum UpdateSource {
-    /// GitHub releases (not in store builds).
+    /// Direct downloads: the release feed of siple.app (not in store builds).
     #[cfg(not(feature = "store"))]
     Github(Arc<dyn ReleaseFetcher>),
     /// The App Store lookup.
@@ -123,11 +123,11 @@ impl UpdateSource {
         super::checker::STORE_CHECK_INTERVAL
     }
 
-    /// The source as the user knows it, for messages ("rate limited by GitHub").
+    /// The source as the user knows it, for messages ("rate limited by siple.app").
     pub fn label(&self) -> &'static str {
         match self {
             #[cfg(not(feature = "store"))]
-            Self::Github(_) => "GitHub",
+            Self::Github(_) => "siple.app",
             Self::AppStore(_) => "the App Store",
             Self::MsStore(_) => "the Microsoft Store",
             Self::None(_) => "no source",

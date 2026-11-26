@@ -58,7 +58,7 @@ Open **Settings › Advanced**. Under **About** you see the **Version** you run.
 ## Turn update checks off
 
 Open **Settings › Advanced** and turn off **Check for updates**. This works on every edition. Siple then makes no request to
-siple.app, GitHub or Apple and asks the Store nothing.
+siple.app or Apple and asks the Store nothing.
 
 To stop only the in-app install on a direct download, turn off **Install updates in the app**. The pill then opens the
 release page.
@@ -71,7 +71,7 @@ count. If you run a release candidate (`0.2.0-rc.1`), release candidates count t
 
 ## What is checked, and what is sent
 
-About 30 seconds after Siple starts, and then about every hour (direct downloads) or every 24 hours (the store editions), Siple makes one check. Where it looks depends on the edition.
+About 10 seconds after every start of Siple, and then about every hour (direct downloads) or every 24 hours (the store editions), Siple makes one check. Where it looks depends on the edition.
 
 **Direct download**: one HTTPS request to siple.app (the check; the files described below are downloaded only when you install).
 
@@ -83,23 +83,11 @@ Accept: application/json
 
 The answer is a static list of the latest releases. When it has not changed since the last check, the server answers "not modified"
 (Siple sends the ETag it got before), so the request costs almost nothing. If siple.app does not answer, answers with an error or
-sends a list Siple cannot read, the same check asks GitHub instead:
+sends a list Siple cannot read, the check fails (shown in Settings), retries after 5, 10, 20 and 40 minutes, then hourly, and keeps
+the last list it had. Siple does not ask GitHub for the version list.
 
-```
-GET https://api.github.com/repos/zyno-io/siple/releases?per_page=20
-User-Agent: Siple/<your version>
-Accept: application/vnd.github+json
-```
-
-GitHub is asked at most once per 24 hours while Siple runs, either way. When siple.app answers, that one request is a cross-check: the
-two lists are merged and, for a release both list, GitHub's entry is used. So a siple.app that is out of date (or wrong) can hide an
-update for about a day at most, and a release candidate published since the site was last rebuilt shows up within a day. When
-siple.app does not answer and GitHub was already asked less than 24 hours ago, Siple does not ask again: the check fails
-(shown in Settings), retries after 5, 10, 20 and 40 minutes, then hourly, against siple.app only, and keeps the last list it had. A
-siple.app outage therefore costs GitHub at most one request per installation per day.
-
-If GitHub limits requests (HTTP 429 or 403), Siple waits as long as GitHub asks before trying again. The list only says which
-version exists; an install still downloads from the project's GitHub release and is checked against its signed checksum list (see below).
+The list only says which version exists; an install still downloads from the project's GitHub release and is checked against its
+signed checksum list (see below).
 
 **Mac App Store**: one HTTPS request to Apple's public lookup of Siple's own listing.
 
@@ -116,7 +104,7 @@ request.
 does for the Store's own updates; Siple sends no request of its own. A copy that was not installed from the Store (a sideloaded
 package) does not check.
 
-In every case there is no identifier, no account or call information, no install ID and no cookie. The server (siple.app, GitHub or Apple)
+In every case there is no identifier, no account or call information, no install ID and no cookie. The server (siple.app or Apple)
 sees your IP address, as any web server does (siple.app's web server logs each request, so a running install shows up there about once an hour as IP address, time and version). A failed check (offline, a firewall) is logged and shown in Settings; it never opens
 a dialog.
 
@@ -157,7 +145,7 @@ The same settings live under `[updates]`. They are hot reloadable, which means t
 
 ```toml
 [updates]
-check = false            # never check: no request to GitHub or Apple, no question to the Store
+check = false            # never check: no request to siple.app or Apple, no question to the Store
 # install = false        # direct builds: do not install in place; the pill opens the release page
 # channel = "prerelease" # direct builds only: stable | prerelease; unset follows the build you run
 ```

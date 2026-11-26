@@ -743,7 +743,8 @@ pub struct UiConfig {
     pub close_to_tray: bool,
     /// No taskbar button / Dock icon while hidden.
     pub hide_from_taskbar: bool,
-    /// Start with the window hidden.
+    /// Start with the window hidden when the OS starts Siple at login (needs the tray). Starting
+    /// Siple yourself always shows it.
     pub start_hidden: bool,
     /// Raise the window on an incoming call.
     pub show_on_incoming: bool,
@@ -956,9 +957,9 @@ impl Default for SpeechConfig {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, default)]
 pub struct UpdatesConfig {
-    /// Look for a newer release: direct downloads ask siple.app about once an hour and GitHub at
-    /// most once a day (a second opinion, or instead when siple.app does not answer); the store
-    /// editions check through their store about once a day.
+    /// Look for a newer release: direct downloads ask siple.app about 10 seconds after start
+    /// and then about once an hour; the store editions check through their store, also right after
+    /// start and then about once a day.
     pub check: bool,
     /// Let Siple download, verify and install an offered release in place (direct downloads
     /// only; the stores update their own apps). Off: the offer opens the release page.

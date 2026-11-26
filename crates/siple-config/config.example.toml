@@ -80,7 +80,7 @@ transfer_enter = "consult"            # Enter in the transfer composer: consult 
 tray = true                           # tray / menu-bar mode
 close_to_tray = true                  # closing the window hides it
 hide_from_taskbar = true              # no taskbar button / Dock icon while hidden
-start_hidden = false
+start_hidden = false                 # at login only; starting Siple yourself shows the window
 show_on_incoming = true               # raise the window on an incoming call
 show_on_answer = false
 notifications = true
@@ -106,11 +106,10 @@ stt_language = "en"                   # value for {lang}; same charset as tts_vo
 
 [updates]
 # Tell me when a newer Siple release exists (a pill in the header). What is sent: one anonymous
-# HTTPS GET to siple.app about once an hour (and when you press "Check for updates"), and one to
-# api.github.com at most once a day (as a second opinion, or instead when siple.app does not
-# answer), with the header `User-Agent: Siple/<version>`. Nothing else: no identifier, no account,
-# no usage data. Hot reloadable. The Mac App Store and Microsoft Store editions check through
-# their store, about once a day.
+# HTTPS GET to siple.app shortly after start, then about once an hour (and when you press "Check
+# for updates"), with the header `User-Agent: Siple/<version>`. Nothing else: no identifier, no
+# account, no usage data. Hot reloadable. The Mac App Store and Microsoft Store editions check
+# through their store, after start and then about once a day.
 check = true
 # Let the pill (or `app.install_update`) download, verify and install the new version in place when
 # you choose to. Direct downloads only; false = the pill opens the release page instead.
