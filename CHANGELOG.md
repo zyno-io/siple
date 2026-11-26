@@ -1,6 +1,20 @@
 <!-- siple-rename: keep (this file documents the legacy ZynoPhone names on purpose) -->
 # Changelog
 
+## 0.2.9 (2026-11-26)
+
+### Changed
+
+- `tls_verify = false` and `tls_fingerprint` apply only to your provider: the registrar, outbound proxy, `domain`, `tls_server_name` and the addresses they resolve to. TLS connections to any other host are always verified, against the system's trusted roots plus `tls_ca_file`. A direct TLS peer with a self-signed or private certificate now needs its CA in `tls_ca_file`; a single fixed peer can instead be set as `registrar` (with `register = false`) or `outbound_proxy`.
+
+### Fixed
+
+- Calls, subscriptions and OPTIONS to a TLS server other than your provider check its certificate against the name you dialed. They used to check it against the server's IP address and fail with "not valid for name".
+- UDP and TCP accounts can make `sips:` and `;transport=tls` calls, subscriptions and OPTIONS; the TLS handshake used to fail. Bad TLS settings on such an account affect only its TLS requests.
+- An account with a pinned certificate (`tls_fingerprint`) can make TLS calls to other servers.
+- Subscriptions and OPTIONS sent over a different transport than the account's (for example TLS from a UDP account) advertise that transport in their Contact.
+- Accounts with `register = false` no longer subscribe to the voicemail light on their own address, which no server answers usefully. Set `mwi_uri` to subscribe.
+
 ## 0.2.8 (2026-11-25)
 
 ### Fixed
