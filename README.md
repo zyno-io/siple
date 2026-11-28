@@ -11,9 +11,32 @@ and is built to be driven by scripts and AI agents as well as by hand.
   (`call.listen`, `call.say`, `call.stream`), tone and DTMF detection, play/record, SIP traces and
   vendor-profile emulation (Yealink, Polycom, Cisco, Grandstream). Whatever the GUI can do, an agent can do.
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="sites/www/public/shots/two_lines-dark.webp">
+  <img alt="Siple on an active call (Opus, SRTP, muted) with a second line in the rail and the extensions panel showing BLF lamps" src="sites/www/public/shots/two_lines-light.webp">
+</picture>
+
+<p>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="sites/www/public/shots/incoming-dark.webp">
+    <img width="49%" alt="An incoming call ringing, with Answer, Reject and Silence" src="sites/www/public/shots/incoming-light.webp">
+  </picture>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="sites/www/public/shots/transfer_consult-dark.webp">
+    <img width="49%" alt="An attended transfer: the first call on hold, the consult call talking, and Complete transfer" src="sites/www/public/shots/transfer_consult-light.webp">
+  </picture>
+</p>
+
 Status: pre-1.0 (see [CHANGELOG.md](CHANGELOG.md)). Repository: `https://github.com/zyno-io/siple`. License: [FSL-1.1-ALv2](#license) (source-available, not OSI open source).
 
 **Documentation: https://zyno-io.github.io/siple/** (user guide, AI-agent quick start, full configuration and API reference; sources in [`sites/docs/`](sites/docs/) and [`docs/`](docs/)).
+
+## Why Siple exists
+
+Siple started as an in-house tool at Zyno Consulting for testing the backends of [ZynoTalk](https://zyno.talk), our
+cloud phone system, both by hand and in automated test suites. We wanted one softphone that a person could click
+through and a script could drive, with the same behavior both ways. That's why everything the GUI does is also in the
+API. Siple works with any standards-based SIP provider; ZynoTalk isn't required.
 
 ## Features
 
