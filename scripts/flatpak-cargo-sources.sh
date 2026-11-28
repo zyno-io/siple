@@ -86,8 +86,11 @@ fi
 "$VENV/bin/python" -m pip install --quiet --disable-pip-version-check --require-hashes --only-binary=:all: -r "$REQS"
 
 TMP="$OUT.tmp"
-trap 'rm -f "$TMP"' EXIT
-"$VENV/bin/python" -I "$GEN" "$LOCK" -o "$TMP"
+# Fresh git clone cache per run: the generator reuses ~/.cache/flatpak-cargo/<repo> without checking it
+# for local edits, and it writes git packages' Cargo.toml from that checkout.
+GITCACHE="$(mktemp -d)"
+trap 'rm -f "$TMP"; rm -rf "$GITCACHE"' EXIT
+XDG_CACHE_HOME="$GITCACHE" "$VENV/bin/python" -I "$GEN" "$LOCK" -o "$TMP"
 
 "$PY" -I "$ROOT/scripts/flatpak-cargo-check.py" "$LOCK" "$TMP"
 

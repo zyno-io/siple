@@ -9,15 +9,16 @@ cargo config decides where cargo reads crates from), so it must hold exactly thi
   - per registry package of the lock: one `archive` (the lock's crates.io URL and sha256, dest
     cargo/vendor/<name>-<version>) and one `inline` `.cargo-checksum.json` at the same dest whose
     contents are exactly {"package": <lock checksum>, "files": {}};
-  - per git package of the lock (only those in GIT_ALLOWED, pinned with `rev`): one `git` source per
-    repo commit (dest flatpak-cargo/git/<repo>-<commit[:7]>), one `shell` copying exactly the allowed
-    path of that checkout to cargo/vendor/<name>, an `inline` `Cargo.toml` there whose package name and
-    version match the lock, and an `inline` `.cargo-checksum.json` there that is exactly
-    {"package": null, "files": {}};
+  - per git package of the lock (only those in GIT_ALLOWED, at its pinned commit, with `rev`): one
+    `git` source per repo commit (dest flatpak-cargo/git/<repo>-<commit[:7]>), one `shell` copying
+    exactly the allowed path of that checkout to cargo/vendor/<name>, an `inline` `Cargo.toml` there
+    whose SHA-256 is the pinned one (it replaces the checkout's manifest, so it must not be free-form),
+    and an `inline` `.cargo-checksum.json` there that is exactly {"package": null, "files": {}};
   - one `inline` `config` in `cargo` with the vendoring config below, byte for byte (with git
     packages: the same tables plus one `[source."<repo>"]` per repo with its `rev`, compared parsed).
 Needs Python >= 3.11 (tomllib). Run with -I.
 """
+import hashlib
 import json
 import re
 import sys
@@ -33,9 +34,20 @@ ARCHIVE_KEYS = {"type", "archive-type", "url", "sha256", "dest"}
 INLINE_KEYS = {"type", "contents", "dest", "dest-filename"}
 GIT_KEYS = {"type", "url", "commit", "dest"}
 SHELL_KEYS = {"type", "commands"}
-# The only git dependencies allowed: repo URL (Cargo canonical form) -> {package name: path in the repo}.
+# The only git dependencies allowed: repo URL, exactly as Cargo.lock spells it (also the generator's
+# canonical form) -> {package name: its path in the repo, the pinned commit, and the SHA-256 of the
+# normalized Cargo.toml the generator writes for it}. Bump commit and manifest_sha256 together with
+# the rev in Cargo.toml: run scripts/flatpak-cargo-sources.sh, take the new hash from its error.
 # winit: fork without the private CGS blur API (Mac App Store); see [patch.crates-io] in Cargo.toml.
-GIT_ALLOWED = {"https://github.com/zynoconsulting/winit": {"winit": "."}}
+GIT_ALLOWED = {
+    "https://github.com/zynoconsulting/winit": {
+        "winit": {
+            "path": ".",
+            "commit": "8828032943d6d07b75ff498bfd644ee7d2690741",
+            "manifest_sha256": "f44041f143a1497028d79b597dea4d0b7a71677709cb14f6cc9faafa22efc5e0",
+        },
+    },
+}
 GIT_SOURCE_RX = re.compile(r"^git\+(https://[^?#]+)\?rev=([0-9a-f]{40})#\2$")
 
 
@@ -43,7 +55,7 @@ class Bad(Exception):
     pass
 
 
-def lock_packages(lock):
+def lock_packages(lock, allowed):
     """Returns ({(name, version): checksum} of registry packages, {name: (repo, commit, version)} of git ones)."""
     want, git = {}, {}
     for p in lock["package"]:
@@ -56,8 +68,11 @@ def lock_packages(lock):
             if not m:
                 raise Bad(f"{label} is a git dependency not pinned with rev=<40-hex commit>: {src}")
             repo, commit = m.groups()
-            if p["name"] not in GIT_ALLOWED.get(repo, {}):
+            pin = allowed.get(repo, {}).get(p["name"])
+            if pin is None:
                 raise Bad(f"{label} is a git dependency from {repo}, which GIT_ALLOWED does not allow")
+            if commit != pin["commit"]:
+                raise Bad(f"{label}: commit {commit} is not the one pinned in GIT_ALLOWED")
             if p["name"] in git:
                 raise Bad(f"{label}: more than one git package named {p['name']}")
             git[p["name"]] = (repo, commit, p["version"])
@@ -82,16 +97,16 @@ def expected_config(git):
     return {"source": src}
 
 
-def check(lock, sources):
+def check(lock, sources, allowed=GIT_ALLOWED):
     """Raises Bad unless `sources` is exactly what the lock file calls for."""
-    want, git = lock_packages(lock)
+    want, git = lock_packages(lock, allowed)
     if not isinstance(sources, list):
         raise Bad("the sources are not a JSON list")
     by_dest = {f"cargo/vendor/{n}-{v}": (n, v) for n, v in want}
     git_by_dest = {f"cargo/vendor/{n}": n for n in git}
     want_checkouts = {(r, c): git_checkout(r, c) for r, c, _ in git.values()}
     want_copies = {
-        n: f'cp -r --reflink=auto "{git_checkout(r, c)}/{GIT_ALLOWED[r][n]}" "cargo/vendor/{n}"'
+        n: f'cp -r --reflink=auto "{git_checkout(r, c)}/{allowed[r][n]['path']}" "cargo/vendor/{n}"'
         for n, (r, c, _) in git.items()
     }
     archives, sums, configs = {}, {}, []
@@ -141,13 +156,10 @@ def check(lock, sources):
                 if name == "Cargo.toml":
                     if pkg in git_tomls:
                         raise Bad(f"duplicate Cargo.toml for git package {pkg}")
-                    try:
-                        manifest = tomllib.loads(body)
-                    except (TypeError, tomllib.TOMLDecodeError):
-                        raise Bad(f"Cargo.toml of git package {pkg} is not TOML")
-                    p = manifest.get("package", {})
-                    if p.get("name") != pkg or p.get("version") != git[pkg][2]:
-                        raise Bad(f"Cargo.toml of git package {pkg} names {p.get('name')} {p.get('version')}")
+                    repo = git[pkg][0]
+                    got = hashlib.sha256(body.encode()).hexdigest() if isinstance(body, str) else None
+                    if got != allowed[repo][pkg]["manifest_sha256"]:
+                        raise Bad(f"Cargo.toml of git package {pkg} has SHA-256 {got}, not the one pinned in GIT_ALLOWED")
                     git_tomls.add(pkg)
                 elif name == ".cargo-checksum.json":
                     if pkg in git_sums:
@@ -301,6 +313,9 @@ def self_test():
     glock = copy.deepcopy(lock)
     glock["package"].append({"name": "winit", "version": "0.30.13", "source": git_src})
     checkout = f"flatpak-cargo/git/winit-{commit[:7]}"
+    gmanifest = '[package]\nname = "winit"\nversion = "0.30.13"\n'
+    gallowed = {repo: {"winit": {"path": ".", "commit": commit,
+                                 "manifest_sha256": hashlib.sha256(gmanifest.encode()).hexdigest()}}}
     copy_cmd = f'cp -r --reflink=auto "{checkout}/." "cargo/vendor/winit"'
     gcfg = CONFIG_CONTENTS + f'\n[source."{repo}"]\ngit = "{repo}"\nreplace-with = "vendored-sources"\nrev = "{commit}"\n'
 
@@ -309,7 +324,7 @@ def self_test():
         out.insert(0, {"type": "git", "url": repo, "commit": commit, "dest": checkout})
         out += [
             {"type": "shell", "commands": [copy_cmd]},
-            {"type": "inline", "contents": '[package]\nname = "winit"\nversion = "0.30.13"\n',
+            {"type": "inline", "contents": gmanifest,
              "dest": "cargo/vendor/winit", "dest-filename": "Cargo.toml"},
             {"type": "inline", "contents": json.dumps({"package": None, "files": {}}),
              "dest": "cargo/vendor/winit", "dest-filename": ".cargo-checksum.json"},
@@ -317,7 +332,7 @@ def self_test():
         ]
         return out
 
-    check(glock, ggood())  # the positive git case
+    check(glock, ggood(), gallowed)  # the positive git case
     by = lambda s, pred: next(e for e in s if pred(e))
     gsrc = lambda s: by(s, lambda e: e["type"] == "git")
     gsh = lambda s: by(s, lambda e: e["type"] == "shell")
@@ -342,6 +357,8 @@ def self_test():
         "git: Cargo.toml of another version": lambda s: gtoml(s).__setitem__(
             "contents", '[package]\nname = "winit"\nversion = "9.9.9"\n'),
         "git: Cargo.toml not TOML": lambda s: gtoml(s).__setitem__("contents", "[[["),
+        "git: Cargo.toml with a build script": lambda s: gtoml(s).__setitem__(
+            "contents", gmanifest + 'build = "Cargo.toml"\n'),
         "git: no checksum file": lambda s: s.remove(gsum(s)),
         "git: checksum with a package hash": lambda s: gsum(s).__setitem__(
             "contents", json.dumps({"package": sha("a"), "files": {}})),
@@ -356,7 +373,7 @@ def self_test():
         s = ggood()
         f(s)
         try:
-            check(glock, s)
+            check(glock, s, gallowed)
         except Bad:
             continue
         failed.append(name)
@@ -367,10 +384,11 @@ def self_test():
         "git: branch instead of rev": pkg(f"git+{repo}?branch=main#{commit}"),
         "git: rev and commit differ": pkg(f"git+{repo}?rev={commit}#{'d' * 40}"),
         "git: short rev": pkg(f"git+{repo}?rev=ccccccc#ccccccc"),
+        "git: commit not the pinned one": pkg(f"git+{repo}?rev={'d' * 40}#{'d' * 40}"),
     }
     for name, bad_lock in glocks.items():
         try:
-            check(bad_lock, [])
+            check(bad_lock, [], gallowed)
         except Bad:
             continue
         failed.append(name)
