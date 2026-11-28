@@ -151,7 +151,7 @@ pub fn conflicts(overrides: &BTreeMap<String, String>, mac: bool) -> Vec<(Shortc
     for (i, a) in all.iter().enumerate() {
         for b in &all[i + 1..] {
             if (a.is_overridden(overrides) || b.is_overridden(overrides))
-                && a.effective(overrides).normalised(mac) == b.effective(overrides).normalised(mac)
+                && a.effective(overrides).normalized(mac) == b.effective(overrides).normalized(mac)
             {
                 out.push((*a, *b));
             }
@@ -273,7 +273,7 @@ impl Chord {
 
     /// Platform-normalized form for comparing chords: `(command, ctrl, cmd, alt, shift, key)`
     /// where `command` merges `Mod` with the platform's own command key.
-    pub fn normalised(&self, mac: bool) -> (bool, bool, bool, bool, bool, String) {
+    pub fn normalized(&self, mac: bool) -> (bool, bool, bool, bool, bool, String) {
         let (command, ctrl, cmd) = if mac {
             (self.modifier || self.cmd, self.ctrl, false)
         } else {

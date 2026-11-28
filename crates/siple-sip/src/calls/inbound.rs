@@ -22,7 +22,7 @@ use crate::types::{ALLOW, SipEvent};
 
 /// `Require` option tags the account can honor: `replaces` always, `100rel` unless
 /// `prack = disabled`, `timer` with `session_timers`.
-fn honoured_require(cfg: &siple_config::AccountConfig) -> Vec<&'static str> {
+fn honored_require(cfg: &siple_config::AccountConfig) -> Vec<&'static str> {
     let mut v = vec!["replaces"];
     if cfg.prack != siple_config::PrackMode::Disabled {
         v.push("100rel");
@@ -90,10 +90,10 @@ impl CallManager {
         }
 
         // Unsupported extensions.
-        let honoured = honoured_require(&cfg);
+        let honored = honored_require(&cfg);
         let unsupported: Vec<String> = util::tokens(&req.headers, "require")
             .into_iter()
-            .filter(|t| !honoured.contains(&t.as_str()))
+            .filter(|t| !honored.contains(&t.as_str()))
             .collect();
         if !unsupported.is_empty() {
             let h = vec![Header::Other("Unsupported".into(), unsupported.join(", "))];

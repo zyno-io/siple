@@ -944,7 +944,7 @@ async fn register_423_retries_with_min_expires() {
 }
 
 #[tokio::test]
-async fn register_failure_honours_retry_after_and_recovers() {
+async fn register_failure_honors_retry_after_and_recovers() {
     let fake = fake_registrar(|i, _| {
         if i == 0 {
             Answer {
