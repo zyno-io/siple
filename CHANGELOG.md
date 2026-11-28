@@ -5,7 +5,7 @@
 
 ### Changed
 
-- The account picker of the dialer sits on its own full-width row above the number field and the Call button, instead of to their left.
+- The account picker of the dialer sits on its own row above the number field and the Call button, instead of to their left. On wide windows the dialer is capped at 440 px and centered.
 
 ### Fixed
 

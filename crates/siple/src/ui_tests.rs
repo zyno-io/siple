@@ -4819,6 +4819,8 @@ fn dial_row_picker_above_field_and_call() {
             near(c.left(), f.left()) && near(c.right(), b.right()),
             "{name}: combo {c:?} does not span field {f:?} + call {b:?}"
         );
+        // Capped on a wide window.
+        assert!(c.width() <= 440.5, "{name}: dialer {c:?} wider than its cap");
     }
 }
 
