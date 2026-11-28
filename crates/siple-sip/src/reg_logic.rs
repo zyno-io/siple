@@ -269,7 +269,7 @@ mod tests {
     }
 
     #[test]
-    fn retry_after_honoured() {
+    fn retry_after_honored() {
         assert_eq!(secs(retry_delay(3, Some(42))), 42);
         assert_eq!(secs(retry_delay(3, Some(0))), 1);
         assert_eq!(secs(retry_delay(3, Some(999_999))), 3600);

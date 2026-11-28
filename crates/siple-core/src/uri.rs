@@ -517,7 +517,7 @@ mod tests {
     }
 
     #[test]
-    fn tel_is_normalised() {
+    fn tel_is_normalized() {
         assert_eq!(t("tel:+1-555-123-4567"), "+15551234567");
         assert_eq!(
             t("tel:+1(555)123.4567;phone-context=example.test"),

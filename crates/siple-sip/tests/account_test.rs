@@ -24,13 +24,13 @@ enum Reply {
 }
 
 /// Registrar behavior: 401 digest challenge for a request without `Authorization`, then `reply`.
-struct Behaviour {
+struct Behavior {
     reply: Reply,
     /// Requests seen: (authenticated, expires).
     seen: Mutex<Vec<(bool, Option<u32>)>>,
 }
 
-impl Behaviour {
+impl Behavior {
     fn new(reply: Reply) -> Arc<Self> {
         Arc::new(Self {
             reply,
@@ -112,7 +112,7 @@ impl Behaviour {
 
 struct Fake {
     addr: SocketAddr,
-    behaviour: Arc<Behaviour>,
+    behavior: Arc<Behavior>,
     stop: Arc<AtomicBool>,
 }
 
@@ -127,9 +127,9 @@ fn udp_registrar(reply: Reply) -> Fake {
     sock.set_read_timeout(Some(Duration::from_millis(50)))
         .unwrap();
     let addr = sock.local_addr().unwrap();
-    let behaviour = Behaviour::new(reply);
+    let behavior = Behavior::new(reply);
     let stop = Arc::new(AtomicBool::new(false));
-    let (b, s) = (behaviour.clone(), stop.clone());
+    let (b, s) = (behavior.clone(), stop.clone());
     std::thread::spawn(move || {
         let mut buf = vec![0u8; 65536];
         while !s.load(Ordering::Relaxed) {
@@ -144,7 +144,7 @@ fn udp_registrar(reply: Reply) -> Fake {
     });
     Fake {
         addr,
-        behaviour,
+        behavior,
         stop,
     }
 }
@@ -177,9 +177,9 @@ fn tls_registrar(reply: Reply) -> (Fake, String) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     listener.set_nonblocking(true).unwrap();
     let addr = listener.local_addr().unwrap();
-    let behaviour = Behaviour::new(reply);
+    let behavior = Behavior::new(reply);
     let stop = Arc::new(AtomicBool::new(false));
-    let (b, s) = (behaviour.clone(), stop.clone());
+    let (b, s) = (behavior.clone(), stop.clone());
     std::thread::spawn(move || {
         while !s.load(Ordering::Relaxed) {
             let Ok((tcp, from)) = listener.accept() else {
@@ -219,7 +219,7 @@ fn tls_registrar(reply: Reply) -> (Fake, String) {
     (
         Fake {
             addr,
-            behaviour,
+            behavior,
             stop,
         },
         fp,
@@ -343,7 +343,7 @@ async fn ok_registers_then_unregisters() {
     assert_eq!(server, &fake.addr.to_string());
     assert_eq!(*granted_secs, 60);
     assert!(d.message().starts_with("Registered via UDP in "));
-    let seen = fake.behaviour.seen.lock().unwrap().clone();
+    let seen = fake.behavior.seen.lock().unwrap().clone();
     // challenge + authenticated register (60 s), then the unregister (challenge + expires 0)
     assert!(seen.contains(&(true, Some(60))), "{seen:?}");
     assert!(
