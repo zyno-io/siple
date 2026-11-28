@@ -103,6 +103,17 @@ check_store_markers() {
 check_store_markers "$GUI" siple
 check_store_markers "$CLI" siple-cli
 
+echo "== build: no private window-server APIs =="
+# App Review rejects imports of CoreGraphics Services / SkyLight SPI (0.2.10: winit's
+# _CGSSetWindowBackgroundBlurRadius, patched out via the winit fork in Cargo.toml). `_CGS[A-Z]`, not `_CGS`: the public
+# CGShieldingWindowLevel also starts with _CGS.
+for bin in "$GUI" "$CLI"; do
+  [ -f "$bin" ] || continue
+  n="$(basename "$bin")"
+  spi="$(nm -u "$bin" 2>/dev/null | grep -E '^_(CGS[A-Z]|SLS)' | sort -u | tr '\n' ' ')"
+  [ -z "$spi" ] && pass "$n imports no _CGS*/_SLS* symbols" || fail "$n imports private APIs: $spi"
+done
+
 echo "== build: siple-cli embedded Info.plist (needed by the sandbox; crates/siple-cli/build.rs) =="
 if [ -f "$CLI" ]; then
   sect="$(otool -s __TEXT __info_plist "$CLI" 2>/dev/null | grep -c '^[0-9a-f]\{8,\}')"

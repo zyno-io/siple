@@ -1,6 +1,12 @@
 <!-- siple-rename: keep (this file documents the legacy ZynoPhone names on purpose) -->
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- The Mac App Store build no longer references the private `CGSSetWindowBackgroundBlurRadius` API (pulled in by the windowing library), which App Review rejected.
+
 ## 0.2.10 (2026-11-26)
 
 ### Changed
