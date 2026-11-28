@@ -32,6 +32,8 @@ const BOTH_HOVER: &str = "An agent connected to Siple is capturing this call's a
 
 /// Banners shown at once; the rest collapse into "+N more".
 const MAX_BANNERS: usize = 3;
+/// Widest the dialer (account picker, number field, Call button) gets.
+const DIAL_MAX_W: f32 = 360.0;
 
 /// Config error and call-waiting banners: pinned above the stage and above the extensions tab.
 pub(super) fn pinned(ui: &mut egui::Ui, cx: &Cx, st: &mut UiState, out: &mut Vec<UiAction>) {
@@ -829,8 +831,8 @@ fn dial_row(ui: &mut egui::Ui, cx: &Cx, st: &mut UiState, large: bool, out: &mut
             .map(|a| a.id.clone());
     }
     let mut submit = false;
-    // One height for the account picker, the number field and the Call button: the field's
-    // (its font's row plus a vertical margin per variant); `TextEdit` cannot be stretched.
+    // One height for the number field and the Call button: the field's (its font's row plus a
+    // vertical margin per variant); `TextEdit` cannot be stretched.
     let field_font = egui::FontId::new(
         if large {
             FS_DISPLAY - 2.0
@@ -841,85 +843,110 @@ fn dial_row(ui: &mut egui::Ui, cx: &Cx, st: &mut UiState, large: bool, out: &mut
     );
     let v_margin: i8 = if large { 9 } else { 6 };
     let row_h = ui.fonts_mut(|f| f.row_height(&field_font)) + 2.0 * f32::from(v_margin);
-    ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = 6.0;
-        ui.spacing_mut().interact_size.y = row_h;
-        let selected = st.dial_account.clone();
-        let sel_status = usable.iter().find(|a| Some(&a.id) == selected.as_ref());
-        egui::ComboBox::from_id_salt("dial_account")
-            .width(112.0)
-            .height(240.0)
-            .selected_text(match &selected {
-                Some(id) => RichText::new(id).color(p.text),
-                None => RichText::new("No account").color(p.faint),
-            })
-            .icon(combo_icon)
-            .show_ui(ui, |ui| {
-                for a in &usable {
-                    let text = format!("{}  {}", a.id, reg_label(a));
-                    ui.selectable_value(&mut st.dial_account, Some(a.id.clone()), text)
-                        .on_hover_text(&a.aor);
-                }
-            })
-            .response
-            .on_hover_text(sel_status.map(|a| a.aor.as_str()).unwrap_or("No account"));
-        let can = sel_status.is_some() && !st.dial_target.trim().is_empty();
-        let btn_w = 76.0;
-        // The full hint where it fits; a short one in a narrow window (never truncated).
-        let field_w = ui.available_width() - btn_w - 6.0;
-        let full_w = ui.fonts_mut(|f| {
-            f.layout_no_wrap(
-                "Number or SIP URI".into(),
-                egui::FontId::proportional(field_font.size),
-                p.faint,
-            )
-            .size()
-            .x
-        });
-        let hint = if full_w + 24.0 <= field_w {
-            "Number or SIP URI"
-        } else {
-            "Number"
-        };
-        let edit = ui.add(
-            egui::TextEdit::singleline(&mut st.dial_target)
-                .id_salt("dial_target")
-                // egui pins the hint to the top-left in the default font; at the field's size it
-                // fills the row and so sits centered like the typed text.
-                .hint_text(RichText::new(hint).font(egui::FontId::proportional(field_font.size)))
-                .font(field_font)
-                .margin(Margin::symmetric(10, v_margin))
-                .desired_width(field_w),
-        );
-        super::form::text_context_menu(ui, &edit, &st.dial_target, false);
-        edit.widget_info(|| {
-            egui::WidgetInfo::labeled(egui::WidgetType::TextEdit, true, "Number or SIP URI")
-        });
-        if std::mem::take(&mut st.focus_dial) {
-            edit.request_focus();
-        }
-        if can && edit.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
-            submit = true;
-        }
-        let fill = if can { p.answer } else { p.inset };
-        let fg = if can { Color32::WHITE } else { p.faint };
-        let b = egui::Button::new((
-            icon_fill(ic::PHONE, FS_ICON).color(fg),
-            strong("Call", FS_BODY).color(fg),
+    // The account picker sits on its own full-width row above, at the compact row's height in
+    // both variants.
+    let picker_h = ui.fonts_mut(|f| {
+        f.row_height(&egui::FontId::new(
+            FS_BODY + 0.5,
+            egui::FontFamily::Monospace,
         ))
-        .fill(fill)
-        .stroke(if can {
-            Stroke::NONE
-        } else {
-            Stroke::new(1.0, p.border)
-        })
-        .corner_radius(CornerRadius::same(R_MD))
-        .min_size(egui::vec2(btn_w, row_h));
-        let call = ui.add_enabled(can, b);
-        call.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, can, "Call"));
-        if call.clicked() {
-            submit = true;
-        }
+    }) + 12.0;
+    let selected = st.dial_account.clone();
+    let sel_status = usable.iter().find(|a| Some(&a.id) == selected.as_ref());
+    // Capped on wide windows and centered (over the keypad in the idle stage).
+    let full_w = ui.available_width();
+    let block_w = full_w.min(DIAL_MAX_W);
+    ui.horizontal(|ui| {
+        ui.add_space((full_w - block_w) / 2.0);
+        ui.vertical(|ui| {
+            ui.set_width(block_w);
+            ui.spacing_mut().item_spacing.y = 6.0;
+            ui.scope(|ui| {
+                ui.spacing_mut().interact_size.y = picker_h;
+                egui::ComboBox::from_id_salt("dial_account")
+                    .width(ui.available_width())
+                    .height(240.0)
+                    .selected_text(match &selected {
+                        Some(id) => RichText::new(id).color(p.text),
+                        None => RichText::new("No account").color(p.faint),
+                    })
+                    .icon(combo_icon)
+                    .show_ui(ui, |ui| {
+                        for a in &usable {
+                            let text = format!("{}  {}", a.id, reg_label(a));
+                            ui.selectable_value(&mut st.dial_account, Some(a.id.clone()), text)
+                                .on_hover_text(&a.aor);
+                        }
+                    })
+                    .response
+                    .on_hover_text(sel_status.map(|a| a.aor.as_str()).unwrap_or("No account"));
+            });
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 6.0;
+                ui.spacing_mut().interact_size.y = row_h;
+                let can = sel_status.is_some() && !st.dial_target.trim().is_empty();
+                let btn_w = 76.0;
+                // The full hint where it fits; a short one in a narrow window (never truncated).
+                let field_w = ui.available_width() - btn_w - 6.0;
+                let full_w = ui.fonts_mut(|f| {
+                    f.layout_no_wrap(
+                        "Number or SIP URI".into(),
+                        egui::FontId::proportional(field_font.size),
+                        p.faint,
+                    )
+                    .size()
+                    .x
+                });
+                let hint = if full_w + 24.0 <= field_w {
+                    "Number or SIP URI"
+                } else {
+                    "Number"
+                };
+                let edit = ui.add(
+                    egui::TextEdit::singleline(&mut st.dial_target)
+                        .id_salt("dial_target")
+                        // egui pins the hint to the top-left in the default font; at the field's size it
+                        // fills the row and so sits centered like the typed text.
+                        .hint_text(
+                            RichText::new(hint).font(egui::FontId::proportional(field_font.size)),
+                        )
+                        .font(field_font)
+                        .margin(Margin::symmetric(10, v_margin))
+                        .desired_width(field_w),
+                );
+                super::form::text_context_menu(ui, &edit, &st.dial_target, false);
+                edit.widget_info(|| {
+                    egui::WidgetInfo::labeled(egui::WidgetType::TextEdit, true, "Number or SIP URI")
+                });
+                if std::mem::take(&mut st.focus_dial) {
+                    edit.request_focus();
+                }
+                if can && edit.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                    submit = true;
+                }
+                let fill = if can { p.answer } else { p.inset };
+                let fg = if can { Color32::WHITE } else { p.faint };
+                let b = egui::Button::new((
+                    icon_fill(ic::PHONE, FS_ICON).color(fg),
+                    strong("Call", FS_BODY).color(fg),
+                ))
+                .fill(fill)
+                .stroke(if can {
+                    Stroke::NONE
+                } else {
+                    Stroke::new(1.0, p.border)
+                })
+                .corner_radius(CornerRadius::same(R_MD))
+                .min_size(egui::vec2(btn_w, row_h));
+                let call = ui.add_enabled(can, b);
+                call.widget_info(|| {
+                    egui::WidgetInfo::labeled(egui::WidgetType::Button, can, "Call")
+                });
+                if call.clicked() {
+                    submit = true;
+                }
+            });
+        });
     });
     if submit
         && let Some(acc) = st.dial_account.clone()

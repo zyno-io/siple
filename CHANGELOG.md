@@ -3,6 +3,10 @@
 
 ## Unreleased
 
+### Changed
+
+- The account picker of the dialer sits on its own row above the number field and the Call button, instead of to their left. On wide windows the dialer is capped at 360 px and centered.
+
 ### Fixed
 
 - The Mac App Store build no longer references the private `CGSSetWindowBackgroundBlurRadius` API (pulled in by the windowing library), which App Review rejected.

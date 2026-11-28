@@ -4787,7 +4787,7 @@ fn account_move_buttons_issue_move_account_and_disable_at_the_ends() {
 }
 
 #[test]
-fn dial_row_widgets_share_one_height() {
+fn dial_row_picker_above_field_and_call() {
     for (name, mut h) in [
         ("idle", harness(base_snapshot(), WIDE)),
         ("dial bar", harness(two_calls(), WIDE)),
@@ -4805,17 +4805,24 @@ fn dial_row_widgets_share_one_height() {
         let call = h.get_by_label("Call");
         let (f, c, b) = (field.rect(), combo.rect(), call.rect());
         let near = |a: f32, b: f32| (a - b).abs() < 0.6;
+        // Field and Call button: one row, one height.
         assert!(
-            near(f.height(), c.height()),
-            "{name}: field {f:?} combo {c:?}"
-        );
-        assert!(
-            near(f.height(), b.height()),
+            near(f.height(), b.height()) && near(f.center().y, b.center().y),
             "{name}: field {f:?} call {b:?}"
         );
+        // The picker: its own row above, spanning the field and the button.
         assert!(
-            near(f.center().y, c.center().y) && near(f.center().y, b.center().y),
-            "{name}: not aligned"
+            c.bottom() < f.top(),
+            "{name}: combo {c:?} not above field {f:?}"
+        );
+        assert!(
+            near(c.left(), f.left()) && near(c.right(), b.right()),
+            "{name}: combo {c:?} does not span field {f:?} + call {b:?}"
+        );
+        // Capped on a wide window.
+        assert!(
+            c.width() <= 360.5,
+            "{name}: dialer {c:?} wider than its cap"
         );
     }
 }
