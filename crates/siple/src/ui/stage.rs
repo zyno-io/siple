@@ -33,7 +33,7 @@ const BOTH_HOVER: &str = "An agent connected to Siple is capturing this call's a
 /// Banners shown at once; the rest collapse into "+N more".
 const MAX_BANNERS: usize = 3;
 /// Widest the dialer (account picker, number field, Call button) gets.
-const DIAL_MAX_W: f32 = 440.0;
+const DIAL_MAX_W: f32 = 360.0;
 
 /// Config error and call-waiting banners: pinned above the stage and above the extensions tab.
 pub(super) fn pinned(ui: &mut egui::Ui, cx: &Cx, st: &mut UiState, out: &mut Vec<UiAction>) {
