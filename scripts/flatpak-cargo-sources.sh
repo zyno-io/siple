@@ -9,8 +9,8 @@
 # Uses flatpak-cargo-generator from flatpak/flatpak-builder-tools, downloaded at a pinned commit and
 # checked against a pinned SHA-256 (supply chain), then cross-checks its output strictly against the
 # lock file (scripts/flatpak-cargo-check.py): per crate exactly one archive (URL, sha256, dest), one
-# checksum file, plus the one cargo config with its known text; anything else, git sources and unknown
-# source types fail.
+# checksum file, plus the one cargo config with its known text; anything else and unknown source types
+# fail. Git dependencies only from the repos and packages in its GIT_ALLOWED, pinned with rev.
 # The output is a build product (gitignored): it is regenerated per build and per Flathub release.
 #
 # Needs python3 >= 3.11 (tomllib) and network access (PyPI for aiohttp and tomlkit, GitHub for the

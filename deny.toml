@@ -49,6 +49,8 @@ wildcards = "allow"
 unknown-registry = "deny"
 unknown-git = "deny"
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+# winit fork without the private CGS blur API (Mac App Store); see [patch.crates-io] in Cargo.toml.
+allow-git = ["https://github.com/zynoconsulting/winit"]
 
 [advisories]
 # Unmaintained notices for every crate in the graph, not just our own: cargo-deny 0.22 changed the

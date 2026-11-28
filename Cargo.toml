@@ -1,7 +1,7 @@
 [workspace]
 resolver = "3"
 members = ["crates/*"]
-exclude = ["vendor/rsipstack", "vendor/winit"]
+exclude = ["vendor/rsipstack"]
 
 [workspace.package]
 version = "0.2.10"
@@ -19,7 +19,10 @@ lto = "thin"
 [profile.release.build-override]
 strip = false
 
-# winit 0.30.13 with the private CGSSetWindowBackgroundBlurRadius call removed (Mac App Store
-# rejects it). Drop once eframe's winit no longer references it. See vendor/winit/SIPLE_PATCHES.md.
+# winit 0.30.13 (e9809ef) plus two commits on branch siple/0.30.13 of the fork: the private
+# CGSMainConnectionID / CGSSetWindowBackgroundBlurRadius calls are removed and macOS set_blur is a
+# no-op (App Review rejects the symbol; Siple never requests blur), and dpi comes from crates.io as in
+# the published crate. Drop once the winit that eframe uses no longer references the symbol. The same
+# URL is allowed in deny.toml ([sources] allow-git) and scripts/flatpak-cargo-check.py (GIT_ALLOWED).
 [patch.crates-io]
-winit = { path = "vendor/winit" }
+winit = { git = "https://github.com/zynoconsulting/winit", rev = "8828032943d6d07b75ff498bfd644ee7d2690741" }

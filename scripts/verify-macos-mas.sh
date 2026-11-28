@@ -105,7 +105,7 @@ check_store_markers "$CLI" siple-cli
 
 echo "== build: no private window-server APIs =="
 # App Review rejects imports of CoreGraphics Services / SkyLight SPI (0.2.10: winit's
-# _CGSSetWindowBackgroundBlurRadius, patched out in vendor/winit). `_CGS[A-Z]`, not `_CGS`: the public
+# _CGSSetWindowBackgroundBlurRadius, patched out via the winit fork in Cargo.toml). `_CGS[A-Z]`, not `_CGS`: the public
 # CGShieldingWindowLevel also starts with _CGS.
 for bin in "$GUI" "$CLI"; do
   [ -f "$bin" ] || continue
