@@ -1,7 +1,7 @@
 [workspace]
 resolver = "3"
 members = ["crates/*"]
-exclude = ["vendor/rsipstack"]
+exclude = ["vendor/rsipstack", "vendor/winit"]
 
 [workspace.package]
 version = "0.2.10"
@@ -18,3 +18,8 @@ lto = "thin"
 # with "can't find crate for `thiserror_impl`".
 [profile.release.build-override]
 strip = false
+
+# winit 0.30.13 with the private CGSSetWindowBackgroundBlurRadius call removed (Mac App Store
+# rejects it). Drop once eframe's winit no longer references it. See vendor/winit/SIPLE_PATCHES.md.
+[patch.crates-io]
+winit = { path = "vendor/winit" }
